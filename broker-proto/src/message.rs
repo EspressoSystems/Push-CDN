@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     messages_capnp::{
         self, authenticate_message, authenticate_response_message, broadcast_message,
-        direct_message, subscribe_message, unsubscribe_message,
+        direct_message, subscribe_message, unsubscribe_message, Topic,
     },
 };
 
@@ -46,21 +46,11 @@ impl Message {
                 // Initialize a new `Authenticate` message.
                 let mut message: authenticate_message::Builder = root.init_authenticate();
 
-                // Transform topics to the CapnProto type
-                let transformed_topics: Vec<messages_capnp::Topic> = to_serialize
-                    .subscribed_topics
-                    .clone()
-                    .into_iter()
-                    .map(|item| messages_capnp::Topic::from(item))
-                    .collect();
-
                 // Set each field
                 message.set_verification_key(&to_serialize.verification_key);
                 message.set_timestamp(to_serialize.timestamp);
                 message.set_signature(&to_serialize.signature);
-                message
-                    .set_subscribed_topics(&*transformed_topics)
-                    .expect("failed to serialize topics")
+                message.set_subscribed_topics(&*to_serialize.subscribed_topics);
             }
 
             Message::AuthenticateResponse(to_serialize) => {
@@ -77,18 +67,8 @@ impl Message {
                 // Initialize a new `Broadcast` message.
                 let mut message: broadcast_message::Builder = root.init_broadcast();
 
-                // Transform topics to the CapnProto type
-                let transformed_topics: Vec<messages_capnp::Topic> = to_serialize
-                    .topics
-                    .clone()
-                    .into_iter()
-                    .map(|item| messages_capnp::Topic::from(item))
-                    .collect();
-
                 // Set each field
-                message
-                    .set_topics(&*transformed_topics)
-                    .expect("failed to serialize topics");
+                message.set_topics(&*to_serialize.topics);
                 message.set_message(&to_serialize.message);
             }
 
@@ -105,36 +85,16 @@ impl Message {
                 // Initialize a new `Subscribe` message.
                 let mut message: subscribe_message::Builder = root.init_subscribe();
 
-                // Transform topics to the CapnProto type
-                let transformed_topics: Vec<messages_capnp::Topic> = to_serialize
-                    .topics
-                    .clone()
-                    .into_iter()
-                    .map(|item| messages_capnp::Topic::from(item))
-                    .collect();
-
                 // Set each field
-                message
-                    .set_topics(&*transformed_topics)
-                    .expect("failed to serialize topics")
+                message.set_topics(&*to_serialize.topics);
             }
 
             Message::Unsubscribe(to_serialize) => {
                 // Initialize a new `Subscribe` message.
                 let mut message: unsubscribe_message::Builder = root.init_unsubscribe();
 
-                // Transform topics to the CapnProto type
-                let transformed_topics: Vec<messages_capnp::Topic> = to_serialize
-                    .topics
-                    .clone()
-                    .into_iter()
-                    .map(|item| messages_capnp::Topic::from(item))
-                    .collect();
-
                 // Set each field
-                message
-                    .set_topics(&*transformed_topics)
-                    .expect("failed to serialize topics")
+                message.set_topics(&*to_serialize.topics);
             }
         }
 
@@ -184,10 +144,10 @@ impl Message {
                         subscribed_topics: bail!(
                             message.get_subscribed_topics(),
                             DeserializeError,
-                            "failed to deserialize subscribed topics"
+                            "failed to deserialize topics"
                         )
                         .into_iter()
-                        .map(|topic| topic.unwrap().into())
+                        .map(|topic| topic.unwrap())
                         .collect(),
                     })
                 }
@@ -234,7 +194,7 @@ impl Message {
                             "failed to deserialize topics"
                         )
                         .into_iter()
-                        .map(|topic| topic.unwrap().into())
+                        .map(|topic| topic.unwrap())
                         .collect(),
                         message: bail!(
                             message.get_message(),
@@ -254,7 +214,7 @@ impl Message {
                             "failed to deserialize topics"
                         )
                         .into_iter()
-                        .map(|topic| topic.unwrap().into())
+                        .map(|topic| topic.unwrap())
                         .collect(),
                     })
                 }
@@ -268,7 +228,7 @@ impl Message {
                             "failed to deserialize topics"
                         )
                         .into_iter()
-                        .map(|topic| topic.unwrap().into())
+                        .map(|topic| topic.unwrap())
                         .collect(),
                     })
                 }
@@ -336,41 +296,6 @@ pub struct Unsubscribe {
     pub topics: Vec<Topic>,
 }
 
-/// An enum for users to specify topics for subscription and unsubscription.
-/// Also used on the sending side, where messages can be marked with
-/// a topic and propagated to the interested users.
-#[derive(Clone, PartialEq)]
-pub enum Topic {
-    /// The global consensus topic. All conseneus participants should be subscribed
-    /// to this.
-    Global,
-    /// The DA-specfic topic. Only participants in the DA committee should want to
-    /// be subscribed to this.
-    DA,
-}
-
-/// We need this to convert our `Topic` to/from the CapnProto `Topic` primitive.
-impl From<Topic> for messages_capnp::Topic {
-    fn from(value: Topic) -> Self {
-        // Just a simple match statement. Is non-exhaustive.
-        match value {
-            Topic::Global => messages_capnp::Topic::Global,
-            Topic::DA => messages_capnp::Topic::Da,
-        }
-    }
-}
-
-/// We need this to convert our `Topic` to/from the CapnProto `Topic` primitive.
-impl From<messages_capnp::Topic> for Topic {
-    fn from(value: messages_capnp::Topic) -> Self {
-        // Just a simple match statement. Is non-exhaustive.
-        match value {
-            messages_capnp::Topic::Da => Topic::DA,
-            messages_capnp::Topic::Global => Topic::Global,
-        }
-    }
-}
-
 /// Serialization and deserialization parity tests
 #[cfg(test)]
 mod test {
@@ -384,7 +309,7 @@ mod test {
                 verification_key: vec![0, 1, 2],
                 timestamp: 345,
                 signature: vec![6, 7, 8],
-                subscribed_topics: vec![Topic::DA],
+                subscribed_topics: vec![Topic::Da],
             });
 
             // Serialize message
@@ -434,7 +359,7 @@ mod test {
         {
             // `Broadcast` message
             let original_message = Message::Broadcast(Broadcast {
-                topics: vec![Topic::DA, Topic::Global],
+                topics: vec![Topic::Da, Topic::Global],
                 message: vec![0, 1, 2],
             });
 
@@ -451,7 +376,7 @@ mod test {
         {
             // `Subscribe` message
             let original_message = Message::Subscribe(Subscribe {
-                topics: vec![Topic::DA, Topic::Global],
+                topics: vec![Topic::Da, Topic::Global],
             });
 
             // Serialize message
@@ -467,7 +392,7 @@ mod test {
         {
             // `Unsubscribe` message
             let original_message = Message::Unsubscribe(Unsubscribe {
-                topics: vec![Topic::DA, Topic::Global],
+                topics: vec![Topic::Da, Topic::Global],
             });
 
             // Serialize message
