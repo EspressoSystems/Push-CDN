@@ -37,6 +37,8 @@ pub enum Update<V> {
 ///
 /// # Example
 /// ```
+/// use broker_proto::wal::LoggedSet;
+/// 
 /// let mut leader = LoggedSet::new();
 /// let mut follower = LoggedSet::new();
 /// // perform operations on the leader
@@ -45,7 +47,7 @@ pub enum Update<V> {
 /// }
 /// // Update the follower automatically, either via log or by
 /// // Sending the entire set (based on what we've pruned)
-/// follower.update(leader.get_updates_inclusive(follower.tail));
+/// follower.update(leader.get_updates_inclusive(follower.tail()));
 /// ```
 #[derive(Default, Clone)]
 pub struct LoggedSet<V: Ord + Clone + Default + Hash> {
@@ -125,6 +127,12 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
         }
     }
 
+    /// Immutably returns the tail of the logged set.
+    /// This way we don't expose the mutable, private `tail`.
+    pub fn tail(&self) -> usize{
+        self.tail
+    }
+
     /// Performs many operations. Just loops over and performs `set.update(update)`
     /// on each supplied log.
     fn perform_many(&mut self, logs: Vec<Log<V>>) {
@@ -143,6 +151,8 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     ///
     /// # Example
     /// ```
+    /// use broker_proto::wal::LoggedSet;
+    /// 
     /// let mut leader = LoggedSet::new();
     /// let mut follower = LoggedSet::new();
     /// // Perform operations on the leader
@@ -151,7 +161,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     /// }
     /// // Update the follower automatically, either via log or by
     /// // sending the entire set (based on what we've pruned)
-    /// follower.update(leader.get_updates_inclusive(follower.tail));
+    /// follower.update(leader.get_updates_inclusive(follower.tail()));
     pub fn get_updates_inclusive(&self, tail: usize) -> Update<V> {
         if self.head > tail {
             // The caller is behind, just send the whole set

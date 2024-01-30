@@ -35,7 +35,7 @@ pub enum Error {
 /// Is semantically equivalent to `return Error::Type("context: {error}")`.
 macro_rules! bail {
     ($expr: expr, $type: ident, $context: expr) => {
-        $expr.map_err(|err| CommonError::$type(format!("{}: {err}", $context)))?
+        $expr.map_err(|err| Error::$type(format!("{}: {err}", $context)))?
     };
 }
 
@@ -44,7 +44,7 @@ macro_rules! bail {
 /// type and context. Uses `ok_or_else` under the hood.
 macro_rules! bail_option {
     ($expr: expr, $type: ident, $context: expr) => {
-        $expr.ok_or_else(|| CommonError::$type($context.to_owned()))
+        $expr.ok_or_else(|| Error::$type($context.to_owned()))
     };
 }
 
