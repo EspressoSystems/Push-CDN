@@ -1,5 +1,3 @@
-use capnp::serialize;
-
 pub mod wal;
 pub mod connection;
 pub mod message;

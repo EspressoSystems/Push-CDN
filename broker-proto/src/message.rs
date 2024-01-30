@@ -374,8 +374,6 @@ impl From<messages_capnp::Topic> for Topic {
 /// Serialization and deserialization parity tests
 #[cfg(test)]
 mod test {
-    use std::time::Instant;
-
     use super::*;
 
     #[test]
