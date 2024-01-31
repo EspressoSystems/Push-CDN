@@ -12,9 +12,17 @@ use crate::{
     error::{Error, Result},
     messages_capnp::{
         self, authenticate_response, authenticate_with_key, authenticate_with_permit, broadcast,
-        direct, subscribe, unsubscribe, Topic,
+        direct, subscribe, unsubscribe,
     },
 };
+
+/// This is a helper macro for serializing `CapnProto` values.
+macro_rules! serialize {
+    // Rule to serialize a `Topic`.
+    ($object:expr, Topic) => {
+        $object.into_iter().map(|topic| topic.into()).collect()
+    };
+}
 
 /// This is a helper macro for deserializing `CapnProto` values.
 macro_rules! deserialize {
@@ -27,6 +35,7 @@ macro_rules! deserialize {
         )
         .into_iter()
         .filter_map(|topic| topic.ok())
+        .map(|topic| topic.into())
         .collect()
     };
 
@@ -117,9 +126,13 @@ impl Message {
                 // Initialize a new `Broadcast` message.
                 let mut message: broadcast::Builder = root.init_broadcast();
 
+                // Serialize topics
+                let serialized_topics: Vec<messages_capnp::Topic> =
+                    serialize!(to_serialize.topics.clone(), Topic);
+
                 // Set each field
                 bail!(
-                    message.set_topics(&*to_serialize.topics),
+                    message.set_topics(&*serialized_topics),
                     Serialize,
                     "failed to serialize topics"
                 );
@@ -139,9 +152,13 @@ impl Message {
                 // Initialize a new `Subscribe` message.
                 let mut message: subscribe::Builder = root.init_subscribe();
 
+                // Serialize topics
+                let serialized_topics: Vec<messages_capnp::Topic> =
+                    serialize!(to_serialize.topics.clone(), Topic);
+
                 // Set each field
                 bail!(
-                    message.set_topics(&*to_serialize.topics),
+                    message.set_topics(&*serialized_topics),
                     Serialize,
                     "failed to serialize topics"
                 );
@@ -151,9 +168,13 @@ impl Message {
                 // Initialize a new `Subscribe` message.
                 let mut message: unsubscribe::Builder = root.init_unsubscribe();
 
+                // Serialize topics
+                let serialized_topics: Vec<messages_capnp::Topic> =
+                    serialize!(to_serialize.topics.clone(), Topic);
+
                 // Set each field
                 bail!(
-                    message.set_topics(&*to_serialize.topics),
+                    message.set_topics(&*serialized_topics),
                     Serialize,
                     "failed to serialize topics"
                 );
@@ -253,8 +274,43 @@ impl Message {
     }
 }
 
-// This message is used to authenticate the client to a marshal or a broker
-// to a broker. It contains a way of proving identity of the sender.
+#[derive(PartialEq, Clone, Hash, Eq)]
+/// An enum for users to specify topics for subscription and unsubscription.
+/// Also used on the sending side, where messages can be marked with
+/// a topic and propagated to the interested users.
+pub enum Topic {
+    /// The global consensus topic. All conseneus participants should be subscribed
+    /// to this.
+    Global,
+    /// The DA-specfic topic. Only participants in the DA committee should want to
+    /// be subscribed to this.
+    DA,
+}
+
+/// We need this because it allows conversions to and from the Cap'n' Proto version
+/// of a `Topic`
+impl From<messages_capnp::Topic> for Topic {
+    fn from(value: messages_capnp::Topic) -> Self {
+        match value {
+            messages_capnp::Topic::Global => Self::Global,
+            messages_capnp::Topic::Da => Self::DA,
+        }
+    }
+}
+
+/// We need this because it allows conversions to and from the Cap'n' Proto version
+/// of a `Topic`
+impl From<Topic> for messages_capnp::Topic {
+    fn from(value: Topic) -> messages_capnp::Topic {
+        match value {
+            Topic::Global => messages_capnp::Topic::Global,
+            Topic::DA => messages_capnp::Topic::Da,
+        }
+    }
+}
+
+/// This message is used to authenticate the client to a marshal or a broker
+/// to a broker. It contains a way of proving identity of the sender.
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateWithKey {
     // The verification key, used downstream against the signed timestamp to verify the sender.
@@ -265,16 +321,16 @@ pub struct AuthenticateWithKey {
     signature: Vec<u8>,
 }
 
-// This message is used to authenticate the client to a server. It contains the permit
-// issued by the marshal.
+/// This message is used to authenticate the client to a server. It contains the permit
+/// issued by the marshal.
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateWithPermit {
     // The permit issued by the marshal, if applicable.
     permit: u64,
 }
 
-// This message is sent to the client or broker upon authentication. It contains
-// if it was successful or not, the reason, and the permit, if applicable.
+/// This message is sent to the client or broker upon authentication. It contains
+/// if it was successful or not, the reason, and the permit, if applicable.
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateResponse {
     // The permit. Sent from marshals to clients to verify authentication. Is `0`
@@ -367,18 +423,18 @@ mod test {
 
         // `Broadcast` message
         assert_serialize_deserialize!(Message::Broadcast(Broadcast {
-            topics: vec![Topic::Da, Topic::Global],
+            topics: vec![Topic::DA, Topic::Global],
             message: vec![0, 1, 2],
         }));
 
         // `Subscribe` message
         assert_serialize_deserialize!(Message::Subscribe(Subscribe {
-            topics: vec![Topic::Da, Topic::Global],
+            topics: vec![Topic::DA, Topic::Global],
         }));
 
         // `Unsubscribe` message
         assert_serialize_deserialize!(Message::Unsubscribe(Unsubscribe {
-            topics: vec![Topic::Da, Topic::Global],
+            topics: vec![Topic::DA, Topic::Global],
         }));
     }
 }

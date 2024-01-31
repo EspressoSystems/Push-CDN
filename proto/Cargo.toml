@@ -16,3 +16,4 @@ jf-primitives.workspace = true
 ark-serialize = "0.4.2"
 rand.workspace = true
 parking_lot = "0.12.1"
+url = "2.5.0"

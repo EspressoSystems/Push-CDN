@@ -2,6 +2,8 @@
 //! connection that implements our message framing and connection
 //! logic.
 
+use quinn::Endpoint;
+
 use crate::{
     bail,
     connection::Connection,
@@ -10,7 +12,7 @@ use crate::{
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 /// `Fallible` is a thin wrapper around `quinn::Connection` that implements
 /// `Connection`.
@@ -112,5 +114,55 @@ impl Connection for Fallible {
             Connection,
             "failed to finish stream"
         ))
+    }
+
+    /// Connect to a remote endpoint, returning an instance of `Self`. With QUIC,
+    /// this requires creating an endpoint, binding to it, and then attempting
+    /// a connection.
+    ///
+    /// # Errors
+    /// Errors if we fail to connect or if we fail to bind to the interface we want.
+    async fn connect(remote_endpoint: String) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        // Parse the socket address
+        let remote_address = bail!(
+            remote_endpoint.parse(),
+            Parse,
+            "failed to parse remote endpoint"
+        );
+
+        // Parse host for certificate. We need this to ensure that the
+        // TLS cert matches what the server is providing.
+        let domain_name = bail!(
+            url::Host::parse(&remote_endpoint),
+            Parse,
+            "failed to parse host from remote endpoint"
+        )
+        .to_string();
+
+        // Create QUIC endpoint
+        let endpoint = bail!(
+            Endpoint::client(bail!(
+                "0.0.0.0:0".parse(),
+                Parse,
+                "failed to parse local bind address"
+            )),
+            Connection,
+            "failed to bind to local address"
+        );
+
+        // Connect with QUIC endpoint to remote address
+        Ok(Self(bail!(
+            bail!(
+                endpoint.connect(remote_address, &domain_name),
+                Connection,
+                "failed to connect to remote address"
+            )
+            .await,
+            Connection,
+            "failed to connect to remote address"
+        )))
     }
 }

@@ -4,7 +4,10 @@
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpSocket,
+    },
     sync::Mutex,
 };
 
@@ -15,7 +18,7 @@ use crate::{
     message::Message,
     MAX_MESSAGE_SIZE,
 };
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 /// `Fallible` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
 /// `Connection`.
@@ -101,5 +104,46 @@ impl Connection for Fallible {
         );
 
         Ok(())
+    }
+
+    /// Connect to a remote endpoint, returning an instance of `Self`.
+    /// With TCP, this requires just connecting to the remote endpoint.
+    ///
+    /// # Errors
+    /// Errors if we fail to connect or if we fail to bind to the interface we want.
+    async fn connect(remote_endpoint: String) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        // Parse the socket address
+        let remote_address = bail!(
+            remote_endpoint.parse(),
+            Parse,
+            "failed to parse remote endpoint"
+        );
+
+        // Create a new TCP socket
+        let socket = bail!(
+            TcpSocket::new_v4(),
+            Connection,
+            "failed to bind to local socket"
+        );
+
+        // Connect the stream to the local socket
+        let stream = bail!(
+            socket.connect(remote_address).await,
+            Connection,
+            "failed to connect to remote address"
+        );
+
+        // Split the connection into a `ReadHalf` and `WriteHalf` so we can operate
+        // concurrently over both
+        let (read_half, write_half) = stream.into_split();
+
+        // `Mutex` and `Arc` each side
+        Ok(Self {
+            receiver: Arc::from(Mutex::from(read_half)),
+            sender: Arc::from(Mutex::from(write_half)),
+        })
     }
 }
