@@ -22,7 +22,7 @@ macro_rules! deserialize {
             format!("failed to deserialize topic")
         )
         .into_iter()
-        .map(|topic| topic.unwrap())
+        .filter_map(|topic| topic.ok())
         .collect()
     };
 
