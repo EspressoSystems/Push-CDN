@@ -13,5 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install capnproto
+      - run: cargo fmt
       - run: cargo clippy
       - run: cargo test

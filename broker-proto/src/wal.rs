@@ -38,7 +38,7 @@ pub enum Update<V> {
 /// # Example
 /// ```
 /// use broker_proto::wal::LoggedSet;
-/// 
+///
 /// let mut leader = LoggedSet::new();
 /// let mut follower = LoggedSet::new();
 /// // perform operations on the leader
@@ -129,7 +129,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
 
     /// Immutably returns the tail of the logged set.
     /// This way we don't expose the mutable, private `tail`.
-    pub fn tail(&self) -> usize{
+    pub fn tail(&self) -> usize {
         self.tail
     }
 
@@ -152,7 +152,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     /// # Example
     /// ```
     /// use broker_proto::wal::LoggedSet;
-    /// 
+    ///
     /// let mut leader = LoggedSet::new();
     /// let mut follower = LoggedSet::new();
     /// // Perform operations on the leader

@@ -1,7 +1,7 @@
-pub mod wal;
 pub mod connection;
-pub mod message;
 pub mod error;
+pub mod message;
+pub mod wal;
 
 /// Include the built capnp-rust bindings
 pub mod messages_capnp {
