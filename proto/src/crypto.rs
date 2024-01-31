@@ -54,7 +54,7 @@ where
     let mut bytes = Vec::new();
     bail!(
         obj.serialize_uncompressed(&mut bytes),
-        CryptoError,
+        Crypto,
         "failed to serialize key"
     );
 
@@ -74,7 +74,7 @@ where
     // Deserialize the object
     Ok(bail!(
         K::deserialize_uncompressed(bytes),
-        CryptoError,
+        Crypto,
         "failed to deserialize key"
     ))
 }
@@ -92,7 +92,7 @@ pub fn generate_random_keypair<Scheme: SignatureScheme<PublicParameter = ()>>(
     // Generate a key and return it
     Ok(bail!(
         Scheme::key_gen(&(), &mut prng),
-        CryptoError,
+        Crypto,
         "failed to generate keypair"
     ))
 }

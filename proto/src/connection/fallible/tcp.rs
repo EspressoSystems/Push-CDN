@@ -9,7 +9,11 @@ use tokio::{
 };
 
 use crate::{
-    bail, connection::Connection, error::{Error, Result}, message::Message, MAX_MESSAGE_SIZE
+    bail,
+    connection::Connection,
+    error::{Error, Result},
+    message::Message,
+    MAX_MESSAGE_SIZE,
 };
 use std::sync::Arc;
 
@@ -36,12 +40,12 @@ impl Connection for Fallible {
         // Read the message size from the stream
         let message_size = bail!(
             receiver_guard.read_u32().await,
-            ConnectionError,
+            Connection,
             "failed to read message size"
         );
         // Make sure the message isn't too big
         if message_size > MAX_MESSAGE_SIZE {
-            return Err(Error::ConnectionError(
+            return Err(Error::Connection(
                 "expected to receive message that was too big".to_string(),
             ));
         }
@@ -51,14 +55,14 @@ impl Connection for Fallible {
         // Read the message from the stream
         bail!(
             receiver_guard.read_exact(&mut buffer).await,
-            ConnectionError,
+            Connection,
             "failed to receive message from connection"
         );
 
         // Deserialize and return the message
         Ok(bail!(
             Message::deserialize(&buffer),
-            DeserializeError,
+            Deserialize,
             "failed to deserialize message"
         ))
     }
@@ -76,7 +80,7 @@ impl Connection for Fallible {
         // Serialize the message
         let serialized_message = bail!(
             message.serialize(),
-            SerializeError,
+            Serialize,
             "failed to serialize message"
         );
 
@@ -85,14 +89,14 @@ impl Connection for Fallible {
             sender_guard
                 .write_u32(serialized_message.len() as u32)
                 .await,
-            ConnectionError,
+            Connection,
             "failed to send message size"
         );
 
         // Write the message to the stream
         bail!(
             sender_guard.write_all(&serialized_message).await,
-            ConnectionError,
+            Connection,
             "failed to send message"
         );
 

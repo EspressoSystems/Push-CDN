@@ -14,22 +14,22 @@ pub type Result<T> = StdResult<T, Error>;
 pub enum Error {
     /// A generic connection error. Implies the connection is severed and needs to be
     /// reconnected.
-    ConnectionError(String),
+    Connection(String),
     /// A message serialization error. Does not denote connection failure for a client,
     /// but will not continue sending the message.
-    SerializeError(String),
+    Serialize(String),
     /// A message deserialization error. Implies the connection is severed, warrants a
     /// reconnection.
-    DeserializeError(String),
+    Deserialize(String),
     /// A generic "crypto" error. Usually refers to issues with signing and verifying
     /// messages.
-    CryptoError(String),
+    Crypto(String),
     /// An error occurred while authenticating with the server.
-    AuthenticationError(String),
+    Authentication(String),
     /// A generic parsing-related error. An example is a failed parse of a socket address.
-    ParseError(String),
+    Parse(String),
     /// A file-related (either read or write) error. An example is a failed read of a certificate file.
-    FileError(String),
+    File(String),
 }
 
 #[macro_export]

@@ -41,7 +41,7 @@ pub enum Update<V> {
 ///
 /// # Example
 /// ```
-/// use broker_proto::wal::LoggedSet;
+/// use proto::wal::LoggedSet;
 ///
 /// let mut leader = LoggedSet::new();
 /// let mut follower = LoggedSet::new();
@@ -155,7 +155,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     ///
     /// # Example
     /// ```
-    /// use broker_proto::wal::LoggedSet;
+    /// use proto::wal::LoggedSet;
     ///
     /// let mut leader = LoggedSet::new();
     /// let mut follower = LoggedSet::new();

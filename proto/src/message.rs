@@ -22,7 +22,7 @@ macro_rules! deserialize {
     ($func_name:expr, Topic) => {
         bail!(
             $func_name,
-            DeserializeError,
+            Deserialize,
             format!("failed to deserialize topic")
         )
         .into_iter()
@@ -34,7 +34,7 @@ macro_rules! deserialize {
     ($func_name:expr, Vec<u8>) => {
         bail!(
             $func_name,
-            DeserializeError,
+            Deserialize,
             "failed to deserialize Vec<u8>"
         )
         .to_vec()
@@ -43,8 +43,8 @@ macro_rules! deserialize {
     // Rule to deserialize a `String`
     ($func_name:expr, String) => {
         bail!(
-            bail!($func_name, DeserializeError, "failed to deserialize String").to_string(),
-            DeserializeError,
+            bail!($func_name, Deserialize, "failed to deserialize String").to_string(),
+            Deserialize,
             "failed to parse String"
         )
     };
@@ -98,7 +98,7 @@ impl Message {
                 message.set_signature(&to_serialize.signature);
                 bail!(
                     message.set_subscribed_topics(&*to_serialize.subscribed_topics),
-                    SerializeError,
+                    Serialize,
                     "failed to serialize subscribed topics"
                 );
             }
@@ -120,7 +120,7 @@ impl Message {
                 // Set each field
                 bail!(
                     message.set_topics(&*to_serialize.topics),
-                    SerializeError,
+                    Serialize,
                     "failed to serialize topics"
                 );
                 message.set_message(&to_serialize.message);
@@ -142,7 +142,7 @@ impl Message {
                 // Set each field
                 bail!(
                     message.set_topics(&*to_serialize.topics),
-                    SerializeError,
+                    Serialize,
                     "failed to serialize topics"
                 );
             }
@@ -154,7 +154,7 @@ impl Message {
                 // Set each field
                 bail!(
                     message.set_topics(&*to_serialize.topics),
-                    SerializeError,
+                    Serialize,
                     "failed to serialize topics"
                 );
             }
@@ -173,22 +173,22 @@ impl Message {
         // Create reader
         let reader = bail!(
             serialize::read_message(bytes, ReaderOptions::new()),
-            DeserializeError,
+            Deserialize,
             "failed to create reader"
         );
 
         // Deserialize message from reader
         let message = bail!(
             reader.get_root::<messages_capnp::message::Reader>(),
-            DeserializeError,
+            Deserialize,
             "failed to deserialize message"
         );
 
         // Switch based on which message we see
         Ok(
-            match bail!(message.which(), DeserializeError, "message not in schema") {
+            match bail!(message.which(), Deserialize, "message not in schema") {
                 messages_capnp::message::Authenticate(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Authenticate(Authenticate {
                         verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
@@ -198,7 +198,7 @@ impl Message {
                     })
                 }
                 messages_capnp::message::AuthenticateResponse(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::AuthenticateResponse(AuthenticateResponse {
                         success: deserialize!(message.get_success()),
@@ -206,7 +206,7 @@ impl Message {
                     })
                 }
                 messages_capnp::message::Direct(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Direct(Direct {
                         recipient: deserialize!(message.get_recipient(), Vec<u8>),
@@ -214,7 +214,7 @@ impl Message {
                     })
                 }
                 messages_capnp::message::Broadcast(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Broadcast(Broadcast {
                         topics: deserialize!(message.get_topics(), Topic),
@@ -222,14 +222,14 @@ impl Message {
                     })
                 }
                 messages_capnp::message::Subscribe(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Subscribe(Subscribe {
                         topics: deserialize!(message.get_topics(), Topic),
                     })
                 }
                 messages_capnp::message::Unsubscribe(maybe_message) => {
-                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
+                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Unsubscribe(Unsubscribe {
                         topics: deserialize!(message.get_topics(), Topic),

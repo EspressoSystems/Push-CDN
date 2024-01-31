@@ -3,7 +3,11 @@
 //! logic.
 
 use crate::{
-    bail, connection::Connection, error::{Error, Result}, message::Message, MAX_MESSAGE_SIZE
+    bail,
+    connection::Connection,
+    error::{Error, Result},
+    message::Message,
+    MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
 use std::sync::Arc;
@@ -54,21 +58,21 @@ impl Connection for Fallible {
         // Accept the incoming unidirectional stream
         let mut stream = bail!(
             self.0.accept_uni().await,
-            ConnectionError,
+            Connection,
             "failed to accept unidirectional stream"
         );
 
         // Read the full message, until the sender closes the stream
         let message_bytes = bail!(
             stream.read_to_end(MAX_MESSAGE_SIZE as usize).await,
-            ConnectionError,
+            Connection,
             "failed to read from stream"
         );
 
         // Deserialize and return the message
         Ok(bail!(
             Message::deserialize(&message_bytes),
-            DeserializeError,
+            Deserialize,
             "failed to deserialize message"
         ))
     }
@@ -83,21 +87,21 @@ impl Connection for Fallible {
         // Open the outgoing unidirectional stream
         let mut stream = bail!(
             self.0.open_uni().await,
-            ConnectionError,
+            Connection,
             "failed to open unidirectional stream"
         );
 
         // Serialize the message
         let message_bytes = bail!(
             message.serialize(),
-            SerializeError,
+            Serialize,
             "failed to serialize message"
         );
 
         // Write the full message to the stream
         bail!(
             stream.write_all(&message_bytes).await,
-            ConnectionError,
+            Connection,
             "failed to write to stream"
         );
 
@@ -105,7 +109,7 @@ impl Connection for Fallible {
         // message has been fully written
         Ok(bail!(
             stream.finish().await,
-            ConnectionError,
+            Connection,
             "failed to finish stream"
         ))
     }
