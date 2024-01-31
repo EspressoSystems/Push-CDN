@@ -4,20 +4,25 @@
 # upstream.
 struct Message {
     union {
-        # The wrapper for an `Authenticate` message
-        authenticate @0 :AuthenticateMessage;
-        # The wrapper for an `AuthenticateResponse` message
-        authenticateResponse @1 :AuthenticateResponseMessage;
+        # The wrapper for an `MarshalAuthenticate` message
+        marshalAuthenticate @0 :MarshalAuthenticateMessage;
+        # The wrapper for an `MarshalAuthenticateResponse` message
+        marshalAuthenticateResponse @1 :MarshalAuthenticateResponseMessage;
+
+        # The wrapper for an `BrokerAuthenticate` message
+        brokerAuthenticate @2 :BrokerAuthenticateMessage;
+        # The wrapper for an `BrokerAuthenticateResponse` message
+        brokerAuthenticateResponse @3 :BrokerAuthenticateResponseMessage;
         
         # The wrapper for a `Direct` message
-        direct @2 :DirectMessage;
+        direct @4 :DirectMessage;
         # The wrapper for a `Broadcast` message
-        broadcast @3 :BroadcastMessage;
+        broadcast @5 :BroadcastMessage;
 
         # The wrapper for a `Subscribe` message
-        subscribe @4 :SubscribeMessage;
+        subscribe @6 :SubscribeMessage;
         # The wrapper for an `Unsubscribe` message
-        unsubscribe @5 :UnsubscribeMessage;
+        unsubscribe @7 :UnsubscribeMessage;
     }
 }
 
@@ -34,22 +39,39 @@ enum Topic {
     da @1;
 }
 
-# This message is sent to the client upon authentication. It contains
-# if it was successful or not, and the reason.
-struct AuthenticateMessage {
+# This message is used to authenticate the client to a marshal. It contains a
+# list of subscriptions, along with a way of proving identity of the sender.
+struct MarshalAuthenticateMessage {
     # The verification key, used downstream against the signed timestamp to verify the sender.
     verificationKey @0: Data;
     # The timestamp, unsigned. This is signed by the client to prevent replay attacks.
     timestamp @1: UInt64;
     # The signature, which is the timestamp, but signed.
     signature @2: Data;
-    # The initial topics to subscribe to on the new connection.
-    subscribedTopics @3: List(Topic);
 }
 
-# This message is sent to the client upon authentication. It contains
+# This message is sent to the client from the marshal upon authentication. It contains
 # if it was successful or not, and the reason.
-struct AuthenticateResponseMessage {
+struct MarshalAuthenticateResponseMessage {
+    # The permit from the marshal that the server uses to verify
+    # identity.
+    permit @0: UInt64;
+    # The reason authentication was unsuccessful, if applicable
+    reason @1: Text;
+}
+
+# This message is used to authenticate the client to a server. It contains a
+# list of subscriptions and the permit issued by the marshal.
+struct BrokerAuthenticateMessage {
+    # The permit issued by the marshal.
+    permit @0: UInt64;
+    # The initial topics to subscribe to on the new connection.
+    subscribedTopics @1: List(Topic);
+}
+
+# This message is sent to the client from the marshal upon authentication. It contains
+# if it was successful or not, and the reason.
+struct BrokerAuthenticateResponseMessage {
     # If authentication was successful or not
     success @0: Bool;
     # The reason authentication was unsuccessful, if applicable

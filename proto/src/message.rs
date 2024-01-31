@@ -11,8 +11,9 @@ use crate::{
     bail,
     error::{Error, Result},
     messages_capnp::{
-        self, authenticate_message, authenticate_response_message, broadcast_message,
-        direct_message, subscribe_message, unsubscribe_message, Topic,
+        self, broadcast_message, broker_authenticate_message, broker_authenticate_response_message,
+        direct_message, marshal_authenticate_message, marshal_authenticate_response_message,
+        subscribe_message, unsubscribe_message, Topic,
     },
 };
 
@@ -32,12 +33,7 @@ macro_rules! deserialize {
 
     // Rule to deserialize a `Vec<u8>`
     ($func_name:expr, Vec<u8>) => {
-        bail!(
-            $func_name,
-            Deserialize,
-            "failed to deserialize Vec<u8>"
-        )
-        .to_vec()
+        bail!($func_name, Deserialize, "failed to deserialize Vec<u8>").to_vec()
     };
 
     // Rule to deserialize a `String`
@@ -59,10 +55,15 @@ macro_rules! deserialize {
 /// downstream. Uses a zero-copy serialization and deserialization framework.
 #[derive(PartialEq, Eq)]
 pub enum Message {
-    /// The wrapper for an `Authenticate` message
-    Authenticate(Authenticate),
-    /// The wrapper for an `AuthenticateResponse` message
-    AuthenticateResponse(AuthenticateResponse),
+    /// The wrapper for a `MarshalAuthenticate` message
+    MarshalAuthenticate(MarshalAuthenticate),
+    /// The wrapper for a `MarshalAuthenticateResponse` message
+    MarshalAuthenticateResponse(MarshalAuthenticateResponse),
+
+    /// The wrapper for an `BrokerAuthenticate` message
+    BrokerAuthenticate(BrokerAuthenticate),
+    /// The wrapper for an `BrokerAuthenticateResponse` message
+    BrokerAuthenticateResponse(BrokerAuthenticateResponse),
 
     /// The wrapper for a `Direct` message
     Direct(Direct),
@@ -88,14 +89,35 @@ impl Message {
 
         // Conditional logic based on what kind of message we passed in
         match self {
-            Self::Authenticate(to_serialize) => {
+            Self::MarshalAuthenticate(to_serialize) => {
                 // Initialize a new `Authenticate` message.
-                let mut message: authenticate_message::Builder = root.init_authenticate();
+                let mut message: marshal_authenticate_message::Builder =
+                    root.init_marshal_authenticate();
 
                 // Set each field
                 message.set_verification_key(&to_serialize.verification_key);
                 message.set_timestamp(to_serialize.timestamp);
                 message.set_signature(&to_serialize.signature);
+            }
+
+            Self::MarshalAuthenticateResponse(to_serialize) => {
+                // Initialize a new `AuthenticateResponse` message.
+                let mut message: marshal_authenticate_response_message::Builder =
+                    root.init_marshal_authenticate_response();
+
+                // Set each field
+                // Permit is zero if we failed
+                message.set_permit(to_serialize.permit.unwrap_or_default());
+                message.set_reason(to_serialize.reason.clone());
+            }
+
+            Self::BrokerAuthenticate(to_serialize) => {
+                // Initialize a new `Authenticate` message.
+                let mut message: broker_authenticate_message::Builder =
+                    root.init_broker_authenticate();
+
+                // Set each field
+                message.set_permit(to_serialize.permit);
                 bail!(
                     message.set_subscribed_topics(&*to_serialize.subscribed_topics),
                     Serialize,
@@ -103,10 +125,10 @@ impl Message {
                 );
             }
 
-            Self::AuthenticateResponse(to_serialize) => {
+            Self::BrokerAuthenticateResponse(to_serialize) => {
                 // Initialize a new `AuthenticateResponse` message.
-                let mut message: authenticate_response_message::Builder =
-                    root.init_authenticate_response();
+                let mut message: broker_authenticate_response_message::Builder =
+                    root.init_broker_authenticate_response();
 
                 // Set each field
                 message.set_success(to_serialize.success);
@@ -187,26 +209,51 @@ impl Message {
         // Switch based on which message we see
         Ok(
             match bail!(message.which(), Deserialize, "message not in schema") {
-                messages_capnp::message::Authenticate(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                messages_capnp::message::MarshalAuthenticate(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::Authenticate(Authenticate {
+                    Self::MarshalAuthenticate(MarshalAuthenticate {
                         verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
                         timestamp: deserialize!(message.get_timestamp()),
                         signature: deserialize!(message.get_signature(), Vec<u8>),
+                    })
+                }
+                messages_capnp::message::MarshalAuthenticateResponse(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
+
+                    // Zero means failed authentication
+                    let permit = (|permit| if permit == 0 { None } else { Some(permit) })(
+                        message.get_permit(),
+                    );
+
+                    Self::MarshalAuthenticateResponse(MarshalAuthenticateResponse {
+                        permit,
+                        reason: deserialize!(message.get_reason(), String),
+                    })
+                }
+                messages_capnp::message::BrokerAuthenticate(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
+
+                    Self::BrokerAuthenticate(BrokerAuthenticate {
+                        permit: deserialize!(message.get_permit()),
                         subscribed_topics: deserialize!(message.get_subscribed_topics(), Topic),
                     })
                 }
-                messages_capnp::message::AuthenticateResponse(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                messages_capnp::message::BrokerAuthenticateResponse(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::AuthenticateResponse(AuthenticateResponse {
+                    Self::BrokerAuthenticateResponse(BrokerAuthenticateResponse {
                         success: deserialize!(message.get_success()),
                         reason: deserialize!(message.get_reason(), String),
                     })
                 }
                 messages_capnp::message::Direct(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Direct(Direct {
                         recipient: deserialize!(message.get_recipient(), Vec<u8>),
@@ -214,7 +261,8 @@ impl Message {
                     })
                 }
                 messages_capnp::message::Broadcast(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Broadcast(Broadcast {
                         topics: deserialize!(message.get_topics(), Topic),
@@ -222,14 +270,16 @@ impl Message {
                     })
                 }
                 messages_capnp::message::Subscribe(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Subscribe(Subscribe {
                         topics: deserialize!(message.get_topics(), Topic),
                     })
                 }
                 messages_capnp::message::Unsubscribe(maybe_message) => {
-                    let message = bail!(maybe_message, Deserialize, "failed to deserialize message");
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::Unsubscribe(Unsubscribe {
                         topics: deserialize!(message.get_topics(), Topic),
@@ -240,24 +290,43 @@ impl Message {
     }
 }
 
-/// This message is used to authenticate the client to a server. It contains a
+/// This message is used to authenticate the client to a marshal. It contains a
 /// list of subscriptions, along with a way of proving identity of the sender.
 #[derive(PartialEq, Eq)]
-pub struct Authenticate {
+pub struct MarshalAuthenticate {
     /// The verification key, used downstream against the signed timestamp to verify the sender.
     pub verification_key: Vec<u8>,
     /// The timestamp, unsigned. This is signed by the client to prevent replay attacks.
     pub timestamp: u64,
     /// The signature, which is the timestamp, but signed.
     pub signature: Vec<u8>,
+}
+
+/// This message is sent to the client from the marshal upon authentication. It contains
+/// if it was successful or not, and the reason.
+#[derive(PartialEq, Eq)]
+pub struct MarshalAuthenticateResponse {
+    /// The permit from the marshal that the server uses to verify
+    /// identity.
+    pub permit: Option<u64>,
+    /// The reason authentication was unsuccessful, if applicable
+    pub reason: String,
+}
+
+/// This message is used to authenticate the client to a server. It contains a
+/// list of subscriptions and the permit issued by the marshal.
+#[derive(PartialEq, Eq)]
+pub struct BrokerAuthenticate {
+    /// The permit issued by the marshal.
+    pub permit: u64,
     /// The initial topics to subscribe to on the new connection.
     pub subscribed_topics: Vec<Topic>,
 }
 
-/// This message is sent to the client upon authentication. It contains
+/// This message is sent to the client from the marshal upon authentication. It contains
 /// if it was successful or not, and the reason.
 #[derive(PartialEq, Eq)]
-pub struct AuthenticateResponse {
+pub struct BrokerAuthenticateResponse {
     /// If authentication was successful or not
     pub success: bool,
     /// The reason authentication was unsuccessful, if applicable
@@ -321,19 +390,42 @@ mod test {
 
     #[test]
     fn test_serialization_parity() {
-        // `Authenticate`  message
-        assert_serialize_deserialize!(Message::Authenticate(Authenticate {
+        // `MarshalAuthenticate`  message
+        assert_serialize_deserialize!(Message::MarshalAuthenticate(MarshalAuthenticate {
             verification_key: vec![0, 1, 2],
             timestamp: 345,
             signature: vec![6, 7, 8],
-            subscribed_topics: vec![Topic::Da],
         }));
 
-        // `AuthenticateResponse` message
-        assert_serialize_deserialize!(Message::AuthenticateResponse(AuthenticateResponse {
-            success: true,
-            reason: "1234".to_string(),
+        // `MarshalAuthenticateResponse` message
+        assert_serialize_deserialize!(Message::MarshalAuthenticateResponse(
+            MarshalAuthenticateResponse {
+                permit: Some(1234),
+                reason: "1234".to_string(),
+            }
+        ));
+
+        // `MarshalAuthenticateResponse` message with failed permit
+        assert_serialize_deserialize!(Message::MarshalAuthenticateResponse(
+            MarshalAuthenticateResponse {
+                permit: None,
+                reason: "5678".to_string(),
+            }
+        ));
+
+        // `BrokerAuthenticate`  message
+        assert_serialize_deserialize!(Message::BrokerAuthenticate(BrokerAuthenticate {
+            permit: 1234,
+            subscribed_topics: vec![Topic::Da, Topic::Global]
         }));
+
+        // `BrokerAuthenticateResponse` message
+        assert_serialize_deserialize!(Message::BrokerAuthenticateResponse(
+            BrokerAuthenticateResponse {
+                success: true,
+                reason: "1234".to_string(),
+            }
+        ));
 
         // `Direct` message
         assert_serialize_deserialize!(Message::Direct(Direct {
