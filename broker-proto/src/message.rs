@@ -1,3 +1,6 @@
+/// The message serialization and deserialization layer. Used by all
+/// messages sent to/from a broker or user.
+/// TODO: clean up. Maybe use Cap'n'Proto messages directly.
 use capnp::{
     message::ReaderOptions,
     serialize::{self, write_message_segments_to_words},
@@ -53,7 +56,7 @@ macro_rules! deserialize {
 }
 /// A wrapper for all message types. Allows us to match on a specific message type
 /// downstream. Uses a zero-copy serialization and deserialization framework.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum Message {
     /// The wrapper for an `Authenticate` message
     Authenticate(Authenticate),
@@ -84,7 +87,7 @@ impl Message {
 
         // Conditional logic based on what kind of message we passed in
         match self {
-            Message::Authenticate(to_serialize) => {
+            Self::Authenticate(to_serialize) => {
                 // Initialize a new `Authenticate` message.
                 let mut message: authenticate_message::Builder = root.init_authenticate();
 
@@ -99,7 +102,7 @@ impl Message {
                 );
             }
 
-            Message::AuthenticateResponse(to_serialize) => {
+            Self::AuthenticateResponse(to_serialize) => {
                 // Initialize a new `AuthenticateResponse` message.
                 let mut message: authenticate_response_message::Builder =
                     root.init_authenticate_response();
@@ -109,7 +112,7 @@ impl Message {
                 message.set_reason(to_serialize.reason.clone());
             }
 
-            Message::Broadcast(to_serialize) => {
+            Self::Broadcast(to_serialize) => {
                 // Initialize a new `Broadcast` message.
                 let mut message: broadcast_message::Builder = root.init_broadcast();
 
@@ -122,7 +125,7 @@ impl Message {
                 message.set_message(&to_serialize.message);
             }
 
-            Message::Direct(to_serialize) => {
+            Self::Direct(to_serialize) => {
                 // Initialize a new `Direct` message.
                 let mut message: direct_message::Builder = root.init_direct();
 
@@ -131,7 +134,7 @@ impl Message {
                 message.set_message(&to_serialize.message);
             }
 
-            Message::Subscribe(to_serialize) => {
+            Self::Subscribe(to_serialize) => {
                 // Initialize a new `Subscribe` message.
                 let mut message: subscribe_message::Builder = root.init_subscribe();
 
@@ -143,7 +146,7 @@ impl Message {
                 );
             }
 
-            Message::Unsubscribe(to_serialize) => {
+            Self::Unsubscribe(to_serialize) => {
                 // Initialize a new `Subscribe` message.
                 let mut message: unsubscribe_message::Builder = root.init_unsubscribe();
 
@@ -183,8 +186,8 @@ impl Message {
         // Switch based on which message we see
         Ok(
             match bail!(message.which(), DeserializeError, "message not in schema") {
-                messages_capnp::message::Authenticate(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::Authenticate(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::Authenticate(Authenticate {
                         verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
@@ -193,39 +196,39 @@ impl Message {
                         subscribed_topics: deserialize!(message.get_subscribed_topics(), Topic),
                     })
                 }
-                messages_capnp::message::AuthenticateResponse(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::AuthenticateResponse(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::AuthenticateResponse(AuthenticateResponse {
                         success: deserialize!(message.get_success()),
                         reason: deserialize!(message.get_reason(), String),
                     })
                 }
-                messages_capnp::message::Direct(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::Direct(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::Direct(Direct {
                         recipient: deserialize!(message.get_recipient(), Vec<u8>),
                         message: deserialize!(message.get_message(), Vec<u8>),
                     })
                 }
-                messages_capnp::message::Broadcast(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::Broadcast(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::Broadcast(Broadcast {
                         topics: deserialize!(message.get_topics(), Topic),
                         message: deserialize!(message.get_message(), Vec<u8>),
                     })
                 }
-                messages_capnp::message::Subscribe(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::Subscribe(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::Subscribe(Subscribe {
                         topics: deserialize!(message.get_topics(), Topic),
                     })
                 }
-                messages_capnp::message::Unsubscribe(message) => {
-                    let message = bail!(message, DeserializeError, "failed to deserialize message");
+                messages_capnp::message::Unsubscribe(maybe_message) => {
+                    let message = bail!(maybe_message, DeserializeError, "failed to deserialize message");
 
                     Self::Unsubscribe(Unsubscribe {
                         topics: deserialize!(message.get_topics(), Topic),
@@ -238,7 +241,7 @@ impl Message {
 
 /// This message is used to authenticate the client to a server. It contains a
 /// list of subscriptions, along with a way of proving identity of the sender.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct Authenticate {
     /// The verification key, used downstream against the signed timestamp to verify the sender.
     pub verification_key: Vec<u8>,
@@ -252,7 +255,7 @@ pub struct Authenticate {
 
 /// This message is sent to the client upon authentication. It contains
 /// if it was successful or not, and the reason.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct AuthenticateResponse {
     /// If authentication was successful or not
     pub success: bool,
@@ -262,7 +265,7 @@ pub struct AuthenticateResponse {
 
 /// This message is a direct message. It is sent by a client, used to deliver a
 /// message to only the intended recipient.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct Direct {
     // The recipient to send the message to
     pub recipient: Vec<u8>,
@@ -273,7 +276,7 @@ pub struct Direct {
 /// This message is a broadcast message. It is sent by a client, used to deliver a
 /// message to all recipients who are interested in a topic. Uses the passed
 /// vector of topics to denote interest.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct Broadcast {
     // The topics to sent the message to
     pub topics: Vec<Topic>,
@@ -282,14 +285,14 @@ pub struct Broadcast {
 }
 
 /// A message that is used to convey interest in some particular topic(s).
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct Subscribe {
     // The topics interested in
     pub topics: Vec<Topic>,
 }
 
 /// A message that is used to convey disinterest in some particular topic(s).
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct Unsubscribe {
     // The topics uninterested in
     pub topics: Vec<Topic>,

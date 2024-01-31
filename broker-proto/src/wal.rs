@@ -51,13 +51,13 @@ pub enum Update<V> {
 /// ```
 #[derive(Default, Clone)]
 pub struct LoggedSet<V: Ord + Clone + Default + Hash> {
-    // The tail of the set. this refers to the latest (not yet seen) log
+    /// The tail of the set. this refers to the latest (not yet seen) log
     tail: usize,
-    // The head of the set, meaning: the index of the oldest log we have
+    /// The head of the set, meaning: the index of the oldest log we have
     head: usize,
-    // The underlying set that we are logging on top of
+    /// The underlying set that we are logging on top of
     set: HashSet<V>,
-    // A `VecDeque` of logs which we conditionally pull from or apply to.
+    /// A `VecDeque` of logs which we conditionally pull from or apply to.
     logs: VecDeque<Log<V>>,
 }
 
@@ -71,7 +71,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     /// to inserting an element into a `HashSet`.
     pub fn insert(&mut self, val: V) {
         if !self.set.contains(&val) {
-            self.perform(Log::Insert(val))
+            self.perform(Log::Insert(val));
         }
     }
 
@@ -79,7 +79,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
     /// to removing an element from a `HashSet`.
     pub fn remove(&mut self, val: &V) {
         if self.set.contains(val) {
-            self.perform(Log::Remove(val.clone()))
+            self.perform(Log::Remove(val.clone()));
         }
     }
 
@@ -129,7 +129,7 @@ impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
 
     /// Immutably returns the tail of the logged set.
     /// This way we don't expose the mutable, private `tail`.
-    pub fn tail(&self) -> usize {
+    pub const fn tail(&self) -> usize {
         self.tail
     }
 
