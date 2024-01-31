@@ -1,10 +1,10 @@
 //! This crate defines the common code structures and constants used by both the
 //! broker client and server.
 
-mod connection;
-mod crypto;
-mod error;
-mod message;
+pub mod connection;
+pub mod crypto;
+pub mod error;
+pub mod message;
 pub mod wal;
 
 /// Common constants used in both the client and server

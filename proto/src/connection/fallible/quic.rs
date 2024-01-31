@@ -12,7 +12,7 @@ use crate::{
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 /// `Fallible` is a thin wrapper around `quinn::Connection` that implements
 /// `Connection`.

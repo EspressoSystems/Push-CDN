@@ -18,7 +18,7 @@ use crate::{
     message::Message,
     MAX_MESSAGE_SIZE,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 /// `Fallible` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
 /// `Connection`.

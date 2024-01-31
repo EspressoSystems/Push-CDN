@@ -6,3 +6,7 @@ edition = "2021"
 description = "Defines client interactions for both marshals and brokers"
 
 [dependencies]
+jf-primitives.workspace = true
+proto.path = "../proto"
+ark-serialize.workspace = true
+tokio.workspace = true

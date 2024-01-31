@@ -455,6 +455,12 @@ dependencies = [
 [[package]]
 name = "client"
 version = "0.1.0"
+dependencies = [
+ "ark-serialize",
+ "jf-primitives",
+ "proto",
+ "tokio",
+]
 
 [[package]]
 name = "core-foundation"

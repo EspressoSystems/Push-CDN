@@ -1,17 +1,17 @@
 //! This file provides a `Sticky` connection, which allows for reconnections
 //! on top of a normal implementation of a `Fallible` connection.
 
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-    sync::{atomic::AtomicUsize, Arc},
-};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use parking_lot::Mutex;
 use tokio::sync::{OnceCell, RwLock};
 
-use crate::{error::Result, message::Topic};
+use crate::{
+    bail,
+    error::{Error, Result},
+    message::{Message, Topic},
+};
 
 use super::Connection as ProtoConnection;
 
@@ -81,7 +81,7 @@ pub struct Config<SignatureScheme: JfSignatureScheme, Connection: ProtoConnectio
     /// The authentication flow that is followed when connecting. Uses the `SocketAddr`
     /// as the endpoint for the connection. Takes the signing and verification keys
     /// in case they are needed.
-    auth_flow: fn(
+    pub auth_flow: fn(
         SocketAddr,
         Connection,
         SignatureScheme::SigningKey,
@@ -125,5 +125,69 @@ impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
                 auth_flow,
             }),
         })
+    }
+
+    /// Sends a message to the underlying fallible connection. Retry logic is handled in
+    /// the macro `retry_on_error` where it is conditionally propagated
+    /// to `wait_connect()`.
+    pub async fn send_message(&self, message: Arc<Message>) -> Result<()> {
+        // TODO: check if this makes sense to bail, or can we just return
+        // the downstream error
+
+        // TODO: clean up clean up, possible macro !!!!
+        // we did this because there is a temporary borrowed value, but there HAS
+        // to be a better way.
+        // bail!(
+        //     bail!(
+        //         self.inner
+        //             .connection
+        //             .read()
+        //             .await
+        //             .get_or_try_init(|| async {
+        //                 Connection::connect(self.inner.remote_address.clone()).await
+        //             })
+        //             .await,
+        //         Connection,
+        //         "failed to connect"
+        //     )
+        //     .send_message(message)
+        //     .await,
+        //     Connection,
+        //     "failed to send message"
+        // );
+
+        todo!();
+
+        Ok(())
+    }
+
+    /// Receives a  message to the underlying fallible connection. Retry
+    /// logic is handled in the macro `retry_on_error` where it is conditionally propagated
+    /// to `wait_connect()`.
+    pub async fn receive_message(&self) -> Result<Message> {
+        // TODO: check if this makes sense to bail, or can we just return
+        // the downstream error
+
+        // TODO: clean up clean up !!!!
+        // possible macro
+        //     Ok(bail!(
+        //         bail!(
+        //             self.inner
+        //                 .connection
+        //                 .read()
+        //                 .await
+        //                 .get_or_try_init(|| async {
+        //                     Connection::connect(self.inner.remote_address.clone()).await
+        //                 })
+        //                 .await,
+        //             Connection,
+        //             "failed to connect"
+        //         )
+        //         .recv_message()
+        //         .await,
+        //         Connection,
+        //         "failed to send message"
+        //     ))
+        todo!();
     }
 }
