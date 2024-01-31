@@ -12,6 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get install capnproto
+      - run: sudo apt-get install capnproto
       - run: cargo clippy
       - run: cargo test
