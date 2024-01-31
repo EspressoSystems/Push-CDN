@@ -2,3 +2,5 @@
 resolver = "2"
 members = ["broker-proto", "broker", "broker-client"]
 
+[workspace.dependencies]
+tokio = { version = "1.35.1", features = ["full"] }

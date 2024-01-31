@@ -1,6 +1,6 @@
-/// The message serialization and deserialization layer. Used by all
-/// messages sent to/from a broker or user.
-/// TODO: clean up. Maybe use Cap'n'Proto messages directly.
+//! The message serialization and deserialization layer. Used by all
+//! messages sent to/from a broker or user.
+//! TODO: clean up. Maybe use Cap'n'Proto messages directly.
 
 use capnp::{
     message::ReaderOptions,

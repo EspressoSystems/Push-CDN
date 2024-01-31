@@ -1,4 +1,4 @@
-/// This file defines common errors used by CDN clients and servers.
+//! This file defines common errors used by CDN clients and servers.
 
 use core::result::Result as StdResult;
 use thiserror::Error;
