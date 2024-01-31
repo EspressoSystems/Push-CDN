@@ -9,14 +9,9 @@ use tokio::{
 };
 
 use crate::{
-    bail,
-    error::{Error, Result},
-    message::Message,
-    MAX_MESSAGE_SIZE,
+    bail, connection::Connection, error::{Error, Result}, message::Message, MAX_MESSAGE_SIZE
 };
 use std::sync::Arc;
-
-use super::Connection;
 
 /// `Fallible` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
 /// `Connection`.

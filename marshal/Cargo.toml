@@ -1,0 +1,8 @@
+[package]
+name = "marshal"
+version = "0.1.0"
+edition = "2021"
+
+description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
+
+[dependencies]

@@ -1,0 +1,17 @@
+[package]
+name = "proto"
+version = "0.1.0"
+edition = "2021"
+description = "Contains the common protocol definition and common code for the broker, client, and marshal"
+
+[build-dependencies]
+capnpc = "0.19.0"
+
+[dependencies]
+capnp = "0.19.1"
+thiserror = "1.0.56"
+quinn = "0.10.2"
+tokio.workspace = true
+jf-primitives.workspace = true
+ark-serialize = "0.4.2"
+rand.workspace = true

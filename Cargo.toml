@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["broker-proto", "broker", "broker-client"]
+members = ["proto", "broker", "marshal", "client"]
+
+package.description = "The PushCDN is a distributed, scalable, and fault-tolerant pub/sub messaging system"
 
 [workspace.dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
+jf-primitives.git = "https://github.com/EspressoSystems/jellyfish.git"
+rand = "0.8.5"
