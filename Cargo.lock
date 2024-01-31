@@ -367,10 +367,6 @@ name = "broker"
 version = "0.1.0"
 
 [[package]]
-name = "broker-client"
-version = "0.1.0"
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -455,6 +451,10 @@ dependencies = [
  "inout",
  "zeroize",
 ]
+
+[[package]]
+name = "client"
+version = "0.1.0"
 
 [[package]]
 name = "core-foundation"
