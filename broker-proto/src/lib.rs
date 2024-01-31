@@ -1,3 +1,6 @@
+/// This crate defines the common code structures used by both the
+/// broker client and server.
+
 pub mod connection;
 pub mod error;
 pub mod message;

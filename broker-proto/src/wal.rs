@@ -1,3 +1,7 @@
+/// This file defines a write-ahead log that we use for broker <-> broker replication.
+/// It does not write to disk, but contains the primitive that allows us to
+/// catch up from a snapshot or from a list of logs.
+
 use std::{
     collections::{HashSet, VecDeque},
     hash::Hash,
