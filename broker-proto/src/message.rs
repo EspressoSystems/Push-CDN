@@ -12,7 +12,9 @@ use crate::{
     },
 };
 
+/// This is a helper macro for deserializing `CapnProto` values.
 macro_rules! deserialize {
+    // Rule to deserialize a `Topic`. We need to unwrap quite a few times.
     ($func_name:expr, Topic) => {
         bail!(
             $func_name,
@@ -24,6 +26,7 @@ macro_rules! deserialize {
         .collect()
     };
 
+    // Rule to deserialize a `Vec<u8>`
     ($func_name:expr, Vec<u8>) => {
         bail!(
             $func_name,
@@ -33,6 +36,7 @@ macro_rules! deserialize {
         .to_vec()
     };
 
+    // Rule to deserialize a `String`
     ($func_name:expr, String) => {
         bail!(
             bail!($func_name, DeserializeError, "failed to deserialize String").to_string(),
@@ -41,6 +45,8 @@ macro_rules! deserialize {
         )
     };
 
+    // A rule for prettiness that just returns the value.
+    // Helpful in the case it is a `bool` or similar primitive
     ($func_name:expr) => {
         $func_name
     };
@@ -179,6 +185,7 @@ impl Message {
             match bail!(message.which(), DeserializeError, "message not in schema") {
                 messages_capnp::message::Authenticate(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
+
                     Self::Authenticate(Authenticate {
                         verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
                         timestamp: deserialize!(message.get_timestamp()),
@@ -188,6 +195,7 @@ impl Message {
                 }
                 messages_capnp::message::AuthenticateResponse(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
+
                     Self::AuthenticateResponse(AuthenticateResponse {
                         success: deserialize!(message.get_success()),
                         reason: deserialize!(message.get_reason(), String),
@@ -195,6 +203,7 @@ impl Message {
                 }
                 messages_capnp::message::Direct(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
+
                     Self::Direct(Direct {
                         recipient: deserialize!(message.get_recipient(), Vec<u8>),
                         message: deserialize!(message.get_message(), Vec<u8>),
@@ -291,108 +300,57 @@ pub struct Unsubscribe {
 mod test {
     use super::*;
 
+    // A macro that tests if a message, once serialized and then deserialized again,
+    // is equivalent to the original message.
+    macro_rules! assert_serialize_deserialize {
+        ($message:expr) => {
+            // Serialize message
+            let serialized_message = $message.serialize().unwrap();
+
+            // Deserialize message
+            let deserialized_message =
+                Message::deserialize(&serialized_message).expect("deserialization failed");
+
+            assert!($message == deserialized_message);
+        };
+    }
+
     #[test]
     fn test_serialization_parity() {
-        // `Authenticate`` message
-        {
-            let original_message = Message::Authenticate(Authenticate {
-                verification_key: vec![0, 1, 2],
-                timestamp: 345,
-                signature: vec![6, 7, 8],
-                subscribed_topics: vec![Topic::Da],
-            });
-
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
-
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
-
-            assert!(original_message == deserialized_message);
-        }
+        // `Authenticate`  message
+        assert_serialize_deserialize!(Message::Authenticate(Authenticate {
+            verification_key: vec![0, 1, 2],
+            timestamp: 345,
+            signature: vec![6, 7, 8],
+            subscribed_topics: vec![Topic::Da],
+        }));
 
         // `AuthenticateResponse` message
-        {
-            let original_message = Message::AuthenticateResponse(AuthenticateResponse {
-                success: true,
-                reason: "1234".to_string(),
-            });
-
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
-
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
-
-            assert!(original_message == deserialized_message)
-        }
+        assert_serialize_deserialize!(Message::AuthenticateResponse(AuthenticateResponse {
+            success: true,
+            reason: "1234".to_string(),
+        }));
 
         // `Direct` message
-        {
-            let original_message = Message::Direct(Direct {
-                recipient: vec![0, 1, 2],
-                message: vec![3, 4, 5],
-            });
+        assert_serialize_deserialize!(Message::Direct(Direct {
+            recipient: vec![0, 1, 2],
+            message: vec![3, 4, 5],
+        }));
 
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
+        // `Broadcast` message
+        assert_serialize_deserialize!(Message::Broadcast(Broadcast {
+            topics: vec![Topic::Da, Topic::Global],
+            message: vec![0, 1, 2],
+        }));
 
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
+        // `Subscribe` message
+        assert_serialize_deserialize!(Message::Subscribe(Subscribe {
+            topics: vec![Topic::Da, Topic::Global],
+        }));
 
-            assert!(original_message == deserialized_message)
-        }
-
-        {
-            // `Broadcast` message
-            let original_message = Message::Broadcast(Broadcast {
-                topics: vec![Topic::Da, Topic::Global],
-                message: vec![0, 1, 2],
-            });
-
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
-
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
-
-            assert!(original_message == deserialized_message)
-        }
-
-        {
-            // `Subscribe` message
-            let original_message = Message::Subscribe(Subscribe {
-                topics: vec![Topic::Da, Topic::Global],
-            });
-
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
-
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
-
-            assert!(original_message == deserialized_message)
-        }
-
-        {
-            // `Unsubscribe` message
-            let original_message = Message::Unsubscribe(Unsubscribe {
-                topics: vec![Topic::Da, Topic::Global],
-            });
-
-            // Serialize message
-            let serialized_message = original_message.serialize().unwrap();
-
-            // Deserialize message
-            let deserialized_message =
-                Message::deserialize(&serialized_message).expect("deserialization failed");
-
-            assert!(original_message == deserialized_message)
-        }
+        // `Unsubscribe` message
+        assert_serialize_deserialize!(Message::Unsubscribe(Unsubscribe {
+            topics: vec![Topic::Da, Topic::Global],
+        }));
     }
 }
