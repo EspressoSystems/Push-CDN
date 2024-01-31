@@ -4,7 +4,7 @@
 mod connection;
 mod error;
 mod message;
-mod wal;
+pub mod wal;
 mod crypto;
 
 /// Common constants used in both the client and server
