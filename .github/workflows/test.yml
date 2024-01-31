@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    runs-on: linux
+    runs-on: ubuntu-latest
     steps:
       - run: cargo clippy
       - run: cargo test
