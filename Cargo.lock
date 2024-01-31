@@ -1045,6 +1045,7 @@ dependencies = [
  "capnp",
  "capnpc",
  "jf-primitives",
+ "parking_lot",
  "quinn",
  "rand",
  "thiserror",

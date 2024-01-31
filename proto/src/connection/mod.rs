@@ -5,7 +5,7 @@ use crate::{error::Result, message::Message};
 pub mod fallible;
 pub mod sticky;
 
-pub trait Connection {
+pub trait Connection{
     /// Receive a single message from the connection.
     ///
     /// # Errors

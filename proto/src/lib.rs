@@ -2,10 +2,10 @@
 //! broker client and server.
 
 mod connection;
+mod crypto;
 mod error;
 mod message;
 pub mod wal;
-mod crypto;
 
 /// Common constants used in both the client and server
 ///
@@ -16,10 +16,6 @@ pub const MAX_MESSAGE_SIZE: u32 = 1024 * 1024 * 1024;
 /// The maximum amount of concurrent QUIC streams (messages) that can be opened.
 /// Having a value that is too high can degrade performance.
 pub const QUIC_MAX_CONCURRENT_STREAMS: u64 = 10;
-
-/// Specifies the number of subsequent operation (message send, authentication, etc)
-/// failures before we try to reconnect to a server.
-pub const SUBSEQUENT_OPERATION_FAILURES_BEFORE_NEXT_RECONNECT: usize = 3;
 
 /// Include the built capnp-rust bindings
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]

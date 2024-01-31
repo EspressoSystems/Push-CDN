@@ -4,25 +4,22 @@
 # upstream.
 struct Message {
     union {
-        # The wrapper for an `MarshalAuthenticate` message
-        marshalAuthenticate @0 :MarshalAuthenticateMessage;
-        # The wrapper for an `MarshalAuthenticateResponse` message
-        marshalAuthenticateResponse @1 :MarshalAuthenticateResponseMessage;
-
-        # The wrapper for an `BrokerAuthenticate` message
-        brokerAuthenticate @2 :BrokerAuthenticateMessage;
-        # The wrapper for an `BrokerAuthenticateResponse` message
-        brokerAuthenticateResponse @3 :BrokerAuthenticateResponseMessage;
+        # The wrapper for an `AuthenticateWithKey` message
+        authenticateWithKey @0 :AuthenticateWithKey;
+        # The wrapper for an `AuthenticateWithPermit` message
+        authenticateWithPermit @1 :AuthenticateWithPermit;
+        # The wrapper for an `AuthenticateWithPermitResponse` message
+        authenticateResponse @2 :AuthenticateResponse;
         
         # The wrapper for a `Direct` message
-        direct @4 :DirectMessage;
+        direct @3 :Direct;
         # The wrapper for a `Broadcast` message
-        broadcast @5 :BroadcastMessage;
+        broadcast @4 :Broadcast;
 
         # The wrapper for a `Subscribe` message
-        subscribe @6 :SubscribeMessage;
+        subscribe @5 :Subscribe;
         # The wrapper for an `Unsubscribe` message
-        unsubscribe @7 :UnsubscribeMessage;
+        unsubscribe @6 :Unsubscribe;
     }
 }
 
@@ -39,9 +36,9 @@ enum Topic {
     da @1;
 }
 
-# This message is used to authenticate the client to a marshal. It contains a
-# list of subscriptions, along with a way of proving identity of the sender.
-struct MarshalAuthenticateMessage {
+# This message is used to authenticate the client to a marshal or a broker
+# to a broker. It contains a way of proving identity of the sender.
+struct AuthenticateWithKey {
     # The verification key, used downstream against the signed timestamp to verify the sender.
     verificationKey @0: Data;
     # The timestamp, unsigned. This is signed by the client to prevent replay attacks.
@@ -50,37 +47,25 @@ struct MarshalAuthenticateMessage {
     signature @2: Data;
 }
 
-# This message is sent to the client from the marshal upon authentication. It contains
-# if it was successful or not, and the reason.
-struct MarshalAuthenticateResponseMessage {
-    # The permit from the marshal that the server uses to verify
-    # identity.
+# This message is used to authenticate the client to a server. It contains the permit
+# issued by the marshal.
+struct AuthenticateWithPermit {
+    # The permit issued by the marshal, if applicable.
     permit @0: UInt64;
-    # The reason authentication was unsuccessful, if applicable
-    reason @1: Text;
 }
 
-# This message is used to authenticate the client to a server. It contains a
-# list of subscriptions and the permit issued by the marshal.
-struct BrokerAuthenticateMessage {
-    # The permit issued by the marshal.
+# This message is sent to the client or broker upon authentication. It contains
+# if it was successful or not, the reason, and the permit, if applicable.
+struct AuthenticateResponse {
+    # The permit. Sent from marshals to clients to verify authentication.
     permit @0: UInt64;
-    # The initial topics to subscribe to on the new connection.
-    subscribedTopics @1: List(Topic);
-}
-
-# This message is sent to the client from the marshal upon authentication. It contains
-# if it was successful or not, and the reason.
-struct BrokerAuthenticateResponseMessage {
-    # If authentication was successful or not
-    success @0: Bool;
     # The reason authentication was unsuccessful, if applicable
     reason @1: Text;
 }
 
 # This message is a direct message. It is sent by a client, used to deliver a
 # message to only the intended recipient.
-struct DirectMessage {
+struct Direct {
     # The recipient of the message
     recipient @0: Data;
     # The actual message data
@@ -90,7 +75,7 @@ struct DirectMessage {
 # This message is a broadcast message. It is sent by a client, used to deliver a
 # message to all recipients who are interested in a topic. Uses the passed
 # vector of topics to denote interest.
-struct BroadcastMessage {
+struct Broadcast {
     # The topics to sent the message to
     topics @0: List(Topic);
     # The actual message data
@@ -98,13 +83,13 @@ struct BroadcastMessage {
 }
 
 # A message that is used to convey interest in some particular topic(s).
-struct SubscribeMessage {
+struct Subscribe {
     # The topics interested in
     topics @0: List(Topic);
 }
 
 # A message that is used to convey disinterest in some particular topic(s).
-struct UnsubscribeMessage {
+struct Unsubscribe {
     # The topics no longer interested in
     topics @0: List(Topic);
 }
