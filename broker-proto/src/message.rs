@@ -1,4 +1,7 @@
-use capnp::{message::ReaderOptions, serialize};
+use capnp::{
+    message::ReaderOptions,
+    serialize::{self, write_message_segments_to_words},
+};
 
 use crate::{
     bail,
@@ -9,6 +12,39 @@ use crate::{
     },
 };
 
+macro_rules! deserialize {
+    ($func_name:expr, Topic) => {
+        bail!(
+            $func_name,
+            DeserializeError,
+            format!("failed to deserialize topic")
+        )
+        .into_iter()
+        .map(|topic| topic.unwrap())
+        .collect()
+    };
+
+    ($func_name:expr, Vec<u8>) => {
+        bail!(
+            $func_name,
+            DeserializeError,
+            "failed to deserialize Vec<u8>"
+        )
+        .to_vec()
+    };
+
+    ($func_name:expr, String) => {
+        bail!(
+            bail!($func_name, DeserializeError, "failed to deserialize String").to_string(),
+            DeserializeError,
+            "failed to parse String"
+        )
+    };
+
+    ($func_name:expr) => {
+        $func_name
+    };
+}
 /// A wrapper for all message types. Allows us to match on a specific message type
 /// downstream. Uses a zero-copy serialization and deserialization framework.
 #[derive(PartialEq)]
@@ -35,7 +71,7 @@ impl Message {
     ///
     /// # Errors
     /// Errors if the downstream serialization fails.
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         // Create a new root message, our message base
         let mut message = capnp::message::Builder::new_default();
         let root: messages_capnp::message::Builder = message.init_root();
@@ -50,7 +86,11 @@ impl Message {
                 message.set_verification_key(&to_serialize.verification_key);
                 message.set_timestamp(to_serialize.timestamp);
                 message.set_signature(&to_serialize.signature);
-                message.set_subscribed_topics(&*to_serialize.subscribed_topics);
+                bail!(
+                    message.set_subscribed_topics(&*to_serialize.subscribed_topics),
+                    SerializeError,
+                    "failed to serialize subscribed topics"
+                );
             }
 
             Message::AuthenticateResponse(to_serialize) => {
@@ -68,7 +108,11 @@ impl Message {
                 let mut message: broadcast_message::Builder = root.init_broadcast();
 
                 // Set each field
-                message.set_topics(&*to_serialize.topics);
+                bail!(
+                    message.set_topics(&*to_serialize.topics),
+                    SerializeError,
+                    "failed to serialize topics"
+                );
                 message.set_message(&to_serialize.message);
             }
 
@@ -86,7 +130,11 @@ impl Message {
                 let mut message: subscribe_message::Builder = root.init_subscribe();
 
                 // Set each field
-                message.set_topics(&*to_serialize.topics);
+                bail!(
+                    message.set_topics(&*to_serialize.topics),
+                    SerializeError,
+                    "failed to serialize topics"
+                );
             }
 
             Message::Unsubscribe(to_serialize) => {
@@ -94,11 +142,15 @@ impl Message {
                 let mut message: unsubscribe_message::Builder = root.init_unsubscribe();
 
                 // Set each field
-                message.set_topics(&*to_serialize.topics);
+                bail!(
+                    message.set_topics(&*to_serialize.topics),
+                    SerializeError,
+                    "failed to serialize topics"
+                );
             }
         }
 
-        serialize::write_message_segments_to_words(&message)
+        Ok(write_message_segments_to_words(&message))
     }
 
     /// `deserialize` is used to deserialize a message. It returns a
@@ -128,108 +180,46 @@ impl Message {
                 messages_capnp::message::Authenticate(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
                     Self::Authenticate(Authenticate {
-                        verification_key: bail!(
-                            message.get_verification_key(),
-                            DeserializeError,
-                            "failed to deserialize verification key"
-                        )
-                        .to_vec(),
-                        timestamp: message.get_timestamp(),
-                        signature: bail!(
-                            message.get_signature(),
-                            DeserializeError,
-                            "failed to deserialize signature key"
-                        )
-                        .to_vec(),
-                        subscribed_topics: bail!(
-                            message.get_subscribed_topics(),
-                            DeserializeError,
-                            "failed to deserialize topics"
-                        )
-                        .into_iter()
-                        .map(|topic| topic.unwrap())
-                        .collect(),
+                        verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
+                        timestamp: deserialize!(message.get_timestamp()),
+                        signature: deserialize!(message.get_signature(), Vec<u8>),
+                        subscribed_topics: deserialize!(message.get_subscribed_topics(), Topic),
                     })
                 }
                 messages_capnp::message::AuthenticateResponse(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
                     Self::AuthenticateResponse(AuthenticateResponse {
-                        success: message.get_success(),
-                        reason: bail!(
-                            bail!(
-                                message.get_reason(),
-                                DeserializeError,
-                                "failed to deserialize reason"
-                            )
-                            .to_string(),
-                            DeserializeError,
-                            "failed to deserialize string"
-                        ),
+                        success: deserialize!(message.get_success()),
+                        reason: deserialize!(message.get_reason(), String),
                     })
                 }
                 messages_capnp::message::Direct(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
                     Self::Direct(Direct {
-                        recipient: bail!(
-                            message.get_recipient(),
-                            DeserializeError,
-                            "failed to deserialize recipient"
-                        )
-                        .to_vec(),
-                        message: bail!(
-                            message.get_message(),
-                            DeserializeError,
-                            "failed to deserialize message"
-                        )
-                        .to_vec(),
+                        recipient: deserialize!(message.get_recipient(), Vec<u8>),
+                        message: deserialize!(message.get_message(), Vec<u8>),
                     })
                 }
                 messages_capnp::message::Broadcast(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
 
                     Self::Broadcast(Broadcast {
-                        topics: bail!(
-                            message.get_topics(),
-                            DeserializeError,
-                            "failed to deserialize topics"
-                        )
-                        .into_iter()
-                        .map(|topic| topic.unwrap())
-                        .collect(),
-                        message: bail!(
-                            message.get_message(),
-                            DeserializeError,
-                            "failed to deserialize message"
-                        )
-                        .to_vec(),
+                        topics: deserialize!(message.get_topics(), Topic),
+                        message: deserialize!(message.get_message(), Vec<u8>),
                     })
                 }
                 messages_capnp::message::Subscribe(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
 
                     Self::Subscribe(Subscribe {
-                        topics: bail!(
-                            message.get_topics(),
-                            DeserializeError,
-                            "failed to deserialize topics"
-                        )
-                        .into_iter()
-                        .map(|topic| topic.unwrap())
-                        .collect(),
+                        topics: deserialize!(message.get_topics(), Topic),
                     })
                 }
                 messages_capnp::message::Unsubscribe(message) => {
                     let message = bail!(message, DeserializeError, "failed to deserialize message");
 
                     Self::Unsubscribe(Unsubscribe {
-                        topics: bail!(
-                            message.get_topics(),
-                            DeserializeError,
-                            "failed to deserialize topics"
-                        )
-                        .into_iter()
-                        .map(|topic| topic.unwrap())
-                        .collect(),
+                        topics: deserialize!(message.get_topics(), Topic),
                     })
                 }
             },
@@ -313,7 +303,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
@@ -330,7 +320,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
@@ -347,7 +337,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
@@ -364,7 +354,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
@@ -380,7 +370,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
@@ -396,7 +386,7 @@ mod test {
             });
 
             // Serialize message
-            let serialized_message = original_message.serialize();
+            let serialized_message = original_message.serialize().unwrap();
 
             // Deserialize message
             let deserialized_message =
