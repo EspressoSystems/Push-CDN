@@ -59,6 +59,7 @@ impl Connection for Tcp {
             Connection,
             "failed to receive message from connection"
         );
+        drop(receiver_guard);
 
         // Deserialize and return the message
         Ok(bail!(
@@ -100,6 +101,7 @@ impl Connection for Tcp {
             Connection,
             "failed to send message"
         );
+        drop(sender_guard);
 
         Ok(())
     }

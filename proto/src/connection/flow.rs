@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// TODO: BIDIRECTIONAL AUTHENTICATION FOR USERS<->BROKERS
-
+/// 
 /// The `Flow` trait implements a connection flow that takes in an endpoint,
 /// signing key, and verification key and returns a connection.
 #[async_trait(?Send)]

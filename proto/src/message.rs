@@ -303,8 +303,8 @@ impl From<messages_capnp::Topic> for Topic {
 impl From<Topic> for messages_capnp::Topic {
     fn from(value: Topic) -> messages_capnp::Topic {
         match value {
-            Topic::Global => messages_capnp::Topic::Global,
-            Topic::DA => messages_capnp::Topic::Da,
+            Topic::Global => Self::Global,
+            Topic::DA => Self::Da,
         }
     }
 }

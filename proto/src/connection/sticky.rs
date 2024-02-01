@@ -152,6 +152,7 @@ macro_rules! try_with_reconnect {
 
                 // Set connection to new connection
                 *write_guard = connection;
+                drop(write_guard);
         }
 
         // If somebody is already trying to reconnect, fail instantly
