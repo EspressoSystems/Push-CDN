@@ -147,7 +147,7 @@ where
 
     /// Sends a pre-formed message over the wire. Various functions make use
     /// of this one downstream.
-    pub async fn send_message_raw<M: AsRef<Message>>(&self, message: M) -> Result<()> {
+    pub async fn send_message_raw(&self, message: Arc<Message>) -> Result<()> {
         self.0.send_message(message).await
     }
 }

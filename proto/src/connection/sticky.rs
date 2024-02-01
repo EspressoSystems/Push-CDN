@@ -5,11 +5,16 @@
 //! and where we can just return. Most of the errors already have
 //! enough context from previous bails.
 
-use std::{collections::HashSet, marker::PhantomData, sync::Arc};
+use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use parking_lot::Mutex;
-use tokio::sync::RwLock;
+use tokio::{
+    spawn,
+    sync::{RwLock, Semaphore},
+    time::sleep,
+};
+use tracing::{error, info};
 
 use crate::{
     bail,
@@ -47,13 +52,6 @@ struct StickyInner<
     /// marshal for it).
     remote_address: String,
 
-    /// A list of topics we are subscribed to. This allows us to, when reconnecting,
-    /// easily provide the list of topics we care about.
-    subscribed_topics: Mutex<HashSet<Topic>>,
-
-    /// The underlying connection, which we modify to facilitate reconnections.
-    connection: RwLock<ConnectionType>,
-
     /// The underlying (public) verification key, used to authenticate with the server. Checked against the stake
     /// table.
     verification_key: SignatureScheme::VerificationKey,
@@ -61,6 +59,17 @@ struct StickyInner<
     /// The underlying (private) signing key, used to sign messages to send to the server during the
     /// authentication phase.
     signing_key: SignatureScheme::SigningKey,
+
+    /// A list of topics we are subscribed to. This allows us to, when reconnecting,
+    /// easily provide the list of topics we care about.
+    subscribed_topics: Mutex<HashSet<Topic>>,
+
+    /// The underlying connection, which we modify to facilitate reconnections.
+    connection: RwLock<ConnectionType>,
+
+    /// The task that runs in the background that reconnects us when we need
+    /// to be. This is so multiple tasks don't try doing it at the same time.
+    pub reconnect_semaphore: Semaphore,
 
     pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
@@ -92,6 +101,62 @@ pub struct Config<
     pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
+/// This is a macro that helps with reconnections when sending
+/// and receiving messages. You can specify the operation and it
+/// will recomnect on the operation's failure, while handling all
+/// reconnection logic and synchronization patterns.
+macro_rules! try_with_reconnect {
+    ($self: expr, $operation: ident,  $($arg:tt)*) => {{
+        // Acquire read guard for sending and receiving messages
+        let read_guard = match $self.inner.connection.try_read(){
+            Ok(read_guard) => read_guard,
+            Err(_) => {
+                return Err(Error::Connection("message failed: reconnectin in progress".to_string()));
+            }
+        };
+
+        // Perform operation, see if it errors
+        match read_guard.$operation($($arg)*).await{
+            Ok(res) => res,
+            Err(err) => {
+
+            // Acquire semaphore. If another task is doing this, just return an error
+            if $self.inner.reconnect_semaphore.try_acquire().is_ok() {
+                // Acquire write guard, drop read guard
+                drop(read_guard);
+                let mut write_guard = $self.inner.connection.write().await;
+
+                // Loop to connect and authenticate
+                let connection = loop {
+                    // Try to connect
+                    match ConnectionFlow::connect(
+                        $self.inner.remote_address.clone(),
+                        &$self.inner.signing_key,
+                        &$self.inner.verification_key,
+                    )
+                    .await
+                    {
+                        Ok(connection) => break connection,
+                        Err(err) => error!("failed to connect to endpoint: {err}. retrying"),
+                    }
+
+                    // Sleep so we don't overload the server
+                    sleep(Duration::from_secs(5)).await;
+                };
+
+                // Set connection to new connection
+                *write_guard = connection;
+        }
+
+        // If somebody is already trying to reconnect, fail instantly
+        return Err(Error::Connection(format!(
+            "connection failed, reconnecting to endpoint: {err}"
+        )));
+    }
+    }
+}};
+}
+
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ConnectionType: Connection,
@@ -121,67 +186,55 @@ impl<
             _pd,
         } = config;
 
-        // Perform the initial connection. This is to validate that we have
-        // correct parameters and all
+        // Perform the initial connection if not provided. This is to validate
+        // that we have correct parameters and all.
+        //
         // TODO: cancel conditionally depending on what kind of error, or retry-
         // based.
-        let connection = bail!(
-            ConnectionFlow::connect(remote_address.clone(), &signing_key, &verification_key).await,
-            Connection,
-            "failed to make initial connection"
-        );
+        //
+        // TODO: clean this up
+        let connection = match maybe_connection {
+            Some(connection) => connection,
+            None => {
+                bail!(
+                    ConnectionFlow::connect(
+                        remote_address.clone(),
+                        &signing_key,
+                        &verification_key
+                    )
+                    .await,
+                    Connection,
+                    "failed to make initial connection"
+                )
+            }
+        };
 
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(StickyInner {
                 remote_address,
+                signing_key,
+                verification_key,
                 subscribed_topics: Mutex::from(HashSet::from_iter(initial_subscribed_topics)),
                 // Use the existing connection
                 connection: RwLock::from(connection),
-                signing_key,
-                verification_key,
+                reconnect_semaphore: Semaphore::const_new(1),
                 _pd,
             }),
         })
     }
 
-    /// Sends a message to the underlying fallible connection. Retry logic is handled in
-    /// the macro `retry_on_error` where it is conditionally propagated
-    /// to `wait_connect()`.
-    pub async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()> {
-        // Acquire the connection from the underlying `Option`
-        let read_guard = self.inner.connection.read().await;
-
-        Ok(())
+    /// Sends a message to the underlying fallible connection. Reconnection logic is here,
+    /// but retry logic needs to be handled by the caller (e.g. re-send messages)
+    pub async fn send_message(&self, message: Arc<Message>) -> Result<()> {
+        // Try to send the message, reconnecting if needed
+        Ok(try_with_reconnect!(self, send_message, message,))
     }
 
-    /// Receives a  message to the underlying fallible connection. Retry
-    /// logic is handled in the macro `retry_on_error` where it is conditionally propagated
-    /// to `wait_connect()`.
+    /// Receives a message from the underlying fallible connection. Reconnection logic is here,
+    /// but retry logic needs to be handled by the caller (e.g. re-receive messages)
     pub async fn receive_message(&self) -> Result<Message> {
-        // TODO: check if this makes sense to bail, or can we just return
-        // the downstream error
-
-        // TODO: clean up clean up !!!!
-        // possible macro
-        //     Ok(bail!(
-        //         bail!(
-        //             self.inner
-        //                 .connection
-        //                 .read()
-        //                 .await
-        //                 .get_or_try_init(|| async {
-        //                     Connection::connect(self.inner.remote_address.clone()).await
-        //                 })
-        //                 .await,
-        //             Connection,
-        //             "failed to connect"
-        //         )
-        //         .recv_message()
-        //         .await,
-        //         Connection,
-        //         "failed to send message"
-        //     ))
-        todo!();
+        // Try to send the message, reconnecting if needed
+        Ok(try_with_reconnect!(self, recv_message,))
     }
 }

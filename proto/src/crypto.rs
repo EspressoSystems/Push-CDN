@@ -9,6 +9,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
 use jf_primitives::signatures::SignatureScheme;
 use rand::{rngs::StdRng, CryptoRng, RngCore, SeedableRng};
+use rcgen::generate_simple_self_signed;
 use rustls::ClientConfig;
 use std::sync::Arc;
 
@@ -135,4 +136,73 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     ) -> StdResult<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
+}
+
+/// Loads or self-signs a certificate and corresponding key based on the
+/// arguments based in. If a path is missing for either the cert or the key,
+/// we assume local operation. In this case, we will self-sign a certificate.
+/// 
+/// TODO: just take local_testing flag and decide whether to self-sign based
+/// on that.
+pub fn load_or_self_sign_tls_certificate_and_key(
+    possible_tls_certificate_path: Option<&'static str>,
+    possible_tls_key_path: Option<&'static str>,
+) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey)> {
+    let (certificate_bytes, key_bytes) = if let (Some(certificate_path), Some(key_path)) =
+        (possible_tls_certificate_path, possible_tls_key_path)
+    {
+        // If we have both paths, we want to load them in
+        // Read cert file in to bytes
+        let encoded_certificate_bytes = bail!(
+            std::fs::read(certificate_path),
+            File,
+            format!("failed to read certificate file {certificate_path}")
+        );
+
+        // Parse cert file as a `.PEM`
+        let certificate_bytes = bail!(
+            pem::parse(encoded_certificate_bytes),
+            Parse,
+            "failed to parse PEM file"
+        )
+        .into_contents();
+
+        // Read key file in to bytes
+        let encoded_key_bytes = bail!(
+            std::fs::read(key_path),
+            File,
+            format!("failed to read key file {key_path}")
+        );
+
+        // Parse key file as a `.PEM`
+        let key_bytes = bail!(
+            pem::parse(encoded_key_bytes),
+            Parse,
+            "failed to parse PEM file"
+        )
+        .into_contents();
+
+        // Return the (serialized) certificate and key bytes
+        (certificate_bytes, key_bytes)
+    }
+    // We don't have one path or the other, so self-sign a certificate instead
+    else {
+        // Generate a cert with the local bind address, if possible˜∫
+        let cert = generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+
+        // Serialize certificate to DER format
+        let certificate_bytes = cert.serialize_der().unwrap();
+
+        // Serialize the key to DER format
+        let key_bytes = cert.serialize_private_key_der();
+
+        // Return the (serialized) certificate and key bytes
+        (certificate_bytes, key_bytes)
+    };
+
+    // Convert to `rustls` types and retrun
+    Ok((
+        vec![rustls::Certificate(certificate_bytes)],
+        rustls::PrivateKey(key_bytes),
+    ))
 }
