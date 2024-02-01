@@ -119,7 +119,7 @@ impl Message {
 
                 // Set each field
                 message.set_permit(to_serialize.permit);
-                message.set_reason(to_serialize.reason.clone());
+                message.set_context(to_serialize.context.clone());
             }
 
             Self::Broadcast(to_serialize) => {
@@ -232,7 +232,7 @@ impl Message {
 
                     Self::AuthenticateResponse(AuthenticateResponse {
                         permit: deserialize!(message.get_permit()),
-                        reason: deserialize!(message.get_reason(), String),
+                        context: deserialize!(message.get_context(), String),
                     })
                 }
                 messages_capnp::message::Direct(maybe_message) => {
@@ -314,11 +314,11 @@ impl From<Topic> for messages_capnp::Topic {
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateWithKey {
     // The verification key, used downstream against the signed timestamp to verify the sender.
-    verification_key: Vec<u8>,
+    pub verification_key: Vec<u8>,
     // The timestamp, unsigned. This is signed by the client to prevent replay attacks.
-    timestamp: u64,
+    pub timestamp: u64,
     // The signature, which is the timestamp, but signed.
-    signature: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 /// This message is used to authenticate the client to a server. It contains the permit
@@ -326,18 +326,19 @@ pub struct AuthenticateWithKey {
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateWithPermit {
     // The permit issued by the marshal, if applicable.
-    permit: u64,
+    pub permit: u64,
 }
 
 /// This message is sent to the client or broker upon authentication. It contains
-/// if it was successful or not, the reason, and the permit, if applicable.
+/// if it was successful or not, the context, and the permit, if applicable.
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateResponse {
     // The permit. Sent from marshals to clients to verify authentication. Is `0`
     // if failed, `1` if successful, and neither if it is an actual permit.
-    permit: u64,
-    // The reason authentication was unsuccessful, if applicable
-    reason: String,
+    pub permit: u64,
+    // The message context. Is an error reason if failed, or the endpoint
+    // address if successful.
+    pub context: String,
 }
 
 /// This message is a direct message. It is sent by a client, used to deliver a
@@ -412,7 +413,7 @@ mod test {
         // `AuthenticateResponse` message
         assert_serialize_deserialize!(Message::AuthenticateResponse(AuthenticateResponse {
             permit: 1234,
-            reason: "1234".to_string(),
+            context: "1234".to_string(),
         }));
 
         // `Direct` message

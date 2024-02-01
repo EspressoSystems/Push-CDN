@@ -1,11 +1,11 @@
 //! This file provides a `Sticky` connection, which allows for reconnections
 //! on top of a normal implementation of a `Fallible` connection.
 
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use parking_lot::Mutex;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::RwLock;
 
 use crate::{
     bail,
@@ -13,7 +13,7 @@ use crate::{
     message::{Message, Topic},
 };
 
-use super::Connection as ProtoConnection;
+use super::{flow::Flow, Connection};
 
 /// `Sticky` is a wrapper around a `Fallible` connection.
 ///
@@ -22,35 +22,33 @@ use super::Connection as ProtoConnection;
 ///
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Sticky<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection> {
-    inner: Arc<StickyInner<SignatureScheme, Connection>>,
+pub struct Sticky<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ConnectionType: Connection,
+    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+> {
+    inner: Arc<StickyInner<SignatureScheme, ConnectionType, ConnectionFlow>>,
 }
 
 /// `StickyInner` is held exclusively by `Sticky`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-struct StickyInner<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection> {
+struct StickyInner<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ConnectionType: Connection,
+    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal. The authentication flow depends on the function defined in
     /// `auth_flow`, so this may not be the final address (e.g. if you are asking the
     /// marshal for it).
     remote_address: String,
 
-    /// The authentication flow that is followed when connecting. Uses the `SocketAddr`
-    /// as the endpoint for the connection. Takes the signing and verification keys
-    /// in case they are needed.
-    auth_flow: fn(
-        SocketAddr,
-        Connection,
-        SignatureScheme::SigningKey,
-        SignatureScheme::VerificationKey,
-    ) -> Connection,
-
     /// A list of topics we are subscribed to. This allows us to, when reconnecting,
     /// easily provide the list of topics we care about.
     subscribed_topics: Mutex<HashSet<Topic>>,
 
     /// The underlying connection, which we modify to facilitate reconnections.
-    connection: RwLock<OnceCell<Connection>>,
+    connection: RwLock<ConnectionType>,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked against the stake
     /// table.
@@ -59,10 +57,16 @@ struct StickyInner<SignatureScheme: JfSignatureScheme, Connection: ProtoConnecti
     /// The underlying (private) signing key, used to sign messages to send to the server during the
     /// authentication phase.
     signing_key: SignatureScheme::SigningKey,
+
+    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 /// The configuration needed to construct a client
-pub struct Config<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection> {
+pub struct Config<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ConnectionType: Connection,
+    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+> {
     /// The verification (public) key. Sent to the server to verify
     /// our identity.
     pub verification_key: SignatureScheme::VerificationKey,
@@ -78,19 +82,14 @@ pub struct Config<SignatureScheme: JfSignatureScheme, Connection: ProtoConnectio
     /// we can resubscribe to the same topics upon reconnection.
     pub initial_subscribed_topics: Vec<Topic>,
 
-    /// The authentication flow that is followed when connecting. Uses the `SocketAddr`
-    /// as the endpoint for the connection. Takes the signing and verification keys
-    /// in case they are needed.
-    pub auth_flow: fn(
-        SocketAddr,
-        Connection,
-        SignatureScheme::SigningKey,
-        SignatureScheme::VerificationKey,
-    ) -> Connection,
+    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
-impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
-    Sticky<SignatureScheme, Connection>
+impl<
+        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        ConnectionType: Connection,
+        ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+    > Sticky<SignatureScheme, ConnectionType, ConnectionFlow>
 {
     /// Creates a new `Sticky` connection from a `Config` and an (optional) pre-existing
     /// `Fallible` connection.
@@ -100,18 +99,24 @@ impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
     ///
     /// # Errors
     /// Errors if we are unable to either parse or bind an endpoint to the local address.
-    pub fn from_config_and_connection(
-        config: Config<SignatureScheme, Connection>,
-        connection: OnceCell<Connection>,
+    pub async fn from_config_and_connection(
+        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
+        maybe_connection: Option<ConnectionType>,
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
-            auth_flow,
             verification_key,
             signing_key,
             remote_address,
             initial_subscribed_topics,
+            _pd,
         } = config;
+
+        let connection = bail!(
+            ConnectionFlow::connect(remote_address.clone(), &signing_key, &verification_key).await,
+            Connection,
+            "failed to make initial connection"
+        );
 
         // Return the slightly transformed connection.
         Ok(Self {
@@ -122,7 +127,7 @@ impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
                 connection: RwLock::from(connection),
                 signing_key,
                 verification_key,
-                auth_flow,
+                _pd,
             }),
         })
     }
@@ -130,33 +135,9 @@ impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
     /// Sends a message to the underlying fallible connection. Retry logic is handled in
     /// the macro `retry_on_error` where it is conditionally propagated
     /// to `wait_connect()`.
-    pub async fn send_message(&self, message: Arc<Message>) -> Result<()> {
-        // TODO: check if this makes sense to bail, or can we just return
-        // the downstream error
-
-        // TODO: clean up clean up, possible macro !!!!
-        // we did this because there is a temporary borrowed value, but there HAS
-        // to be a better way.
-        // bail!(
-        //     bail!(
-        //         self.inner
-        //             .connection
-        //             .read()
-        //             .await
-        //             .get_or_try_init(|| async {
-        //                 Connection::connect(self.inner.remote_address.clone()).await
-        //             })
-        //             .await,
-        //         Connection,
-        //         "failed to connect"
-        //     )
-        //     .send_message(message)
-        //     .await,
-        //     Connection,
-        //     "failed to send message"
-        // );
-
-        todo!();
+    pub async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()> {
+        // Acquire the connection from the underlying `Option`
+        let read_guard = self.inner.connection.read().await;
 
         Ok(())
     }

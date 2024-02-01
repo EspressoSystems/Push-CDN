@@ -85,7 +85,7 @@ impl Connection for Fallible {
     /// # Errors
     /// Errors if we either failed to open the stream or send the message over that stream.
     /// This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()> {
+    async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()> {
         // Open the outgoing unidirectional stream
         let mut stream = bail!(
             self.0.open_uni().await,
@@ -95,7 +95,7 @@ impl Connection for Fallible {
 
         // Serialize the message
         let message_bytes = bail!(
-            message.serialize(),
+            message.as_ref().serialize(),
             Serialize,
             "failed to serialize message"
         );

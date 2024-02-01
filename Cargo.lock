@@ -1081,6 +1081,7 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
 ]
 

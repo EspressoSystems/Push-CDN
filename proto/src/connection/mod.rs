@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{error::Result, message::Message};
 
 pub mod fallible;
+pub mod flow;
 pub mod sticky;
 
 pub trait Connection {
@@ -16,7 +17,7 @@ pub trait Connection {
     ///
     /// # Errors
     /// Errors if we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()>;
+    async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()>;
 
     /// Connect to a remote address, returning an instance of `Self`.
     ///

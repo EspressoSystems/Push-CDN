@@ -7,26 +7,34 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
-    connection::{sticky::Sticky, Connection as ProtoConnection},
+    connection::{
+        flow::Flow,
+        sticky::{self, Sticky},
+        Connection,
+    },
     crypto,
     error::Error,
     error::Result,
     message::{Broadcast, Direct, Message, Subscribe, Topic, Unsubscribe},
 };
-use tokio::sync::OnceCell;
 
 /// `Client` is a light wrapper around a `Sticky` connection that provides functions
 /// for common operations to and from a server. Mostly just used to make the API
 /// more ergonomic.
-pub struct Client<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>(
-    Sticky<SignatureScheme, Connection>,
-);
+pub struct Client<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ConnectionType: Connection,
+    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+>(Sticky<SignatureScheme, ConnectionType, ConnectionFlow>);
 
-pub type Config<SignatureScheme, Connection> =
-    proto::connection::sticky::Config<SignatureScheme, Connection>;
+pub type Config<SignatureScheme, ConnectionType, ConnectionFlow> =
+    sticky::Config<SignatureScheme, ConnectionType, ConnectionFlow>;
 
-impl<SignatureScheme: JfSignatureScheme, Connection: ProtoConnection>
-    Client<SignatureScheme, Connection>
+impl<
+        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        ConnectionType: Connection,
+        ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+    > Client<SignatureScheme, ConnectionType, ConnectionFlow>
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
@@ -39,8 +47,10 @@ where
     /// # Errors
     /// Errors if the downstream `Sticky` object was unable to be made.
     /// This usually happens when we can't bind to the specified endpoint.
-    pub fn new(config: Config<SignatureScheme, Connection>) -> Result<Self> {
-        Self::new_with_connection(config, OnceCell::new())
+    pub async fn new(
+        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
+    ) -> Result<Self> {
+        Self::new_with_connection(config, Option::None).await
     }
 
     /// Creates a new client from the given `Config` and an optional `Connection`.
@@ -48,14 +58,14 @@ where
     /// light wrapper.
     ///
     /// # Errors
-    /// Errors if the downstream `Sticky` object was unable to be made.
+    /// Errors if the downstream `Sticky` object was unable to be created.
     /// This usually happens when we can't bind to the specified endpoint.
-    pub fn new_with_connection(
-        config: Config<SignatureScheme, Connection>,
-        connection: OnceCell<Connection>,
+    pub async fn new_with_connection(
+        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
+        connection: Option<ConnectionType>,
     ) -> Result<Self> {
         Ok(Client(bail!(
-            Sticky::from_config_and_connection(config, connection),
+            Sticky::from_config_and_connection(config, connection).await,
             Connection,
             "failed to create client"
         )))
@@ -74,7 +84,7 @@ where
     }
 
     /// Sends a pre-serialized message to the server, denoting recipients in the form
-    /// of a vector of topics. Use `send_formed_message` when the message is already
+    /// of a vector of topics. Use `send_message_raw` when the message is already
     /// formed. If it fails, we return an error but try to initiate a new connection
     /// in the background.
     ///
@@ -83,18 +93,12 @@ where
     pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // TODO: conditionally match error on whether deserialization OR the connection failed
         // Form and send the single message
-        bail!(
-            self.send_formed_message(Arc::from(Message::Broadcast(Broadcast { topics, message })))
-                .await,
-            Connection,
-            "failed to send message"
-        );
 
         Ok(())
     }
 
     /// Sends a pre-serialized message to the server, denoting interest in delivery
-    /// to a single recipient. Use `send_formed_message` when the message is already formed.
+    /// to a single recipient. Use `send_message_raw` when the message is already formed.
     ///
     /// # Errors
     /// If the connection or serialization has failed
@@ -111,13 +115,6 @@ where
             "failed to serialize recipient"
         );
 
-        // Send the message with the serialized recipient
-        self.send_formed_message(Arc::from(Message::Direct(Direct {
-            recipient: recipient_bytes,
-            message,
-        })))
-        .await;
-
         Ok(())
     }
 
@@ -126,9 +123,8 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn subscribe(&self, topics: Vec<Topic>) {
-        self.send_formed_message(Arc::from(Message::Subscribe(Subscribe { topics })))
-            .await;
+    pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
+        todo!()
     }
 
     /// Sends a message to the server that asserts that this client is no longer
@@ -136,18 +132,13 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn unsubscribe(&self, topics: Vec<Topic>) {
-        self.send_formed_message(Arc::from(Message::Unsubscribe(Unsubscribe { topics })))
-            .await;
+    pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
+        todo!()
     }
 
     /// Sends a pre-formed message over the wire. Various functions make use
     /// of this one downstream.
-    ///
-    /// TODO: make this generic over a borrowed message so we can pass in either
-    /// a reference or an Arc to the object itself
-    pub async fn send_formed_message(&self, message: Arc<Message>) -> Result<()> {
-        // self.0.send_message(message).await;
-        todo!()
+    pub async fn send_message_raw<M: AsRef<Message>>(&self, message: M) -> Result<()> {
+        self.0.send_message(message).await
     }
 }

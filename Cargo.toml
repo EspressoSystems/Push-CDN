@@ -9,3 +9,4 @@ tokio = { version = "1.35.1", features = ["full"] }
 jf-primitives.git = "https://github.com/EspressoSystems/jellyfish.git"
 rand = "0.8.5"
 ark-serialize = "0.4.2"
+tracing = "0.1.40"
