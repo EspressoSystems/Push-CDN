@@ -1,5 +1,9 @@
 //! This file provides a `Sticky` connection, which allows for reconnections
 //! on top of a normal implementation of a `Fallible` connection.
+//!
+//! TODO FOR ALL CRATES: figure out where we need to bail,
+//! and where we can just return. Most of the errors already have
+//! enough context from previous bails.
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
@@ -58,7 +62,7 @@ struct StickyInner<
     /// authentication phase.
     signing_key: SignatureScheme::SigningKey,
 
-    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 /// The configuration needed to construct a client
@@ -82,7 +86,10 @@ pub struct Config<
     /// we can resubscribe to the same topics upon reconnection.
     pub initial_subscribed_topics: Vec<Topic>,
 
-    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    /// Phantom data that we pass down to `Sticky` and `StickInner`.
+    /// Allows us to be generic over a connection method, because
+    /// we need multiple.
+    pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 impl<
@@ -98,7 +105,9 @@ impl<
     /// with each other.
     ///
     /// # Errors
-    /// Errors if we are unable to either parse or bind an endpoint to the local address.
+    /// - If we are unable to either parse or bind an endpoint to the local address.
+    /// - If we are unable to make the initial connection
+    /// TODO: figure out if we want retries here
     pub async fn from_config_and_connection(
         config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
         maybe_connection: Option<ConnectionType>,
@@ -112,6 +121,10 @@ impl<
             _pd,
         } = config;
 
+        // Perform the initial connection. This is to validate that we have
+        // correct parameters and all
+        // TODO: cancel conditionally depending on what kind of error, or retry-
+        // based.
         let connection = bail!(
             ConnectionFlow::connect(remote_address.clone(), &signing_key, &verification_key).await,
             Connection,

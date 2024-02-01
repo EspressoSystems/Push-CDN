@@ -7,6 +7,10 @@ description = "Contains the common protocol definition and common code for the b
 [build-dependencies]
 capnpc = "0.19.0"
 
+[features]
+local-testing = ["rustls/dangerous_configuration"]
+default = ["local-testing"]
+
 [dependencies]
 capnp = "0.19.1"
 thiserror = "1.0.56"
@@ -18,3 +22,5 @@ rand.workspace = true
 parking_lot = "0.12.1"
 url = "2.5.0"
 tracing.workspace = true
+async-trait = "0.1.77"
+rustls = "0.21.10"

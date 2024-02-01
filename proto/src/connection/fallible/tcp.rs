@@ -2,6 +2,7 @@
 //! connection that implements our message framing and connection
 //! logic.
 
+use async_trait::async_trait;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -12,23 +13,20 @@ use tokio::{
 };
 
 use crate::{
-    bail,
-    connection::Connection,
-    error::{Error, Result},
-    message::Message,
-    MAX_MESSAGE_SIZE,
+    bail, bail_option, connection::Connection, error::{Error, Result}, message::Message, MAX_MESSAGE_SIZE
 };
-use std::sync::Arc;
+use std::{net::ToSocketAddrs, sync::Arc};
 
-/// `Fallible` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
+/// `Tcp` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
 /// `Connection`.
 #[derive(Clone)]
-pub struct Fallible {
+pub struct Tcp {
     pub receiver: Arc<Mutex<OwnedReadHalf>>,
     pub sender: Arc<Mutex<OwnedWriteHalf>>,
 }
 
-impl Connection for Fallible {
+#[async_trait(?Send)]
+impl Connection for Tcp {
     /// Receives a single message from the TCP connection. It reads the size
     /// of the message from the stream, reads the message, and then
     /// deserializes and returns it.
@@ -76,7 +74,7 @@ impl Connection for Fallible {
     /// # Errors
     /// Errors if we either failed to open the stream or send the message over that stream.
     /// This usually means a connection problem.
-    async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()> {
+    async fn send_message(&self, message: Arc<Message>) -> Result<()> {
         // Lock the stream so we don't send message/message sizes interleaved
         let mut sender_guard = self.sender.lock().await;
 
@@ -116,10 +114,15 @@ impl Connection for Fallible {
         Self: Sized,
     {
         // Parse the socket address
-        let remote_address = bail!(
-            remote_endpoint.parse(),
-            Parse,
-            "failed to parse remote endpoint"
+        let remote_address = bail_option!(
+            bail!(
+                remote_endpoint.to_socket_addrs(),
+                Parse,
+                "failed to parse remote endpoint"
+            )
+            .next(),
+            Connection,
+            "did not find suitable address for endpoint"
         );
 
         // Create a new TCP socket

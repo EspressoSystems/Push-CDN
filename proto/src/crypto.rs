@@ -9,6 +9,8 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
 use jf_primitives::signatures::SignatureScheme;
 use rand::{rngs::StdRng, CryptoRng, RngCore, SeedableRng};
+use rustls::ClientConfig;
+use std::sync::Arc;
 
 /// The oxymoron function. Used mostly with crypto key generation to generate
 /// "random" values that are actually deterministic based on the input.
@@ -95,4 +97,42 @@ pub fn generate_random_keypair<Scheme: SignatureScheme<PublicParameter = ()>>(
         Crypto,
         "failed to generate keypair"
     ))
+}
+
+/// This lets us, while using `rustls` skip server verification
+/// for when we test locally. This way we don't require a self-signed
+/// certificate.
+pub struct SkipServerVerification;
+
+/// Here we implement some helper functions that let us create
+/// a client configuration from the verification configuration.
+impl SkipServerVerification {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+
+    pub fn new_config() -> Arc<ClientConfig> {
+        Arc::new(
+            rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .with_no_client_auth(),
+        )
+    }
+}
+
+/// This is the implementation for `ServerCertVerifier` that `rustls` requires us
+/// to implement for server cert verification purposes.
+impl rustls::client::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> StdResult<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
 }

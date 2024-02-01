@@ -40,9 +40,8 @@ where
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
 {
-    /// Creates a new client from the given `Config`. Does not attempt a connection until
-    /// a function is called that requires one. Proxies to `new_with_connection` but with an
-    /// empty connection.
+    /// Creates a new client from the given `Config`. Immediately will attempt
+    /// a conection if none is supplied.
     ///
     /// # Errors
     /// Errors if the downstream `Sticky` object was unable to be made.
@@ -92,9 +91,10 @@ where
     /// If the connection or serialization has failed
     pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // TODO: conditionally match error on whether deserialization OR the connection failed
-        // Form and send the single message
 
-        Ok(())
+        // Form and send the single message
+        self.send_message_raw(Arc::from(Message::Broadcast(Broadcast { topics, message })))
+            .await
     }
 
     /// Sends a pre-serialized message to the server, denoting interest in delivery
@@ -115,7 +115,12 @@ where
             "failed to serialize recipient"
         );
 
-        Ok(())
+        // Form and send the single message
+        self.send_message_raw(Arc::from(Message::Direct(Direct {
+            recipient: recipient_bytes,
+            message,
+        })))
+        .await
     }
 
     /// Sends a message to the server that asserts that this client is interested in
@@ -124,7 +129,9 @@ where
     /// # Errors
     /// If the connection or serialization has failed
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
-        todo!()
+        // Form and send the single message
+        self.send_message_raw(Arc::from(Message::Subscribe(Subscribe { topics })))
+            .await
     }
 
     /// Sends a message to the server that asserts that this client is no longer
@@ -133,7 +140,9 @@ where
     /// # Errors
     /// If the connection or serialization has failed
     pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
-        todo!()
+        // Form and send the single message
+        self.send_message_raw(Arc::from(Message::Unsubscribe(Unsubscribe { topics })))
+            .await
     }
 
     /// Sends a pre-formed message over the wire. Various functions make use

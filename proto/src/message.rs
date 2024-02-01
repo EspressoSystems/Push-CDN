@@ -333,7 +333,7 @@ pub struct AuthenticateWithPermit {
 /// if it was successful or not, the context, and the permit, if applicable.
 #[derive(Eq, PartialEq)]
 pub struct AuthenticateResponse {
-    // The permit. Sent from marshals to clients to verify authentication. Is `0`
+    // The permit. Sent from servers to clients to verify authentication. Is `0`
     // if failed, `1` if successful, and neither if it is an actual permit.
     pub permit: u64,
     // The message context. Is an error reason if failed, or the endpoint

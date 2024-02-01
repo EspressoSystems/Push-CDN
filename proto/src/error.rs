@@ -46,7 +46,7 @@ macro_rules! bail {
 /// type and context. Uses `ok_or_else` under the hood.
 macro_rules! bail_option {
     ($expr: expr, $type: ident, $context: expr) => {
-        $expr.ok_or_else(|| Error::$type($context.to_owned()))
+        $expr.ok_or_else(|| Error::$type($context.to_owned()))?
     };
 }
 

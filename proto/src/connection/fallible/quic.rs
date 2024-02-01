@@ -2,39 +2,41 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use quinn::Endpoint;
+use async_trait::async_trait;
+use quinn::{ClientConfig, Endpoint};
 
 use crate::{
-    bail,
+    bail, bail_option,
     connection::Connection,
+    crypto::SkipServerVerification,
     error::{Error, Result},
     message::Message,
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::sync::Arc;
+use std::{net::ToSocketAddrs, sync::Arc};
 
-/// `Fallible` is a thin wrapper around `quinn::Connection` that implements
+/// `Quic` is a thin wrapper around `quinn::Connection` that implements
 /// `Connection`.
 #[derive(Clone)]
-pub struct Fallible(pub quinn::Connection);
+pub struct Quic(pub quinn::Connection);
 
-/// `PartialEq` for a `Fallible` connection is determined by the `stable_id` since it
+/// `PartialEq` for a `Quic` connection is determined by the `stable_id` since it
 /// will not change for the duration of the connection.
-impl PartialEq for Fallible {
+impl PartialEq for Quic {
     fn eq(&self, other: &Self) -> bool {
         self.0.stable_id() == other.0.stable_id()
     }
 }
 
-/// Assertion for `Fallible` that `PartialEq` == `Eq`
-impl Eq for Fallible {
+/// Assertion for `Quic` that `PartialEq` == `Eq`
+impl Eq for Quic {
     fn assert_receiver_is_total_eq(&self) {}
 }
 
-/// `Hash` for a `Fallible` connection is determined by the `stable_id` since it
+/// `Hash` for a `Quic` connection is determined by the `stable_id` since it
 /// will not change for the duration of the connection. We just want to hash that.
-impl Hash for Fallible {
+impl Hash for Quic {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.stable_id().hash(state);
     }
@@ -48,7 +50,8 @@ impl Hash for Fallible {
     }
 }
 
-impl Connection for Fallible {
+#[async_trait(?Send)]
+impl Connection for Quic {
     /// Receives a single message from the QUIC connection. Since we use
     /// virtual streams as a message framing method, this function first accepts a stream
     /// and then reads and deserializes a single message from it.
@@ -85,7 +88,7 @@ impl Connection for Fallible {
     /// # Errors
     /// Errors if we either failed to open the stream or send the message over that stream.
     /// This usually means a connection problem.
-    async fn send_message<M: AsRef<Message>>(&self, message: M) -> Result<()> {
+    async fn send_message(&self, message: Arc<Message>) -> Result<()> {
         // Open the outgoing unidirectional stream
         let mut stream = bail!(
             self.0.open_uni().await,
@@ -127,23 +130,27 @@ impl Connection for Fallible {
         Self: Sized,
     {
         // Parse the socket address
-        let remote_address = bail!(
-            remote_endpoint.parse(),
-            Parse,
-            "failed to parse remote endpoint"
+        let remote_address = bail_option!(
+            bail!(
+                remote_endpoint.to_socket_addrs(),
+                Parse,
+                "failed to parse remote endpoint"
+            )
+            .next(),
+            Connection,
+            "did not find suitable address for endpoint"
         );
 
         // Parse host for certificate. We need this to ensure that the
         // TLS cert matches what the server is providing.
-        let domain_name = bail!(
-            url::Host::parse(&remote_endpoint),
+        let domain_name = bail_option!(
+            remote_endpoint.split(":").next(),
             Parse,
-            "failed to parse host from remote endpoint"
-        )
-        .to_string();
+            "failed to parse suitable host from provided endpoint"
+        );
 
         // Create QUIC endpoint
-        let endpoint = bail!(
+        let mut endpoint = bail!(
             Endpoint::client(bail!(
                 "0.0.0.0:0".parse(),
                 Parse,
@@ -152,6 +159,18 @@ impl Connection for Fallible {
             Connection,
             "failed to bind to local address"
         );
+
+        // Set up TLS configuration
+        #[cfg(not(feature = "local-testing"))]
+        // Production mode: native certs
+        let config = ClientConfig::with_native_roots();
+
+        // Local testing mode: skip server verification, insecure
+        #[cfg(feature = "local-testing")]
+        let config = ClientConfig::new(SkipServerVerification::new_config());
+
+        // Set default client config
+        endpoint.set_default_client_config(config);
 
         // Connect with QUIC endpoint to remote address
         Ok(Self(bail!(
