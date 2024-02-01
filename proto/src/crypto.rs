@@ -187,7 +187,7 @@ pub fn load_or_self_sign_tls_certificate_and_key(
     }
     // We don't have one path or the other, so self-sign a certificate instead
     else {
-        // Generate a cert with the local bind address, if possible˜∫
+        // Generate a cert with the local bind address, if possible
         let cert = generate_simple_self_signed(vec!["localhost".into()]).unwrap();
 
         // Serialize certificate to DER format

@@ -8,13 +8,12 @@
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-use parking_lot::Mutex;
+
 use tokio::{
-    spawn,
-    sync::{RwLock, Semaphore},
+    sync::{Mutex, RwLock, Semaphore},
     time::sleep,
 };
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{
     bail,
@@ -36,12 +35,12 @@ pub struct Sticky<
     ConnectionType: Connection,
     ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
 > {
-    inner: Arc<StickyInner<SignatureScheme, ConnectionType, ConnectionFlow>>,
+    pub inner: Arc<StickyInner<SignatureScheme, ConnectionType, ConnectionFlow>>,
 }
 
 /// `StickyInner` is held exclusively by `Sticky`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-struct StickyInner<
+pub struct StickyInner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ConnectionType: Connection,
     ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
@@ -62,16 +61,16 @@ struct StickyInner<
 
     /// A list of topics we are subscribed to. This allows us to, when reconnecting,
     /// easily provide the list of topics we care about.
-    subscribed_topics: Mutex<HashSet<Topic>>,
+    pub subscribed_topics: Mutex<HashSet<Topic>>,
 
     /// The underlying connection, which we modify to facilitate reconnections.
     connection: RwLock<ConnectionType>,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so multiple tasks don't try doing it at the same time.
-    pub reconnect_semaphore: Semaphore,
+    reconnect_semaphore: Semaphore,
 
-    pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 /// The configuration needed to construct a client
@@ -103,15 +102,17 @@ pub struct Config<
 
 /// This is a macro that helps with reconnections when sending
 /// and receiving messages. You can specify the operation and it
-/// will recomnect on the operation's failure, while handling all
+/// will reconnect on the operation's failure, while handling all
 /// reconnection logic and synchronization patterns.
+///
+/// TODO: document invariant with "messages will not retry"
 macro_rules! try_with_reconnect {
     ($self: expr, $operation: ident,  $($arg:tt)*) => {{
         // Acquire read guard for sending and receiving messages
         let read_guard = match $self.inner.connection.try_read(){
             Ok(read_guard) => read_guard,
             Err(_) => {
-                return Err(Error::Connection("message failed: reconnectin in progress".to_string()));
+                return Err(Error::Connection("message failed: reconnection in progress".to_string()));
             }
         };
 
@@ -126,6 +127,10 @@ macro_rules! try_with_reconnect {
                 drop(read_guard);
                 let mut write_guard = $self.inner.connection.write().await;
 
+                // Lock subscribed topics
+                let subscribed_topics = &$self.inner.subscribed_topics.lock().await;
+                let topics:Vec<Topic> = subscribed_topics.iter().cloned().collect();
+
                 // Loop to connect and authenticate
                 let connection = loop {
                     // Try to connect
@@ -133,6 +138,7 @@ macro_rules! try_with_reconnect {
                         $self.inner.remote_address.clone(),
                         &$self.inner.signing_key,
                         &$self.inner.verification_key,
+                        topics.clone()
                     )
                     .await
                     {
@@ -200,7 +206,8 @@ impl<
                     ConnectionFlow::connect(
                         remote_address.clone(),
                         &signing_key,
-                        &verification_key
+                        &verification_key,
+                        initial_subscribed_topics.clone(),
                     )
                     .await,
                     Connection,

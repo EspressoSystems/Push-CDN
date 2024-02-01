@@ -8,7 +8,7 @@ use proto::{
     message::Topic,
 };
 
-use jf_primitives::signatures::bls_over_bn254::{BLSOverBN254CurveSignatureScheme as BLS, VerKey};
+use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 
 #[tokio::main]
 async fn main() -> Result<()> {

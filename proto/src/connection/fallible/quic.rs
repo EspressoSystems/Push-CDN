@@ -144,7 +144,7 @@ impl Connection for Quic {
         // Parse host for certificate. We need this to ensure that the
         // TLS cert matches what the server is providing.
         let domain_name = bail_option!(
-            remote_endpoint.split(":").next(),
+            remote_endpoint.split(':').next(),
             Parse,
             "failed to parse suitable host from provided endpoint"
         );
@@ -175,7 +175,7 @@ impl Connection for Quic {
         // Connect with QUIC endpoint to remote address
         Ok(Self(bail!(
             bail!(
-                endpoint.connect(remote_address, &domain_name),
+                endpoint.connect(remote_address, domain_name),
                 Connection,
                 "failed to connect to remote address"
             )

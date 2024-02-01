@@ -17,7 +17,7 @@ use crate::{
     connection::Connection,
     crypto::{self, DeterministicRng},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
 };
 
 /// TODO: BIDIRECTIONAL AUTHENTICATION FOR USERS<->BROKERS
@@ -35,6 +35,7 @@ pub trait Flow<
         endpoint: String,
         signing_key: &SignatureScheme::SigningKey,
         verification_key: &SignatureScheme::VerificationKey,
+        subscribed_topics: Vec<Topic>,
     ) -> Result<ConnectionType>;
 }
 
@@ -63,6 +64,7 @@ where
         endpoint: String,
         signing_key: &SignatureScheme::SigningKey,
         verification_key: &SignatureScheme::VerificationKey,
+        subscribed_topics: Vec<Topic>,
     ) -> Result<ConnectionType> {
         // Create the initial connection, which is unauthenticated at this point
         let connection = bail!(
@@ -192,6 +194,20 @@ where
                 "failed to parse broker response: wrong message type".to_string(),
             ));
         };
+
+        // Send our subscribed topics to the broker
+        let subscribed_topics_to_broker = Message::Subscribe(Subscribe {
+            topics: subscribed_topics,
+        });
+
+        // Subscribe to topics with the broker
+        bail!(
+            connection
+                .send_message(Arc::from(subscribed_topics_to_broker))
+                .await,
+            Connection,
+            "failed to send initial subscribe message to broker"
+        );
 
         Ok(connection)
     }
