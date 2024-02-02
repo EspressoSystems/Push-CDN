@@ -63,7 +63,7 @@ where
         config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
         connection: Option<ConnectionType>,
     ) -> Result<Self> {
-        Ok(Client(bail!(
+        Ok(Self(bail!(
             Sticky::from_config_and_connection(config, connection).await,
             Connection,
             "failed to create client"

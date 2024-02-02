@@ -8,8 +8,8 @@ pub mod fallible;
 pub mod flow;
 pub mod sticky;
 
-#[async_trait(?Send)]
-pub trait Connection {
+#[async_trait]
+pub trait Connection: Send + Sync {
     /// Receive a single message from the connection.
     ///
     /// # Errors

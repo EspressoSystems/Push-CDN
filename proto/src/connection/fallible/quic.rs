@@ -50,7 +50,7 @@ impl Hash for Quic {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Connection for Quic {
     /// Receives a single message from the QUIC connection. Since we use
     /// virtual streams as a message framing method, this function first accepts a stream

@@ -25,7 +25,7 @@ pub struct Tcp {
     pub sender: Arc<Mutex<OwnedWriteHalf>>,
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Connection for Tcp {
     /// Receives a single message from the TCP connection. It reads the size
     /// of the message from the stream, reads the message, and then

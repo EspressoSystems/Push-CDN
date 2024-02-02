@@ -301,7 +301,7 @@ impl From<messages_capnp::Topic> for Topic {
 /// We need this because it allows conversions to and from the Cap'n' Proto version
 /// of a `Topic`
 impl From<Topic> for messages_capnp::Topic {
-    fn from(value: Topic) -> messages_capnp::Topic {
+    fn from(value: Topic) -> Self {
         match value {
             Topic::Global => Self::Global,
             Topic::DA => Self::Da,

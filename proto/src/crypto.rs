@@ -116,7 +116,7 @@ impl SkipServerVerification {
         Arc::new(
             rustls::ClientConfig::builder()
                 .with_safe_defaults()
-                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .with_custom_certificate_verifier(Self::new())
                 .with_no_client_auth(),
         )
     }

@@ -21,14 +21,14 @@ use crate::{
 };
 
 /// TODO: BIDIRECTIONAL AUTHENTICATION FOR USERS<->BROKERS
-/// 
+///
 /// The `Flow` trait implements a connection flow that takes in an endpoint,
 /// signing key, and verification key and returns a connection.
-#[async_trait(?Send)]
+#[async_trait]
 pub trait Flow<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ConnectionType: Connection,
->
+>: Send + Sync
 {
     /// This is the meat of `Flow`. We define this for every type of connection flow we have.
     async fn connect(
@@ -44,7 +44,7 @@ pub trait Flow<
 /// with a permit. Only after that do we try connecting to the broker.
 pub struct ToMarshal {}
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ConnectionType: Connection,
