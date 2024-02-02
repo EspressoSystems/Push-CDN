@@ -13,13 +13,13 @@ pub mod tcp;
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
 
 
-pub trait Protocol: Send + Sync {
+pub trait Protocol: Send + Sync + 'static {
     type Connection: Connection;
     type Listener: Listener<Self::Connection>;
 }
 
 #[async_trait]
-pub trait Connection: Send + Sync {
+pub trait Connection: Send + Sync + 'static {
     /// Receive a single message from the connection.
     ///
     /// # Errors
@@ -42,7 +42,7 @@ pub trait Connection: Send + Sync {
 }
 
 #[async_trait]
-pub trait Listener<ConnectionType: Connection>: Send + Sync {
+pub trait Listener<ConnectionType: Connection>: Send + Sync + 'static {
     /// Bind to the local address, returning an instance of `Self`.
     ///
     /// # Errors

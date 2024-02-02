@@ -2,10 +2,9 @@ use std::marker::PhantomData;
 
 use client::{Client, Config};
 use proto::{
-    connection::{flow::ToMarshal, protocols::quic::Quic},
+    connection::{flow::UserToMarshal, protocols::quic::Quic},
     crypto,
     error::Result,
-    message::Topic,
 };
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
@@ -14,11 +13,14 @@ use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme 
 async fn main() -> Result<()> {
     let (signing_key, verification_key) = crypto::generate_random_keypair::<BLS>()?;
 
-    let client = Client::<BLS, Quic, ToMarshal>::new(Config {
+    let connection_flow = UserToMarshal {
         verification_key,
         signing_key,
-        remote_address: "google.com:80".to_string(),
-        initial_subscribed_topics: vec![Topic::Global],
+        endpoint: "google.com:80".to_string(),
+    };
+
+    let client = Client::<BLS, Quic, _>::new(Config {
+        flow: connection_flow,
         pd: PhantomData,
     })
     .await?;

@@ -5,12 +5,12 @@
 //! and where we can just return. Most of the errors already have
 //! enough context from previous bails.
 
-use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
 use tokio::{
-    sync::{Mutex, RwLock, Semaphore},
+    sync::{RwLock, Semaphore},
     time::sleep,
 };
 use tracing::error;
@@ -18,7 +18,7 @@ use tracing::error;
 use crate::{
     bail,
     error::{Error, Result},
-    message::{Message, Topic},
+    message::Message,
 };
 
 use super::{
@@ -41,66 +41,44 @@ pub struct Sticky<
     pub inner: Arc<Inner<SignatureScheme, ProtocolType, ConnectionFlow>>,
 }
 
-/// `Ommer` is held exclusively by `Sticky`, wherein an `Arc` is used
+/// `Inner` is held exclusively by `Sticky`, wherein an `Arc` is used
 /// to facilitate interior mutability.
 pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
     ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    /// This is the remote address that we authenticate to. It can either be a broker
-    /// or a marshal. The authentication flow depends on the function defined in
-    /// `auth_flow`, so this may not be the final address (e.g. if you are asking the
-    /// marshal for it).
-    remote_address: String,
-
-    /// The underlying (public) verification key, used to authenticate with the server. Checked against the stake
-    /// table.
-    verification_key: SignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    signing_key: SignatureScheme::SigningKey,
-
-    /// A list of topics we are subscribed to. This allows us to, when reconnecting,
-    /// easily provide the list of topics we care about.
-    pub subscribed_topics: Mutex<HashSet<Topic>>,
+    /// This encapsulates the underlying connection parameters that we need
+    /// to connect, as well as the underyling flow
+    flow: ConnectionFlow,
 
     /// The underlying connection, which we modify to facilitate reconnections.
     connection: RwLock<ProtocolType::Connection>,
 
     /// The task that runs in the background that reconnects us when we need
-    /// to be. This is so multiple tasks don't try doing it at the same time.
+    /// to be. This is so we don't spawn multiple tasks at once
     reconnect_semaphore: Semaphore,
 
-    pd: PhantomData<(ProtocolType, ConnectionFlow)>,
+    /// Phantom data that lets us use `ProtocolType`, `ConnectionFlow`, and
+    /// `SignatureScheme` downstream.
+    pd: PhantomData<(SignatureScheme, ProtocolType, ConnectionFlow)>,
 }
 
-/// The configuration needed to construct a client
+/// The configuration needed to construct a `Sticky` connection.
 pub struct Config<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
     ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    /// The verification (public) key. Sent to the server to verify
-    /// our identity.
-    pub verification_key: SignatureScheme::VerificationKey,
-
-    /// The signing (private) key. Only used for signing the authentication
-    /// message sent to the server upon connection.
-    pub signing_key: SignatureScheme::SigningKey,
-
-    /// The remote address(es) to connect and authenticate to.
-    pub remote_address: String,
-
-    /// The topics we want to be subscribed to initially. This is needed so that
-    /// we can resubscribe to the same topics upon reconnection.
-    pub initial_subscribed_topics: Vec<Topic>,
+    /// The (optional) state we use to add things to the connection state.
+    /// For example, with a `UserToMarshal` flow, we may want to send
+    /// the subscribed topics upon connection.
+    pub flow: ConnectionFlow,
 
     /// Phantom data that we pass down to `Sticky` and `StickInner`.
     /// Allows us to be generic over a connection method, because
     /// we need multiple.
-    pub pd: PhantomData<(ProtocolType, ConnectionFlow)>,
+    pub pd: PhantomData<(SignatureScheme, ProtocolType, ConnectionFlow)>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -121,26 +99,24 @@ macro_rules! try_with_reconnect {
         match operation{
             Ok(res) => res,
             Err(err) => {
-
             // Acquire semaphore. If another task is doing this, just return an error
             if $self.inner.reconnect_semaphore.try_acquire().is_ok() {
                 // Acquire write guard, drop read guard
                 drop(read_guard);
-                let mut write_guard = $self.inner.connection.write().await;
 
-                // Lock subscribed topics
-                let subscribed_topics = $self.inner.subscribed_topics.lock().await;
-                let topics:Vec<Topic> = subscribed_topics.iter().cloned().collect();
+                // Clone everything we need to connect
+                // TODO: we want to minimize cloning this. We should sign a message
+                // earlier.
+                let inner = $self.inner.clone();
+
+                tokio::spawn(async move{
+                    // Get write guard on connection so we can write to it
+                    let mut write_guard = inner.connection.write().await;
 
                 // Loop to connect and authenticate
                 let connection = loop {
-                    // Try to connect
-                    match ConnectionFlow::connect(
-                        $self.inner.remote_address.clone(),
-                        &$self.inner.signing_key,
-                        &$self.inner.verification_key,
-                        topics.clone()
-                    )
+                    // Try to connect with our parameters
+                    match inner.flow.connect()
                     .await
                     {
                         Ok(connection) => break connection,
@@ -153,8 +129,10 @@ macro_rules! try_with_reconnect {
 
                 // Set connection to new connection
                 *write_guard = connection;
+
+                // Drop here so other tasks can start sending messages
                 drop(write_guard);
-                drop(subscribed_topics);
+            });
         }
 
         // If somebody is already trying to reconnect, fail instantly
@@ -187,13 +165,7 @@ impl<
         maybe_connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
-        let Config {
-            verification_key,
-            signing_key,
-            remote_address,
-            initial_subscribed_topics,
-            pd,
-        } = config;
+        let Config { flow, pd } = config;
 
         // Perform the initial connection if not provided. This is to validate
         // that we have correct parameters and all.
@@ -206,13 +178,7 @@ impl<
             Some(connection) => connection,
             None => {
                 bail!(
-                    ConnectionFlow::connect(
-                        remote_address.clone(),
-                        &signing_key,
-                        &verification_key,
-                        initial_subscribed_topics.clone(),
-                    )
-                    .await,
+                    flow.connect().await,
                     Connection,
                     "failed to make initial connection"
                 )
@@ -222,10 +188,7 @@ impl<
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(Inner {
-                remote_address,
-                signing_key,
-                verification_key,
-                subscribed_topics: Mutex::from(HashSet::from_iter(initial_subscribed_topics)),
+                flow,
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),

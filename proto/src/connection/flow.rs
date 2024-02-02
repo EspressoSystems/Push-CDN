@@ -16,7 +16,7 @@ use crate::{
     bail,
     crypto::{self, DeterministicRng},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
 };
 
 use super::protocols::Protocol;
@@ -24,51 +24,55 @@ use crate::connection::protocols::Connection;
 
 /// TODO: BIDIRECTIONAL AUTHENTICATION FOR USERS<->BROKERS
 ///
-/// The `Flow` trait implements a connection flow that takes in an endpoint,
-/// signing key, and verification key and returns a connection.
+/// The `Flow` trait implements a connection flow that takes in a `Flow implementation`,
+/// and returns an authenticated endpoint (or an error).
 #[async_trait]
 pub trait Flow<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
->: Send + Sync
+>: Send + Sync + 'static
 {
     /// This is the meat of `Flow`. We define this for every type of connection flow we have.
-    async fn connect(
-        endpoint: String,
-        signing_key: &SignatureScheme::SigningKey,
-        verification_key: &SignatureScheme::VerificationKey,
-        subscribed_topics: Vec<Topic>,
-    ) -> Result<ProtocolType::Connection>;
+    async fn connect(&self) -> Result<ProtocolType::Connection>;
 }
 
 /// This struct implements `Flow`. It defines an implementation wherein we connect
 /// to a marshal first, who returns the server address we should connect to, along
 /// with a permit. Only after that do we try connecting to the broker.
-pub struct ToMarshal {}
+#[derive(Clone)]
+pub struct UserToMarshal<SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>>
+{
+    /// This is the remote address that we authenticate to. It can either be a broker
+    /// or a marshal.
+    pub endpoint: String,
+
+    /// The underlying (public) verification key, used to authenticate with the server. Checked
+    /// against the stake table.
+    pub verification_key: SignatureScheme::VerificationKey,
+
+    /// The underlying (private) signing key, used to sign messages to send to the server during the
+    /// authentication phase.
+    pub signing_key: SignatureScheme::SigningKey,
+}
 
 #[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > Flow<SignatureScheme, ProtocolType> for ToMarshal
+    > Flow<SignatureScheme, ProtocolType> for UserToMarshal<SignatureScheme>
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
 {
-    /// The steps on `ToMarshal`'s connection:
+    /// The steps on `UserToMarshal`'s connection:
     /// 1. Authenticate with the marshal with a signed message, who optionally
     ///     returns a permit and a server address
     /// 2. Use the permit and server address to connect to the broker
-    async fn connect(
-        endpoint: String,
-        signing_key: &SignatureScheme::SigningKey,
-        verification_key: &SignatureScheme::VerificationKey,
-        subscribed_topics: Vec<Topic>,
-    ) -> Result<ProtocolType::Connection> {
+    async fn connect(&self) -> Result<ProtocolType::Connection> {
         // Create the initial connection, which is unauthenticated at this point
         let connection = bail!(
-            ProtocolType::Connection::connect(endpoint).await,
+            ProtocolType::Connection::connect(self.endpoint.clone()).await,
             Connection,
             "failed to connect to marshal"
         );
@@ -85,7 +89,7 @@ where
         let signature = bail!(
             SignatureScheme::sign(
                 &(),
-                signing_key,
+                &self.signing_key,
                 timestamp.to_le_bytes(),
                 &mut DeterministicRng(0),
             ),
@@ -95,7 +99,7 @@ where
 
         // Serialize the verify key
         let verification_key_bytes = bail!(
-            crypto::serialize(verification_key),
+            crypto::serialize(&self.verification_key),
             Serialize,
             "failed to serialize verification key"
         );
@@ -194,20 +198,6 @@ where
                 "failed to parse broker response: wrong message type".to_string(),
             ));
         };
-
-        // Send our subscribed topics to the broker
-        let subscribed_topics_to_broker = Message::Subscribe(Subscribe {
-            topics: subscribed_topics,
-        });
-
-        // Subscribe to topics with the broker
-        bail!(
-            connection
-                .send_message(Arc::from(subscribed_topics_to_broker))
-                .await,
-            Connection,
-            "failed to send initial subscribe message to broker"
-        );
 
         Ok(connection)
     }

@@ -15,7 +15,7 @@ use proto::{
     crypto,
     error::Error,
     error::Result,
-    message::{Broadcast, Direct, Message, Subscribe, Topic, Unsubscribe},
+    message::{Broadcast, Direct, Message, Topic},
 };
 
 /// `Client` is a light wrapper around a `Sticky` connection that provides functions
@@ -130,20 +130,8 @@ where
     /// If the connection or serialization has failed
     ///
     /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
-    pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
-        // Lock subscribed topics here so if we're reconnecting we maintain parity
-        // with our list
-
-        // Lock our topics here so we can't add them on failure
-        let mut topic_guard = self.0.inner.subscribed_topics.lock().await;
-
-        // Form and send the single message
-        self.send_message_raw(Arc::from(Message::Subscribe(Subscribe {
-            topics: topics.clone(),
-        })))
-        .await
-        // Only add to our topic map if the message was successful
-        .map(|()| topic_guard.extend(topics))
+    pub async fn subscribe(&self, _topics: Vec<Topic>) -> Result<()> {
+        todo!()
     }
 
     /// Sends a message to the server that asserts that this client is no longer
@@ -151,20 +139,8 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
-        // Lock subscribed topics here so if we're reconnecting we maintain parity
-        // with our list
-
-        // Lock our topics here so we can't add them on failure
-        let mut topic_guard = self.0.inner.subscribed_topics.lock().await;
-
-        // Form and send the single message
-        self.send_message_raw(Arc::from(Message::Unsubscribe(Unsubscribe {
-            topics: topics.clone(),
-        })))
-        .await
-        // Only add to our topic map if the message was successful
-        .map(|()| topic_guard.extend(topics))
+    pub async fn unsubscribe(&self, _topics: Vec<Topic>) -> Result<()> {
+        todo!()
     }
 
     /// Sends a pre-formed message over the wire. Various functions make use
