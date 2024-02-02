@@ -14,23 +14,35 @@ use tokio::{
 
 use crate::{
     bail, bail_option,
-    connection::Connection,
     error::{Error, Result},
     message::Message,
     MAX_MESSAGE_SIZE,
 };
 use std::{net::ToSocketAddrs, sync::Arc};
 
-/// `Tcp` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
+use super::{Connection, Listener, Protocol};
+
+/// The `Tcp` protocol. We use this to define commonalities between TCP
+/// listeners, connections, etc.
+pub struct Tcp;
+
+/// We define the `Tcp` protocol as being composed of both a TCP listener
+/// and connection.
+impl Protocol for Tcp {
+    type Connection = TcpConnection;
+    type Listener = TcpListener;
+}
+
+/// `TcpConnection` is a thin wrapper around `OwnedReadHalf` and `OwnedWriteHalf` that implements
 /// `Connection`.
 #[derive(Clone)]
-pub struct Tcp {
+pub struct TcpConnection {
     pub receiver: Arc<Mutex<OwnedReadHalf>>,
     pub sender: Arc<Mutex<OwnedWriteHalf>>,
 }
 
 #[async_trait]
-impl Connection for Tcp {
+impl Connection for TcpConnection {
     /// Receives a single message from the TCP connection. It reads the size
     /// of the message from the stream, reads the message, and then
     /// deserializes and returns it.
@@ -57,7 +69,7 @@ impl Connection for Tcp {
 
         // Create buffer of the proper size
         let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
-        
+
         // Read the message from the stream
         bail!(
             receiver_guard.read_exact(&mut buffer).await,
@@ -154,6 +166,57 @@ impl Connection for Tcp {
         Ok(Self {
             receiver: Arc::from(Mutex::from(read_half)),
             sender: Arc::from(Mutex::from(write_half)),
+        })
+    }
+}
+
+/// The listener struct. Needed to receive messages over TCP. Is a light
+/// wrapper around `tokio::net::TcpListener`.
+pub struct TcpListener(pub tokio::net::TcpListener);
+
+#[async_trait]
+impl Listener<TcpConnection> for TcpListener {
+    /// Binds to a local endpoint. Does not use a TLS configuration.
+    ///
+    /// # Errors
+    /// - If we cannot bind to the local interface
+    async fn bind(
+        bind_address: std::net::SocketAddr,
+        _maybe_tls_cert_path: Option<String>,
+        _maybe_tls_key_path: Option<String>,
+    ) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        // Try to bind to the local address
+        Ok(Self(bail!(
+            tokio::net::TcpListener::bind(bind_address).await,
+            Connection,
+            "failed to bind to local address"
+        )))
+    }
+
+    /// Accept a connection from the listener.
+    ///
+    /// # Errors
+    /// - If we fail to accept a connection from the listener.
+    /// TODO: be more descriptive with this
+    /// TODO: amtch on whether the endpoint is closed, return a different error
+    async fn accept(&self) -> Result<TcpConnection> {
+        // Try to accept a connection from the underlying endpoint
+        // Split into reader and writer half
+        let (receiver, sender) = bail!(
+            self.0.accept().await,
+            Connection,
+            "failed to accept connection"
+        )
+        .0
+        .into_split();
+
+        // Wrap our halves so they can be used across threads
+        Ok(TcpConnection {
+            receiver: Arc::from(Mutex::from(receiver)),
+            sender: Arc::from(Mutex::from(sender)),
         })
     }
 }

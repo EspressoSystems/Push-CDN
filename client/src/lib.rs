@@ -9,8 +9,8 @@ use proto::{
     bail,
     connection::{
         flow::Flow,
+        protocols::Protocol,
         sticky::{self, Sticky},
-        Connection,
     },
     crypto,
     error::Error,
@@ -23,18 +23,18 @@ use proto::{
 /// more ergonomic.
 pub struct Client<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ConnectionType: Connection,
-    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
->(Sticky<SignatureScheme, ConnectionType, ConnectionFlow>);
+    ProtocolType: Protocol,
+    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+>(Sticky<SignatureScheme, ProtocolType, ConnectionFlow>);
 
-pub type Config<SignatureScheme, ConnectionType, ConnectionFlow> =
-    sticky::Config<SignatureScheme, ConnectionType, ConnectionFlow>;
+pub type Config<SignatureScheme, ProtocolType, ConnectionFlow> =
+    sticky::Config<SignatureScheme, ProtocolType, ConnectionFlow>;
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ConnectionType: Connection,
-        ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
-    > Client<SignatureScheme, ConnectionType, ConnectionFlow>
+        ProtocolType: Protocol,
+        ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+    > Client<SignatureScheme, ProtocolType, ConnectionFlow>
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
@@ -47,7 +47,7 @@ where
     /// Errors if the downstream `Sticky` object was unable to be made.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new(
-        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
+        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
     ) -> Result<Self> {
         Self::new_with_connection(config, Option::None).await
     }
@@ -60,8 +60,8 @@ where
     /// Errors if the downstream `Sticky` object was unable to be created.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new_with_connection(
-        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
-        connection: Option<ConnectionType>,
+        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
+        connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         Ok(Self(bail!(
             Sticky::from_config_and_connection(config, connection).await,
@@ -128,7 +128,7 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    /// 
+    ///
     /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscribed topics here so if we're reconnecting we maintain parity
@@ -169,7 +169,7 @@ where
 
     /// Sends a pre-formed message over the wire. Various functions make use
     /// of this one downstream.
-    /// 
+    ///
     /// # Errors
     /// - if the downstream message sending fails.
     pub async fn send_message_raw(&self, message: Arc<Message>) -> Result<()> {

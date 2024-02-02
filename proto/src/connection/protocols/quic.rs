@@ -3,12 +3,11 @@
 //! logic.
 
 use async_trait::async_trait;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{ClientConfig, Endpoint, ServerConfig};
 
 use crate::{
     bail, bail_option,
-    connection::Connection,
-    crypto::SkipServerVerification,
+    crypto::{self, SkipServerVerification},
     error::{Error, Result},
     message::Message,
     MAX_MESSAGE_SIZE,
@@ -16,27 +15,40 @@ use crate::{
 use core::hash::Hash;
 use std::{net::ToSocketAddrs, sync::Arc};
 
-/// `Quic` is a thin wrapper around `quinn::Connection` that implements
+use super::{Connection, Listener, Protocol};
+
+/// The `Quic` protocol. We use this to define commonalities between QUIC
+/// listeners, connections, etc.
+pub struct Quic;
+
+/// We define the `Quic` protocol as being composed of both a QUIC listener
+/// and connection.
+impl Protocol for Quic {
+    type Connection = QuicConnection;
+    type Listener = QuicListener;
+}
+
+/// `QuicConnection` is a thin wrapper around `quinn::Connection` that implements
 /// `Connection`.
 #[derive(Clone)]
-pub struct Quic(pub quinn::Connection);
+pub struct QuicConnection(pub quinn::Connection);
 
-/// `PartialEq` for a `Quic` connection is determined by the `stable_id` since it
+/// `PartialEq` for a `QuicConnection` connection is determined by the `stable_id` since it
 /// will not change for the duration of the connection.
-impl PartialEq for Quic {
+impl PartialEq for QuicConnection {
     fn eq(&self, other: &Self) -> bool {
         self.0.stable_id() == other.0.stable_id()
     }
 }
 
-/// Assertion for `Quic` that `PartialEq` == `Eq`
-impl Eq for Quic {
+/// Assertion for `QuicConnection` that `PartialEq` == `Eq`
+impl Eq for QuicConnection {
     fn assert_receiver_is_total_eq(&self) {}
 }
 
-/// `Hash` for a `Quic` connection is determined by the `stable_id` since it
+/// `Hash` for a `QuicConnection` connection is determined by the `stable_id` since it
 /// will not change for the duration of the connection. We just want to hash that.
-impl Hash for Quic {
+impl Hash for QuicConnection {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.stable_id().hash(state);
     }
@@ -51,7 +63,7 @@ impl Hash for Quic {
 }
 
 #[async_trait]
-impl Connection for Quic {
+impl Connection for QuicConnection {
     /// Receives a single message from the QUIC connection. Since we use
     /// virtual streams as a message framing method, this function first accepts a stream
     /// and then reads and deserializes a single message from it.
@@ -69,7 +81,9 @@ impl Connection for Quic {
 
         // Read the full message, until the sender closes the stream
         let message_bytes = bail!(
-            stream.read_to_end(usize::try_from(MAX_MESSAGE_SIZE).expect("64 bit system")).await,
+            stream
+                .read_to_end(usize::try_from(MAX_MESSAGE_SIZE).expect("64 bit system"))
+                .await,
             Connection,
             "failed to read from stream"
         );
@@ -182,6 +196,73 @@ impl Connection for Quic {
             .await,
             Connection,
             "failed to connect to remote address"
+        )))
+    }
+}
+
+/// The listener struct. Needed to receive messages over QUIC. Is a light
+/// wrapper around `quinn::Endpoint`.
+pub struct QuicListener(pub quinn::Endpoint);
+
+#[async_trait]
+impl Listener<QuicConnection> for QuicListener {
+    /// Binds to a local endpoint. Uses `maybe_tls_cert_path` and `maybe_tls_cert_key`
+    /// to conditionally load or generate the given (or not given) certificate.
+    ///
+    /// # Errors
+    /// - If we cannot load the certificate
+    /// - If we cannot bind to the local interface
+    async fn bind(
+        bind_address: std::net::SocketAddr,
+        maybe_tls_cert_path: Option<String>,
+        maybe_tls_key_path: Option<String>,
+    ) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        // Conditionally load or generate a certificate and key
+        let (certificates, key) = bail!(
+            crypto::load_or_self_sign_tls_certificate_and_key(
+                maybe_tls_cert_path,
+                maybe_tls_key_path,
+            ),
+            Crypto,
+            "failed to load or self-sign TLS certificate"
+        );
+
+        // Create server configuration from the loaded certificate
+        let server_config = bail!(
+            ServerConfig::with_single_cert(certificates, key),
+            Crypto,
+            "failed to load TLS certificate"
+        );
+
+        // Create endpoint from the given server configuration and
+        // bind address
+        Ok(Self(bail!(
+            Endpoint::server(server_config, bind_address),
+            Connection,
+            "failed to bind to local address"
+        )))
+    }
+
+    /// Accept a connection from the listener.
+    ///
+    /// # Errors
+    /// - If we fail to accept a connection from the listener.
+    /// TODO: be more descriptive with this
+    /// TODO: amtch on whether the endpoint is closed, return a different error
+    async fn accept(&self) -> Result<QuicConnection> {
+        // Try to accept a connection from the QUIC endpoint
+        Ok(QuicConnection(bail!(
+            bail_option!(
+                self.0.accept().await,
+                Connection,
+                "failed to accept connection"
+            )
+            .await,
+            Connection,
+            "failed to accept connection"
         )))
     }
 }

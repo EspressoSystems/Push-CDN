@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use client::{Client, Config};
 use proto::{
-    connection::{fallible::quic::Quic, flow::ToMarshal},
+    connection::{flow::ToMarshal, protocols::quic::Quic},
     crypto,
     error::Result,
     message::Topic,
@@ -14,7 +14,7 @@ use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme 
 async fn main() -> Result<()> {
     let (signing_key, verification_key) = crypto::generate_random_keypair::<BLS>()?;
 
-    let _client = Client::<BLS, Quic, ToMarshal>::new(Config {
+    let client = Client::<BLS, Quic, ToMarshal>::new(Config {
         verification_key,
         signing_key,
         remote_address: "google.com:80".to_string(),
@@ -22,6 +22,12 @@ async fn main() -> Result<()> {
         pd: PhantomData,
     })
     .await?;
+
+    client
+        .send_direct_message(verification_key, vec![123])
+        .await?;
+
+    println!("{:?}", client.receive_message().await);
 
     Ok(())
 }

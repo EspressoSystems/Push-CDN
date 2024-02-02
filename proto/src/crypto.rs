@@ -151,8 +151,8 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 /// - If we fail to read the key file
 /// - If we fail to parse the key file
 pub fn load_or_self_sign_tls_certificate_and_key(
-    possible_tls_certificate_path: Option<&'static str>,
-    possible_tls_key_path: Option<&'static str>,
+    possible_tls_certificate_path: Option<String>,
+    possible_tls_key_path: Option<String>,
 ) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey)> {
     let (certificate_bytes, key_bytes) = if let (Some(certificate_path), Some(key_path)) =
         (possible_tls_certificate_path, possible_tls_key_path)
@@ -160,7 +160,7 @@ pub fn load_or_self_sign_tls_certificate_and_key(
         // If we have both paths, we want to load them in
         // Read cert file in to bytes
         let encoded_certificate_bytes = bail!(
-            std::fs::read(certificate_path),
+            std::fs::read(certificate_path.clone()),
             File,
             format!("failed to read certificate file {certificate_path}")
         );
@@ -175,7 +175,7 @@ pub fn load_or_self_sign_tls_certificate_and_key(
 
         // Read key file in to bytes
         let encoded_key_bytes = bail!(
-            std::fs::read(key_path),
+            std::fs::read(key_path.clone()),
             File,
             format!("failed to read key file {key_path}")
         );

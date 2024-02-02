@@ -21,7 +21,10 @@ use crate::{
     message::{Message, Topic},
 };
 
-use super::{flow::Flow, Connection};
+use super::{
+    flow::Flow,
+    protocols::{Connection, Protocol},
+};
 
 /// `Sticky` is a wrapper around a `Fallible` connection.
 ///
@@ -32,18 +35,18 @@ use super::{flow::Flow, Connection};
 #[derive(Clone)]
 pub struct Sticky<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ConnectionType: Connection,
-    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+    ProtocolType: Protocol,
+    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    pub inner: Arc<Inner<SignatureScheme, ConnectionType, ConnectionFlow>>,
+    pub inner: Arc<Inner<SignatureScheme, ProtocolType, ConnectionFlow>>,
 }
 
 /// `Ommer` is held exclusively by `Sticky`, wherein an `Arc` is used
 /// to facilitate interior mutability.
 pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ConnectionType: Connection,
-    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+    ProtocolType: Protocol,
+    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
 > {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal. The authentication flow depends on the function defined in
@@ -64,20 +67,20 @@ pub struct Inner<
     pub subscribed_topics: Mutex<HashSet<Topic>>,
 
     /// The underlying connection, which we modify to facilitate reconnections.
-    connection: RwLock<ConnectionType>,
+    connection: RwLock<ProtocolType::Connection>,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so multiple tasks don't try doing it at the same time.
     reconnect_semaphore: Semaphore,
 
-    pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    pd: PhantomData<(ProtocolType, ConnectionFlow)>,
 }
 
 /// The configuration needed to construct a client
 pub struct Config<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ConnectionType: Connection,
-    ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
+    ProtocolType: Protocol,
+    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
 > {
     /// The verification (public) key. Sent to the server to verify
     /// our identity.
@@ -97,7 +100,7 @@ pub struct Config<
     /// Phantom data that we pass down to `Sticky` and `StickInner`.
     /// Allows us to be generic over a connection method, because
     /// we need multiple.
-    pub pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    pub pd: PhantomData<(ProtocolType, ConnectionFlow)>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -165,9 +168,9 @@ macro_rules! try_with_reconnect {
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ConnectionType: Connection,
-        ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
-    > Sticky<SignatureScheme, ConnectionType, ConnectionFlow>
+        ProtocolType: Protocol,
+        ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+    > Sticky<SignatureScheme, ProtocolType, ConnectionFlow>
 {
     /// Creates a new `Sticky` connection from a `Config` and an (optional) pre-existing
     /// `Fallible` connection.
@@ -180,8 +183,8 @@ impl<
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
     pub async fn from_config_and_connection(
-        config: Config<SignatureScheme, ConnectionType, ConnectionFlow>,
-        maybe_connection: Option<ConnectionType>,
+        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
+        maybe_connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
@@ -233,7 +236,7 @@ impl<
 
     /// Sends a message to the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-send messages)
-    /// 
+    ///
     /// # Errors
     /// - If we are in the middle of reconnecting
     /// - If the message sending failed
@@ -244,7 +247,7 @@ impl<
 
     /// Receives a message from the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-receive messages)
-    /// 
+    ///
     /// # Errors
     /// - If we are in the middle of reconnecting
     /// - If the message receiving failed

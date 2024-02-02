@@ -14,11 +14,13 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
 use crate::{
     bail,
-    connection::Connection,
     crypto::{self, DeterministicRng},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
 };
+
+use super::protocols::Protocol;
+use crate::connection::protocols::Connection;
 
 /// TODO: BIDIRECTIONAL AUTHENTICATION FOR USERS<->BROKERS
 ///
@@ -27,7 +29,7 @@ use crate::{
 #[async_trait]
 pub trait Flow<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ConnectionType: Connection,
+    ProtocolType: Protocol,
 >: Send + Sync
 {
     /// This is the meat of `Flow`. We define this for every type of connection flow we have.
@@ -36,7 +38,7 @@ pub trait Flow<
         signing_key: &SignatureScheme::SigningKey,
         verification_key: &SignatureScheme::VerificationKey,
         subscribed_topics: Vec<Topic>,
-    ) -> Result<ConnectionType>;
+    ) -> Result<ProtocolType::Connection>;
 }
 
 /// This struct implements `Flow`. It defines an implementation wherein we connect
@@ -47,8 +49,8 @@ pub struct ToMarshal {}
 #[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ConnectionType: Connection,
-    > Flow<SignatureScheme, ConnectionType> for ToMarshal
+        ProtocolType: Protocol,
+    > Flow<SignatureScheme, ProtocolType> for ToMarshal
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
@@ -58,17 +60,15 @@ where
     /// 1. Authenticate with the marshal with a signed message, who optionally
     ///     returns a permit and a server address
     /// 2. Use the permit and server address to connect to the broker
-    /// 3. ???
-    /// 4. Profit
     async fn connect(
         endpoint: String,
         signing_key: &SignatureScheme::SigningKey,
         verification_key: &SignatureScheme::VerificationKey,
         subscribed_topics: Vec<Topic>,
-    ) -> Result<ConnectionType> {
+    ) -> Result<ProtocolType::Connection> {
         // Create the initial connection, which is unauthenticated at this point
         let connection = bail!(
-            ConnectionType::connect(endpoint).await,
+            ProtocolType::Connection::connect(endpoint).await,
             Connection,
             "failed to connect to marshal"
         );
@@ -153,7 +153,7 @@ where
 
         // Create a connection to the broker. Drops the connection to the marshal.
         let connection = bail!(
-            ConnectionType::connect(broker_address).await,
+            ProtocolType::Connection::connect(broker_address).await,
             Connection,
             "failed to connect to broker"
         );

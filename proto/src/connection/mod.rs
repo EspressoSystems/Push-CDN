@@ -1,32 +1,7 @@
-use std::sync::Arc;
+//! In this file we define network abstractions, which can be implemented
+//! for any network protocol.
 
-use async_trait::async_trait;
-
-use crate::{error::Result, message::Message};
-
-pub mod fallible;
 pub mod flow;
+pub mod protocols;
 pub mod sticky;
 
-#[async_trait]
-pub trait Connection: Send + Sync {
-    /// Receive a single message from the connection.
-    ///
-    /// # Errors
-    /// Errors if we either fail to receive the message. This usually means a connection problem.
-    async fn recv_message(&self) -> Result<Message>;
-
-    /// Send a single message over the connection.
-    ///
-    /// # Errors
-    /// Errors if we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()>;
-
-    /// Connect to a remote address, returning an instance of `Self`.
-    ///
-    /// # Errors
-    /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: String) -> Result<Self>
-    where
-        Self: Sized;
-}
