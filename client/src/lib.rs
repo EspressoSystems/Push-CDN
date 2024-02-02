@@ -129,7 +129,7 @@ where
     /// # Errors
     /// If the connection or serialization has failed
     /// 
-    /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()``
+    /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscribed topics here so if we're reconnecting we maintain parity
         // with our list
@@ -143,7 +143,7 @@ where
         })))
         .await
         // Only add to our topic map if the message was successful
-        .map(|_| topic_guard.extend(topics))
+        .map(|()| topic_guard.extend(topics))
     }
 
     /// Sends a message to the server that asserts that this client is no longer
@@ -164,11 +164,14 @@ where
         })))
         .await
         // Only add to our topic map if the message was successful
-        .map(|_| topic_guard.extend(topics))
+        .map(|()| topic_guard.extend(topics))
     }
 
     /// Sends a pre-formed message over the wire. Various functions make use
     /// of this one downstream.
+    /// 
+    /// # Errors
+    /// - if the downstream message sending fails.
     pub async fn send_message_raw(&self, message: Arc<Message>) -> Result<()> {
         self.0.send_message(message).await
     }

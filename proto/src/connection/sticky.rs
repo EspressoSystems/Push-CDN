@@ -35,12 +35,12 @@ pub struct Sticky<
     ConnectionType: Connection,
     ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
 > {
-    pub inner: Arc<StickyInner<SignatureScheme, ConnectionType, ConnectionFlow>>,
+    pub inner: Arc<Inner<SignatureScheme, ConnectionType, ConnectionFlow>>,
 }
 
-/// `StickyInner` is held exclusively by `Sticky`, wherein an `Arc` is used
+/// `Ommer` is held exclusively by `Sticky`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct StickyInner<
+pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ConnectionType: Connection,
     ConnectionFlow: Flow<SignatureScheme, ConnectionType>,
@@ -70,7 +70,7 @@ pub struct StickyInner<
     /// to be. This is so multiple tasks don't try doing it at the same time.
     reconnect_semaphore: Semaphore,
 
-    _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 /// The configuration needed to construct a client
@@ -97,7 +97,7 @@ pub struct Config<
     /// Phantom data that we pass down to `Sticky` and `StickInner`.
     /// Allows us to be generic over a connection method, because
     /// we need multiple.
-    pub _pd: PhantomData<(ConnectionType, ConnectionFlow)>,
+    pub pd: PhantomData<(ConnectionType, ConnectionFlow)>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -109,15 +109,13 @@ pub struct Config<
 macro_rules! try_with_reconnect {
     ($self: expr, $operation: ident,  $($arg:tt)*) => {{
         // Acquire read guard for sending and receiving messages
-        let read_guard = match $self.inner.connection.try_read(){
-            Ok(read_guard) => read_guard,
-            Err(_) => {
-                return Err(Error::Connection("message failed: reconnection in progress".to_string()));
-            }
+        let Ok(read_guard) = $self.inner.connection.try_read() else {
+            return Err(Error::Connection("message failed: reconnection in progress".to_string()));
         };
 
         // Perform operation, see if it errors
-        match read_guard.$operation($($arg)*).await{
+        let operation = read_guard.$operation($($arg)*).await;
+        match operation{
             Ok(res) => res,
             Err(err) => {
 
@@ -128,7 +126,7 @@ macro_rules! try_with_reconnect {
                 let mut write_guard = $self.inner.connection.write().await;
 
                 // Lock subscribed topics
-                let subscribed_topics = &$self.inner.subscribed_topics.lock().await;
+                let subscribed_topics = $self.inner.subscribed_topics.lock().await;
                 let topics:Vec<Topic> = subscribed_topics.iter().cloned().collect();
 
                 // Loop to connect and authenticate
@@ -153,6 +151,7 @@ macro_rules! try_with_reconnect {
                 // Set connection to new connection
                 *write_guard = connection;
                 drop(write_guard);
+                drop(subscribed_topics);
         }
 
         // If somebody is already trying to reconnect, fail instantly
@@ -190,7 +189,7 @@ impl<
             signing_key,
             remote_address,
             initial_subscribed_topics,
-            _pd,
+            pd,
         } = config;
 
         // Perform the initial connection if not provided. This is to validate
@@ -219,7 +218,7 @@ impl<
 
         // Return the slightly transformed connection.
         Ok(Self {
-            inner: Arc::from(StickyInner {
+            inner: Arc::from(Inner {
                 remote_address,
                 signing_key,
                 verification_key,
@@ -227,13 +226,17 @@ impl<
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),
-                _pd,
+                pd,
             }),
         })
     }
 
     /// Sends a message to the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-send messages)
+    /// 
+    /// # Errors
+    /// - If we are in the middle of reconnecting
+    /// - If the message sending failed
     pub async fn send_message(&self, message: Arc<Message>) -> Result<()> {
         // Try to send the message, reconnecting if needed
         Ok(try_with_reconnect!(self, send_message, message,))
@@ -241,6 +244,10 @@ impl<
 
     /// Receives a message from the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-receive messages)
+    /// 
+    /// # Errors
+    /// - If we are in the middle of reconnecting
+    /// - If the message receiving failed
     pub async fn receive_message(&self) -> Result<Message> {
         // Try to send the message, reconnecting if needed
         Ok(try_with_reconnect!(self, recv_message,))

@@ -69,7 +69,7 @@ impl Connection for Quic {
 
         // Read the full message, until the sender closes the stream
         let message_bytes = bail!(
-            stream.read_to_end(MAX_MESSAGE_SIZE as usize).await,
+            stream.read_to_end(usize::try_from(MAX_MESSAGE_SIZE).expect("64 bit system")).await,
             Connection,
             "failed to read from stream"
         );

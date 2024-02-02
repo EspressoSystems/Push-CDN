@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         signing_key,
         remote_address: "google.com:80".to_string(),
         initial_subscribed_topics: vec![Topic::Global],
-        _pd: PhantomData,
+        pd: PhantomData,
     })
     .await?;
 

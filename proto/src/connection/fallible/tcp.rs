@@ -13,7 +13,11 @@ use tokio::{
 };
 
 use crate::{
-    bail, bail_option, connection::Connection, error::{Error, Result}, message::Message, MAX_MESSAGE_SIZE
+    bail, bail_option,
+    connection::Connection,
+    error::{Error, Result},
+    message::Message,
+    MAX_MESSAGE_SIZE,
 };
 use std::{net::ToSocketAddrs, sync::Arc};
 
@@ -40,7 +44,7 @@ impl Connection for Tcp {
 
         // Read the message size from the stream
         let message_size = bail!(
-            receiver_guard.read_u32().await,
+            receiver_guard.read_u64().await,
             Connection,
             "failed to read message size"
         );
@@ -52,7 +56,8 @@ impl Connection for Tcp {
         }
 
         // Create buffer of the proper size
-        let mut buffer = vec![0; message_size as usize];
+        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
+        
         // Read the message from the stream
         bail!(
             receiver_guard.read_exact(&mut buffer).await,
@@ -89,7 +94,7 @@ impl Connection for Tcp {
         // Write the message size to the stream
         bail!(
             sender_guard
-                .write_u32(serialized_message.len() as u32)
+                .write_u64(serialized_message.len() as u64)
                 .await,
             Connection,
             "failed to send message size"

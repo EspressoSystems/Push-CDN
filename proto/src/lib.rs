@@ -11,7 +11,7 @@ pub mod wal;
 ///
 /// The maximum message size to be received over a connection.
 /// After this, it will be automatically closed by the receiver.
-pub const MAX_MESSAGE_SIZE: u32 = 1024 * 1024 * 1024;
+pub const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 1024;
 
 /// The maximum amount of concurrent QUIC streams (messages) that can be opened.
 /// Having a value that is too high can degrade performance.

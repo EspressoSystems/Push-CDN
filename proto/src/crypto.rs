@@ -141,9 +141,15 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 /// Loads or self-signs a certificate and corresponding key based on the
 /// arguments based in. If a path is missing for either the cert or the key,
 /// we assume local operation. In this case, we will self-sign a certificate.
-/// 
-/// TODO: just take local_testing flag and decide whether to self-sign based
+///
+/// TODO: just take `local_testing` flag and decide whether to self-sign based
 /// on that.
+///
+/// # Errors
+/// - If we fail to read the certificate file
+/// - If we fail to parse the `.PEM` file
+/// - If we fail to read the key file
+/// - If we fail to parse the key file
 pub fn load_or_self_sign_tls_certificate_and_key(
     possible_tls_certificate_path: Option<&'static str>,
     possible_tls_key_path: Option<&'static str>,
@@ -188,10 +194,18 @@ pub fn load_or_self_sign_tls_certificate_and_key(
     // We don't have one path or the other, so self-sign a certificate instead
     else {
         // Generate a cert with the local bind address, if possible
-        let cert = generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let cert = bail!(
+            generate_simple_self_signed(vec!["localhost".into()]),
+            Crypto,
+            "failed to self-sign cert"
+        );
 
         // Serialize certificate to DER format
-        let certificate_bytes = cert.serialize_der().unwrap();
+        let certificate_bytes = bail!(
+            cert.serialize_der(),
+            Crypto,
+            "failed to serialize self-signed certificate"
+        );
 
         // Serialize the key to DER format
         let key_bytes = cert.serialize_private_key_der();
