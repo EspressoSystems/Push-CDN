@@ -3,17 +3,21 @@
 //! but with different connection and authentication methods. For example, broker <-> broker
 //! is different from user <-> broker.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use async_trait::async_trait;
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
+use tokio::sync::Mutex;
 
 use crate::{
     bail,
     crypto::{self, DeterministicRng},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
 use super::protocols::Protocol;
@@ -36,7 +40,6 @@ pub trait Flow<
 /// This struct implements `Flow`. It defines an implementation wherein we connect
 /// to a marshal first, who returns the server address we should connect to, along
 /// with a permit. Only after that do we try connecting to the broker.
-#[derive(Clone)]
 pub struct UserToMarshal<SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>>
 {
     /// This is the remote address that we authenticate to. It can either be a broker
@@ -50,6 +53,10 @@ pub struct UserToMarshal<SignatureScheme: JfSignatureScheme<PublicParameter = ()
     /// The underlying (private) signing key, used to sign messages to send to the server during the
     /// authentication phase.
     pub signing_key: SignatureScheme::SigningKey,
+
+    /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
+    /// when we connect to a new server.
+    pub subscribed_topics: Mutex<HashSet<Topic>>,
 }
 
 #[async_trait]

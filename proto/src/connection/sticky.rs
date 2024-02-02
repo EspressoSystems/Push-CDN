@@ -50,7 +50,7 @@ pub struct Inner<
 > {
     /// This encapsulates the underlying connection parameters that we need
     /// to connect, as well as the underyling flow
-    flow: ConnectionFlow,
+    pub flow: ConnectionFlow,
 
     /// The underlying connection, which we modify to facilitate reconnections.
     connection: RwLock<ProtocolType::Connection>,

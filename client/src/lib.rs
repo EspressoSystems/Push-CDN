@@ -13,7 +13,7 @@ use proto::{
     crypto,
     error::Error,
     error::Result,
-    message::{Broadcast, Direct, Message, Topic},
+    message::{Broadcast, Direct, Message, Subscribe, Topic, Unsubscribe},
 };
 
 /// `Client` is a light wrapper around a `Sticky` connection that provides functions
@@ -130,8 +130,35 @@ where
     /// If the connection or serialization has failed
     ///
     /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
-    pub async fn subscribe(&self, _topics: Vec<Topic>) -> Result<()> {
-        todo!()
+    pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
+        // Lock subscriptions here so we maintain parity during a reconnection
+        let mut subscribed_guard = self.0.inner.flow.subscribed_topics.lock().await;
+
+        // Calculate the real topics to send based on whatever's already in the set
+        let topics_to_send: Vec<Topic> = topics
+            .into_iter()
+            .filter(|topic| !subscribed_guard.contains(topic))
+            .collect();
+
+        // Send the topics
+        bail!(
+            self.send_message(Message::Subscribe(Subscribe {
+                topics: topics_to_send.clone()
+            }))
+            .await,
+            Connection,
+            "failed to send subscription message"
+        );
+
+        // Add the topics to the list if successful
+        for topic in topics_to_send {
+            subscribed_guard.insert(topic);
+        }
+
+        // Drop the write guard
+        drop(subscribed_guard);
+
+        Ok(())
     }
 
     /// Sends a message to the server that asserts that this client is no longer
@@ -139,8 +166,35 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn unsubscribe(&self, _topics: Vec<Topic>) -> Result<()> {
-        todo!()
+    pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
+        // Lock subscriptions here so we maintain parity during a reconnection
+        let mut subscribed_guard = self.0.inner.flow.subscribed_topics.lock().await;
+
+        // Calculate the real topics to send based on whatever's already in the set
+        let topics_to_send: Vec<Topic> = topics
+            .into_iter()
+            .filter(|topic| subscribed_guard.contains(topic))
+            .collect();
+
+        // Send the topics
+        bail!(
+            self.send_message(Message::Unsubscribe(Unsubscribe {
+                topics: topics_to_send.clone()
+            }))
+            .await,
+            Connection,
+            "failed to send unsubscription message"
+        );
+
+        // Add the topics to the list if successful
+        for topic in topics_to_send {
+            subscribed_guard.remove(&topic);
+        }
+
+        // Drop the write guard
+        drop(subscribed_guard);
+
+        Ok(())
     }
 
     /// Sends a pre-formed message over the wire. Various functions make use

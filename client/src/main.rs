@@ -1,13 +1,15 @@
-use std::marker::PhantomData;
+use std::{collections::HashSet, marker::PhantomData};
 
 use client::{Client, Config};
 use proto::{
     connection::{flow::UserToMarshal, protocols::quic::Quic},
     crypto,
     error::Result,
+    message::Topic,
 };
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,6 +19,7 @@ async fn main() -> Result<()> {
         verification_key,
         signing_key,
         endpoint: "google.com:80".to_string(),
+        subscribed_topics: Mutex::from(HashSet::from_iter([Topic::DA, Topic::Global])),
     };
 
     let client = Client::<BLS, Quic>::new(Config {
