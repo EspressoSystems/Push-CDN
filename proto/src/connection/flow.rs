@@ -3,9 +3,7 @@
 //! but with different connection and authentication methods. For example, broker <-> broker
 //! is different from user <-> broker.
 
-use std::{
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use async_trait::async_trait;

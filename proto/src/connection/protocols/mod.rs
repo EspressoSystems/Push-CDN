@@ -1,6 +1,6 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{net::SocketAddr};
+use std::net::SocketAddr;
 
 use async_trait::async_trait;
 

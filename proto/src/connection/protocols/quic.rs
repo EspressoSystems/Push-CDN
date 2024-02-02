@@ -13,7 +13,7 @@ use crate::{
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::{net::ToSocketAddrs};
+use std::net::ToSocketAddrs;
 
 use super::{Connection, Listener, Protocol};
 
