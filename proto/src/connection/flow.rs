@@ -4,7 +4,6 @@
 //! is different from user <-> broker.
 
 use std::{
-    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -120,9 +119,7 @@ where
 
         // Create and send the authentication message from the above operations
         bail!(
-            connection
-                .send_message(Arc::from(authenticate_with_marshal))
-                .await,
+            connection.send_message(authenticate_with_marshal).await,
             Connection,
             "failed to auth message to marshal"
         );
@@ -168,9 +165,7 @@ where
 
         // Send our auth message to the broker
         bail!(
-            connection
-                .send_message(Arc::from(authenticate_with_broker))
-                .await,
+            connection.send_message(authenticate_with_broker).await,
             Connection,
             "failed to send auth message to broker"
         );

@@ -1,14 +1,12 @@
 //! In here we define an API that is a little more higher-level and ergonomic
 //! for end users. It is a light wrapper on top of a `Sticky` connection.
 
-use std::sync::Arc;
-
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        flow::Flow,
+        flow::UserToMarshal,
         protocols::Protocol,
         sticky::{self, Sticky},
     },
@@ -20,12 +18,15 @@ use proto::{
 
 /// `Client` is a light wrapper around a `Sticky` connection that provides functions
 /// for common operations to and from a server. Mostly just used to make the API
-/// more ergonomic.
+/// more ergonomic. Also keeps track of subscriptions.
 pub struct Client<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
->(Sticky<SignatureScheme, ProtocolType, ConnectionFlow>);
+>(Sticky<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>)
+where
+    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize;
 
 pub type Config<SignatureScheme, ProtocolType, ConnectionFlow> =
     sticky::Config<SignatureScheme, ProtocolType, ConnectionFlow>;
@@ -33,8 +34,7 @@ pub type Config<SignatureScheme, ProtocolType, ConnectionFlow> =
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-        ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
-    > Client<SignatureScheme, ProtocolType, ConnectionFlow>
+    > Client<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
@@ -47,7 +47,7 @@ where
     /// Errors if the downstream `Sticky` object was unable to be made.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new(
-        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
+        config: Config<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>,
     ) -> Result<Self> {
         Self::new_with_connection(config, Option::None).await
     }
@@ -60,7 +60,7 @@ where
     /// Errors if the downstream `Sticky` object was unable to be created.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new_with_connection(
-        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
+        config: Config<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>,
         connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         Ok(Self(bail!(
@@ -93,7 +93,7 @@ where
         // TODO: conditionally match error on whether deserialization OR the connection failed
 
         // Form and send the single message
-        self.send_message_raw(Arc::from(Message::Broadcast(Broadcast { topics, message })))
+        self.send_message(Message::Broadcast(Broadcast { topics, message }))
             .await
     }
 
@@ -116,10 +116,10 @@ where
         );
 
         // Form and send the single message
-        self.send_message_raw(Arc::from(Message::Direct(Direct {
+        self.send_message(Message::Direct(Direct {
             recipient: recipient_bytes,
             message,
-        })))
+        }))
         .await
     }
 
@@ -148,7 +148,7 @@ where
     ///
     /// # Errors
     /// - if the downstream message sending fails.
-    pub async fn send_message_raw(&self, message: Arc<Message>) -> Result<()> {
+    pub async fn send_message(&self, message: Message) -> Result<()> {
         self.0.send_message(message).await
     }
 }

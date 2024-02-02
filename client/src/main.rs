@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         endpoint: "google.com:80".to_string(),
     };
 
-    let client = Client::<BLS, Quic, _>::new(Config {
+    let client = Client::<BLS, Quic>::new(Config {
         flow: connection_flow,
         pd: PhantomData,
     })

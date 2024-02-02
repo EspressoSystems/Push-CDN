@@ -13,7 +13,7 @@ use crate::{
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::{net::ToSocketAddrs, sync::Arc};
+use std::{net::ToSocketAddrs};
 
 use super::{Connection, Listener, Protocol};
 
@@ -100,9 +100,27 @@ impl Connection for QuicConnection {
     /// stream and then serializes and sends a single message to it.
     ///
     /// # Errors
-    /// Errors if we either failed to open the stream or send the message over that stream.
+    /// - If we fail to serialize the message
+    /// - If we fail to open the stream
+    /// - If we fail to send the message over that stream
     /// This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()> {
+    async fn send_message(&self, message: Message) -> Result<()> {
+        // Serialize the message
+        let message_bytes = bail!(
+            message.serialize(),
+            Serialize,
+            "failed to serialize message"
+        );
+
+        // Send the message
+        self.send_message_raw(message_bytes).await
+    }
+
+    /// Send a pre-formed message over the connection.
+    ///
+    /// # Errors
+    /// - If we fail to deliver the message. This usually means a connection problem.
+    async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
         // Open the outgoing unidirectional stream
         let mut stream = bail!(
             self.0.open_uni().await,
@@ -110,16 +128,9 @@ impl Connection for QuicConnection {
             "failed to open unidirectional stream"
         );
 
-        // Serialize the message
-        let message_bytes = bail!(
-            message.as_ref().serialize(),
-            Serialize,
-            "failed to serialize message"
-        );
-
         // Write the full message to the stream
         bail!(
-            stream.write_all(&message_bytes).await,
+            stream.write_all(&message).await,
             Connection,
             "failed to write to stream"
         );

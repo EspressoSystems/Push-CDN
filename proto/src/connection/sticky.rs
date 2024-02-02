@@ -75,7 +75,7 @@ pub struct Config<
     /// the subscribed topics upon connection.
     pub flow: ConnectionFlow,
 
-    /// Phantom data that we pass down to `Sticky` and `StickInner`.
+    /// Phantom data that we pass down to `Sticky` and `StickyInner`.
     /// Allows us to be generic over a connection method, because
     /// we need multiple.
     pub pd: PhantomData<(SignatureScheme, ProtocolType, ConnectionFlow)>,
@@ -197,15 +197,34 @@ impl<
         })
     }
 
-    /// Sends a message to the underlying fallible connection. Reconnection logic is here,
+    /// Sends a pre-formed message to the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-send messages)
     ///
     /// # Errors
     /// - If we are in the middle of reconnecting
     /// - If the message sending failed
-    pub async fn send_message(&self, message: Arc<Message>) -> Result<()> {
+    pub async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
         // Try to send the message, reconnecting if needed
-        Ok(try_with_reconnect!(self, send_message, message,))
+        Ok(try_with_reconnect!(self, send_message_raw, message,))
+    }
+
+    /// Sends a message to the underlying fallible connection. Reconnection logic is here,
+    /// but retry logic needs to be handled by the caller (e.g. re-send messages)
+    ///
+    /// # Errors
+    /// - If we fail to serialize the message
+    /// - If we are in the middle of reconnecting
+    /// - If the message sending failed
+    pub async fn send_message(&self, message: Message) -> Result<()> {
+        // Serialize the message
+        let message = bail!(
+            message.serialize(),
+            Serialize,
+            "failed to serialize message"
+        );
+
+        // Try to send the message, reconnecting if needed
+        Ok(try_with_reconnect!(self, send_message_raw, message,))
     }
 
     /// Receives a message from the underlying fallible connection. Reconnection logic is here,

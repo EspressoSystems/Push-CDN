@@ -1,6 +1,6 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr};
 
 use async_trait::async_trait;
 
@@ -11,7 +11,6 @@ pub mod tcp;
 /// Assert that we are at _least_ running on a 64-bit system
 /// TODO: find out if there is a better way than the `u64` cast
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
-
 
 pub trait Protocol: Send + Sync + 'static {
     type Connection: Connection;
@@ -29,8 +28,15 @@ pub trait Connection: Send + Sync + 'static {
     /// Send a single message over the connection.
     ///
     /// # Errors
-    /// Errors if we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()>;
+    /// - If we fail to deliver the message
+    /// - If we fail to serialize the message
+    async fn send_message(&self, message: Message) -> Result<()>;
+
+    /// Send a pre-formed message over the connection.
+    ///
+    /// # Errors
+    /// - If we fail to deliver the message. This usually means a connection problem.
+    async fn send_message_raw(&self, message: Vec<u8>) -> Result<()>;
 
     /// Connect to a remote address, returning an instance of `Self`.
     ///

@@ -86,35 +86,41 @@ impl Connection for TcpConnection {
         ))
     }
 
-    /// Sends a single message to the QUIC connection. This function first opens a
-    /// stream and then serializes and sends a single message to it.
+    /// Sends a single (deserialized) message over the TCP connection
     ///
     /// # Errors
-    /// Errors if we either failed to open the stream or send the message over that stream.
-    /// This usually means a connection problem.
-    async fn send_message(&self, message: Arc<Message>) -> Result<()> {
-        // Lock the stream so we don't send message/message sizes interleaved
-        let mut sender_guard = self.sender.lock().await;
-
+    /// - If we fail to serialize the message
+    /// - If we fail to send the message
+    async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize the message
         let serialized_message = bail!(
-            message.as_ref().serialize(),
+            message.serialize(),
             Serialize,
             "failed to serialize message"
         );
 
+        // Send the serialized message
+        self.send_message_raw(serialized_message).await
+    }
+
+    /// Send a pre-formed message over the connection.
+    ///
+    /// # Errors
+    /// - If we fail to deliver the message. This usually means a connection problem.
+    async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
+        // Lock the stream so we don't send message/message sizes interleaved
+        let mut sender_guard = self.sender.lock().await;
+
         // Write the message size to the stream
         bail!(
-            sender_guard
-                .write_u64(serialized_message.len() as u64)
-                .await,
+            sender_guard.write_u64(message.len() as u64).await,
             Connection,
             "failed to send message size"
         );
 
         // Write the message to the stream
         bail!(
-            sender_guard.write_all(&serialized_message).await,
+            sender_guard.write_all(&message).await,
             Connection,
             "failed to send message"
         );
