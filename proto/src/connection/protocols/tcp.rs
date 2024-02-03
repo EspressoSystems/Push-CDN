@@ -207,7 +207,7 @@ impl Listener<TcpConnection> for TcpListener {
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
-    /// TODO: amtch on whether the endpoint is closed, return a different error
+    /// TODO: match on whether the endpoint is closed, return a different error
     async fn accept(&self) -> Result<TcpConnection> {
         // Try to accept a connection from the underlying endpoint
         // Split into reader and writer half

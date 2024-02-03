@@ -6,7 +6,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        flow::UserToMarshal,
+        auth::UserToMarshal,
         protocols::Protocol,
         sticky::{self, Sticky},
     },
@@ -22,7 +22,7 @@ use proto::{
 pub struct Client<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
->(Sticky<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>)
+>(Sticky<SignatureScheme, ProtocolType, UserToMarshal>)
 where
     SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
@@ -46,9 +46,7 @@ where
     /// # Errors
     /// Errors if the downstream `Sticky` object was unable to be made.
     /// This usually happens when we can't bind to the specified endpoint.
-    pub async fn new(
-        config: Config<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>,
-    ) -> Result<Self> {
+    pub async fn new(config: Config<SignatureScheme, ProtocolType, UserToMarshal>) -> Result<Self> {
         Self::new_with_connection(config, Option::None).await
     }
 
@@ -60,7 +58,7 @@ where
     /// Errors if the downstream `Sticky` object was unable to be created.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new_with_connection(
-        config: Config<SignatureScheme, ProtocolType, UserToMarshal<SignatureScheme>>,
+        config: Config<SignatureScheme, ProtocolType, UserToMarshal>,
         connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         Ok(Self(bail!(
@@ -132,7 +130,7 @@ where
     /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscriptions here so we maintain parity during a reconnection
-        let mut subscribed_guard = self.0.inner.flow.subscribed_topics.lock().await;
+        let mut subscribed_guard = self.0.inner.auth_data.subscribed_topics.lock().await;
 
         // Calculate the real topics to send based on whatever's already in the set
         let topics_to_send: Vec<Topic> = topics
@@ -168,7 +166,7 @@ where
     /// If the connection or serialization has failed
     pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscriptions here so we maintain parity during a reconnection
-        let mut subscribed_guard = self.0.inner.flow.subscribed_topics.lock().await;
+        let mut subscribed_guard = self.0.inner.auth_data.subscribed_topics.lock().await;
 
         // Calculate the real topics to send based on whatever's already in the set
         let topics_to_send: Vec<Topic> = topics

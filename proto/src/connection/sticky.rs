@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    flow::Flow,
+    auth::Flow,
     protocols::{Connection, Protocol},
 };
 
@@ -36,9 +36,9 @@ use super::{
 pub struct Sticky<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    pub inner: Arc<Inner<SignatureScheme, ProtocolType, ConnectionFlow>>,
+    pub inner: Arc<Inner<SignatureScheme, ProtocolType, AuthFlow>>,
 }
 
 /// `Inner` is held exclusively by `Sticky`, wherein an `Arc` is used
@@ -46,39 +46,44 @@ pub struct Sticky<
 pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    /// This encapsulates the underlying connection parameters that we need
-    /// to connect, as well as the underyling flow
-    pub flow: ConnectionFlow,
+    /// This is the remote address that we authenticate to. It can either be a broker
+    /// or a marshal.
+    endpoint: String,
 
     /// The underlying connection, which we modify to facilitate reconnections.
     connection: RwLock<ProtocolType::Connection>,
+
+    /// This is the authentication data that we need to be able to authenticate
+    pub auth_data: AuthFlow::AuthData,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so we don't spawn multiple tasks at once
     reconnect_semaphore: Semaphore,
 
-    /// Phantom data that lets us use `ProtocolType`, `ConnectionFlow`, and
+    /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
     /// `SignatureScheme` downstream.
-    pd: PhantomData<(SignatureScheme, ProtocolType, ConnectionFlow)>,
+    pd: PhantomData<(SignatureScheme, ProtocolType, AuthFlow)>,
 }
 
 /// The configuration needed to construct a `Sticky` connection.
 pub struct Config<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: Flow<SignatureScheme, ProtocolType>,
 > {
-    /// The (optional) state we use to add things to the connection state.
-    /// For example, with a `UserToMarshal` flow, we may want to send
-    /// the subscribed topics upon connection.
-    pub flow: ConnectionFlow,
+    /// This is the remote address that we authenticate to. It can either be a broker
+    /// or a marshal.
+    pub endpoint: String,
+
+    /// This is the authentication data that we need to be able to authenticate
+    pub auth_data: AuthFlow::AuthData,
 
     /// Phantom data that we pass down to `Sticky` and `StickyInner`.
     /// Allows us to be generic over a connection method, because
     /// we need multiple.
-    pub pd: PhantomData<(SignatureScheme, ProtocolType, ConnectionFlow)>,
+    pub pd: PhantomData<(SignatureScheme, ProtocolType, AuthFlow)>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -115,12 +120,21 @@ macro_rules! try_with_reconnect {
 
                 // Loop to connect and authenticate
                 let connection = loop {
-                    // Try to connect with our parameters
-                    match inner.flow.connect()
+                    // Create a connection
+                    let connection = match ProtocolType::Connection::connect(inner.endpoint.clone()).await {
+                        Ok(connection) => connection,
+                        Err(err) => {
+                            error!("failed to connect to endpoint: {err} retrying");
+                        continue
+                        }
+                    };
+
+                    // Try to authenticate the connection
+                    match AuthFlow::authenticate(&inner.auth_data, &connection)
                     .await
                     {
-                        Ok(connection) => break connection,
-                        Err(err) => error!("failed to connect to endpoint: {err}. retrying"),
+                        Ok(_) => break connection,
+                        Err(err) => error!("failed to authenticate with endpoint: {err}. retrying"),
                     }
 
                     // Sleep so we don't overload the server
@@ -147,8 +161,8 @@ macro_rules! try_with_reconnect {
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-        ConnectionFlow: Flow<SignatureScheme, ProtocolType>,
-    > Sticky<SignatureScheme, ProtocolType, ConnectionFlow>
+        AuthFlow: Flow<SignatureScheme, ProtocolType>,
+    > Sticky<SignatureScheme, ProtocolType, AuthFlow>
 {
     /// Creates a new `Sticky` connection from a `Config` and an (optional) pre-existing
     /// `Fallible` connection.
@@ -161,34 +175,48 @@ impl<
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
     pub async fn from_config_and_connection(
-        config: Config<SignatureScheme, ProtocolType, ConnectionFlow>,
+        config: Config<SignatureScheme, ProtocolType, AuthFlow>,
         maybe_connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
-        let Config { flow, pd } = config;
+        let Config {
+            pd,
+            endpoint,
+            auth_data,
+        } = config;
 
-        // Perform the initial connection if not provided. This is to validate
-        // that we have correct parameters and all.
+        // Perform the initial connection and authentication if not provided.
+        // This is to validate that we have correct parameters and all.
         //
         // TODO: cancel conditionally depending on what kind of error, or retry-
         // based.
         //
         // TODO: clean this up
-        let connection = match maybe_connection {
-            Some(connection) => connection,
-            None => {
-                bail!(
-                    flow.connect().await,
-                    Connection,
-                    "failed to make initial connection"
-                )
-            }
+        let connection = if let Some(connection) = maybe_connection {
+            connection
+        } else {
+            // Make the connection
+            let connection = bail!(
+                ProtocolType::Connection::connect(endpoint.clone()).await,
+                Connection,
+                "failed to connect to endpoint"
+            );
+
+            // Authenticate the connection (if not provided)
+            let _permit = bail!(
+                AuthFlow::authenticate(&auth_data, &connection).await,
+                Authentication,
+                "failed to authenticate"
+            );
+
+            connection
         };
 
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(Inner {
-                flow,
+                auth_data,
+                endpoint,
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),

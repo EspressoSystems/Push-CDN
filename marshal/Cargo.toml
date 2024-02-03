@@ -6,3 +6,7 @@ edition = "2021"
 description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
 
 [dependencies]
+jf-primitives.workspace = true
+proto.path = "../proto"
+tokio.workspace = true
+tracing.workspace = true

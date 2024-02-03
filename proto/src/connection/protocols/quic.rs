@@ -262,7 +262,7 @@ impl Listener<QuicConnection> for QuicListener {
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
-    /// TODO: amtch on whether the endpoint is closed, return a different error
+    /// TODO: match on whether the endpoint is closed, return a different error
     async fn accept(&self) -> Result<QuicConnection> {
         // Try to accept a connection from the QUIC endpoint
         Ok(QuicConnection(bail!(

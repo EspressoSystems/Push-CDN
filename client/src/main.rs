@@ -2,7 +2,7 @@ use std::{collections::HashSet, marker::PhantomData};
 
 use client::{Client, Config};
 use proto::{
-    connection::{flow::UserToMarshal, protocols::quic::Quic},
+    connection::{auth::UserAuthData, protocols::quic::Quic},
     crypto,
     error::Result,
     message::Topic,
@@ -15,15 +15,15 @@ use tokio::sync::Mutex;
 async fn main() -> Result<()> {
     let (signing_key, verification_key) = crypto::generate_random_keypair::<BLS>()?;
 
-    let connection_flow = UserToMarshal {
+    let auth_data = UserAuthData {
         verification_key,
         signing_key,
-        endpoint: "google.com:80".to_string(),
         subscribed_topics: Mutex::from(HashSet::from_iter([Topic::DA, Topic::Global])),
     };
 
     let client = Client::<BLS, Quic>::new(Config {
-        flow: connection_flow,
+        endpoint: "127.0.0.1:8080".to_string(),
+        auth_data,
         pd: PhantomData,
     })
     .await?;
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         .send_direct_message(verification_key, vec![123])
         .await?;
 
-    println!("{:?}", client.receive_message().await);
+    // println!("{:?}", client.receive_message().await);
 
     Ok(())
 }
