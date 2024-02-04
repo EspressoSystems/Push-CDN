@@ -56,10 +56,6 @@ macro_rules! bail_option {
 #[macro_export]
 macro_rules! parse_socket_address {
     ($address:expr) => {
-        bail!(
-            $address.parse(),
-            Parse,
-            "failed to parse socket address"
-        )
+        bail!($address.parse(), Parse, "failed to parse socket address")
     };
 }
