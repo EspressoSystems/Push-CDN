@@ -28,8 +28,8 @@ where
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize;
 
-pub type Config<SignatureScheme, ProtocolType, ConnectionFlow> =
-    sticky::Config<SignatureScheme, ProtocolType, ConnectionFlow>;
+pub type Config<SignatureScheme, ProtocolType, AuthFlow> =
+    sticky::Config<SignatureScheme, ProtocolType, AuthFlow>;
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,

@@ -87,11 +87,12 @@ where
 ///
 /// # Errors
 /// Errors only if the transitive key generation fails.
-pub fn generate_random_keypair<Scheme: SignatureScheme<PublicParameter = ()>>(
+pub fn generate_random_keypair<
+    Scheme: SignatureScheme<PublicParameter = ()>,
+    Rng: CryptoRng + RngCore,
+>(
+    mut prng: Rng,
 ) -> Result<(Scheme::SigningKey, Scheme::VerificationKey)> {
-    // Generate a new `prng` from system entropy
-    let mut prng = StdRng::from_entropy();
-
     // Generate a key and return it
     Ok(bail!(
         Scheme::key_gen(&(), &mut prng),

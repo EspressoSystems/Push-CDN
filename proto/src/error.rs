@@ -58,7 +58,7 @@ macro_rules! parse_socket_address {
     ($address:expr) => {
         bail!(
             $address.parse(),
-            ParseError,
+            Parse,
             "failed to parse socket address"
         )
     };

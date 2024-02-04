@@ -5,10 +5,11 @@
 //! 3. Brokers to verify permits
 //! 4. Brokers for peer discovery
 
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use redis::aio::ConnectionManager;
+use std::result::Result as StdResult;
 
 use crate::{
     bail,
@@ -17,17 +18,21 @@ use crate::{
 
 /// This struct is a light wrapper around a managed `Redis` connection which encpasulates
 /// an operator identifier for common operations
+#[derive(Clone)]
 pub struct Client {
     /// The underlying `Redis` connection. Is managed, so we don't have to worry about reconnections
     underlying_connection: ConnectionManager,
     /// Our operator identifier (in practice, will be something like a concat of advertise addresses)
-    identifier: String,
+    identifier: BrokerIdentifier,
 }
 
 impl Client {
     /// Create a new `Client` from the `Redis` endpoint and optional identifier. This is clonable, and
     /// we don't have to worry about reconnections anywhere.
-    pub async fn new(endpoint: String, identifier: Option<String>) -> Result<Self> {
+    ///
+    /// # Errors
+    /// - If we couldn't parse the `Redis` endpoint
+    pub async fn new(endpoint: String, identifier: Option<BrokerIdentifier>) -> Result<Self> {
         // Parse the `Redis` URL, creating a `redis-rs` client from it.
         let client = bail!(
             redis::Client::open(endpoint),
@@ -36,12 +41,14 @@ impl Client {
         );
 
         // Use the supplied identifier or a blank one, if we don't need/want one.
-        // We only "need" the identifier if we want to register with the broker
-        let identifier = if let Some(identifier) = identifier {
-            identifier
-        } else {
-            "".to_string()
-        };
+        // We only "need" the identifier if we want to register with Redis
+        let identifier = identifier.map_or_else(
+            || BrokerIdentifier {
+                user_advertise_address: String::new(),
+                broker_advertise_address: String::new(),
+            },
+            |identifier| identifier.into(),
+        );
 
         // Return the thinly wrapped `Self`.
         Ok(Self {
@@ -55,10 +62,13 @@ impl Client {
     }
 
     /// (as a broker) perform the heartbeat operation. The heartbeat operation
-    /// consists of the folllowing in an atomic transaction:
+    /// consists of the following in an atomic transaction:
     /// 1. Add to the list of brokers
     /// 2. Set the expiry for the broker set member
     /// 3. Set the number of connections
+    ///
+    /// # Errors
+    /// - If the `Redis` connection fails
     pub async fn perform_heartbeat(
         &mut self,
         num_connections: u64,
@@ -77,7 +87,7 @@ impl Client {
         // Add our identifier to the broker list (if not there already)
         bail!(
             redis::cmd("SADD")
-                .arg(&["brokers", &self.identifier])
+                .arg(&["brokers", &self.identifier.to_string()])
                 .query_async(&mut self.underlying_connection)
                 .await,
             Connection,
@@ -89,7 +99,7 @@ impl Client {
             redis::cmd("EXPIREMEMBER")
                 .arg(&[
                     "brokers",
-                    &self.identifier,
+                    &self.identifier.to_string(),
                     &heartbeat_interval.as_secs().to_string()
                 ])
                 .query_async(&mut self.underlying_connection)
@@ -125,15 +135,18 @@ impl Client {
         Ok(())
     }
 
-    /// Get the broker wiwth the least number of connections (and permits).
+    /// Get the broker with the least number of connections (and permits).
     /// We use this to figure out which broker gets our permit issued
     ///
     /// TODO: document that this MIGHT cause a race condition where multiple locks
-    /// are acquired when brokers are close in num_connected. But probably not,
+    /// are acquired when brokers are close in `num_connected`. But probably not,
     /// and probably not to where it matters.
-    pub async fn get_with_least_connections(&mut self) -> Result<String> {
+    ///
+    /// # Errors
+    /// - If the `Redis` connection fails
+    pub async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
         // Get all registered brokers
-        let brokers: Vec<String> = bail!(
+        let brokers: HashSet<String> = bail!(
             redis::cmd("SMEMBERS")
                 .arg("brokers")
                 .query_async(&mut self.underlying_connection)
@@ -143,7 +156,7 @@ impl Client {
         );
 
         // Return if we have no connected brokers
-        if brokers.len() == 0 {
+        if brokers.is_empty() {
             return Err(Error::Connection("no brokers connected".to_string()));
         }
 
@@ -180,13 +193,44 @@ impl Client {
         }
 
         // Return the broker with the least amount of connections, for which we
-        // will issue a permit.
-        Ok(broker_with_least_connections)
+        // will issue a permit. Try to parse the broker address from a `String`.
+        Ok(broker_with_least_connections.try_into()?)
     }
 
-    /// Issue a permit for a particular broker. This is separate from
+    /// Get all other brokers, not including our own identifier (if applicable).
     ///
-    pub async fn issue_permit(&mut self, broker: String) -> Result<u64> {
+    /// # Errors
+    /// - If the `Redis` connection fails
+    pub async fn get_other_brokers(&mut self) -> Result<Vec<BrokerIdentifier>> {
+        // Get all registered brokers
+        let mut brokers: HashSet<String> = bail!(
+            redis::cmd("SMEMBERS")
+                .arg("brokers")
+                .query_async(&mut self.underlying_connection)
+                .await,
+            Connection,
+            "failed to connect to Redis"
+        );
+
+        // Remove ourselves
+        brokers.remove(&self.identifier.to_string());
+
+        // Convert to broker identifiers
+        let mut brokers_parsed = Vec::new();
+        for broker in brokers {
+            brokers_parsed.push(broker.try_into()?);
+        }
+
+        // Return all brokers (excluding ourselves)
+        Ok(brokers_parsed)
+    }
+
+    /// Issue a permit for a particular broker. This is separate from `get_with_least_connections`
+    /// because it allows for more modularity; and it isn't atomic anyway.
+    ///
+    /// # Errors
+    /// - If the `Redis` connection fails
+    pub async fn issue_permit(&mut self, broker: &BrokerIdentifier) -> Result<u64> {
         // Create random permit number
         // TODO: figure out if it makes sense to initialize this somewhere else
         let permit = StdRng::from_entropy().next_u64();
@@ -205,7 +249,12 @@ impl Client {
         Ok(permit)
     }
 
-    pub async fn validate_permit(&mut self, broker: String, permit: u64) -> Result<bool> {
+    /// Validate and remove a permit belonging to a particular broker.
+    /// Returns `true` if validation was successful, and `false` if not.
+    ///
+    /// # Errors
+    /// - If the `Redis` connection fails
+    pub async fn validate_permit(&mut self, broker: BrokerIdentifier, permit: u64) -> Result<bool> {
         // Remove the permit
         match bail!(
             redis::cmd("SDEL")
@@ -219,5 +268,53 @@ impl Client {
             1 => Ok(true),
             _ => Err(Error::Parse("unexpected Redis response".to_string())),
         }
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Clone)]
+pub struct BrokerIdentifier {
+    /// The address that a broker advertises to publicly (to users)
+    pub user_advertise_address: String,
+    /// The address that a broker advertises to privately (to other brokers)
+    pub broker_advertise_address: String,
+}
+
+/// We need this to be able to convert a `String` to a broker identifier.
+/// Allows us to be consistent about what we store in Redis.
+impl TryFrom<String> for BrokerIdentifier {
+    type Error = Error;
+    fn try_from(value: String) -> StdResult<Self, Self::Error> {
+        // Split the string
+        let mut split = value.split('/');
+
+        // Create a new `Self` from the split string
+        Ok(BrokerIdentifier {
+            user_advertise_address: split
+                .next()
+                .ok_or_else(|| {
+                    Error::Parse("failed to parse public advertise address from string".to_string())
+                })?
+                .to_string(),
+            broker_advertise_address: split
+                .next()
+                .ok_or_else(|| {
+                    Error::Parse(
+                        "failed to parse private advertise address from string".to_string(),
+                    )
+                })?
+                .to_string(),
+        })
+    }
+}
+
+/// We need this to convert in the opposite direction: to create a `String`
+/// from a `BrokerIdentifier` for `Redis` purposes.
+impl std::fmt::Display for BrokerIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/{}",
+            self.user_advertise_address, self.broker_advertise_address
+        )
     }
 }

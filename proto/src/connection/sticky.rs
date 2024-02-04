@@ -56,7 +56,7 @@ pub struct Inner<
     connection: RwLock<ProtocolType::Connection>,
 
     /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow::AuthData,
+    pub auth_data: AuthFlow::AuthenticationData,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so we don't spawn multiple tasks at once
@@ -78,12 +78,7 @@ pub struct Config<
     pub endpoint: String,
 
     /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow::AuthData,
-
-    /// Phantom data that we pass down to `Sticky` and `StickyInner`.
-    /// Allows us to be generic over a connection method, because
-    /// we need multiple.
-    pub pd: PhantomData<(SignatureScheme, ProtocolType, AuthFlow)>,
+    pub auth_data: AuthFlow::AuthenticationData,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -180,7 +175,6 @@ impl<
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
-            pd,
             endpoint,
             auth_data,
         } = config;
@@ -220,7 +214,7 @@ impl<
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),
-                pd,
+                pd: PhantomData,
             }),
         })
     }

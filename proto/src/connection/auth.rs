@@ -14,12 +14,14 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use async_trait::async_trait;
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::{
     bail,
     crypto::{self, DeterministicRng},
     error::{Error, Result},
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
+    redis,
 };
 
 use super::protocols::Protocol;
@@ -42,7 +44,7 @@ macro_rules! fail_verification_with_message {
     };
 }
 
-/// The `AuthFlow` trait implements a connection flow that can both authenticate
+/// The `Flow` trait implements a connection flow that can both authenticate
 /// and verify authentication for a particular connection.
 #[async_trait]
 pub trait Flow<
@@ -53,21 +55,27 @@ pub trait Flow<
     /// We need this to have extra data for when we authenticate and verify
     /// connections. For example, the signing and verification keys.
     /// TODO: FIGURE OUT IF NEED CLONE HERE
-    type AuthData: Send + Sync;
+    type AuthenticationData: Send + Sync;
 
-    /// We need this to
+    /// The data we need to verify the particular entity
+    type VerificationData: Send + Sync;
+
+    /// We need this to pin a certain type of response
     type AuthResponse: Send + Sync;
 
-    /// This is where we request authentication. We pass in a connection, which,
+    /// This is where we request or verify authentication. We pass in a connection, which,
     /// if it is verified, returns a resulting, successful connection.
     async fn authenticate(
-        authentication_data: &Self::AuthData,
+        authentication_data: &Self::AuthenticationData,
         connection: &ProtocolType::Connection,
     ) -> Result<Self::AuthResponse>;
 
     /// This is the other side of the authentication flow. This is where we verify
     /// a particular authentication method.
-    async fn verify(connection: ProtocolType::Connection) -> Result<()>;
+    async fn verify(
+        verification_data: &mut Self::VerificationData,
+        connection: &ProtocolType::Connection,
+    ) -> Result<()>;
 }
 
 /// This struct defines an implementation wherein we connect to a marshal
@@ -75,8 +83,10 @@ pub trait Flow<
 /// with a permit. Only after that do we try connecting to the broker.
 pub struct UserToMarshal {}
 
-pub struct UserAuthData<SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>>
-{
+/// We need this data to authenticate _as_ the user.
+pub struct UserAuthenticationData<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+> {
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
     pub verification_key: SignatureScheme::VerificationKey,
@@ -90,6 +100,13 @@ pub struct UserAuthData<SignatureScheme: JfSignatureScheme<PublicParameter = (),
     pub subscribed_topics: Mutex<HashSet<Topic>>,
 }
 
+/// This is the other side of the `UserAuthenticationData`. We need this to verify
+/// authentication of a user.
+pub struct UserVerificationData {
+    // The `Redis` client that we use to check and issue permits with
+    pub redis_client: redis::Client,
+}
+
 #[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
@@ -100,7 +117,8 @@ where
     SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
     SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
 {
-    type AuthData = UserAuthData<SignatureScheme>;
+    type AuthenticationData = UserAuthenticationData<SignatureScheme>;
+    type VerificationData = UserVerificationData;
 
     type AuthResponse = (String, u64);
 
@@ -109,7 +127,7 @@ where
     ///     returns a permit and a server address
     /// 2. Use the permit and server address to connect to the broker
     async fn authenticate(
-        authentication_data: &Self::AuthData,
+        authentication_data: &Self::AuthenticationData,
         connection: &ProtocolType::Connection,
     ) -> Result<Self::AuthResponse> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -170,6 +188,7 @@ where
         // Make sure the message is the proper type
         Ok(
             if let Message::AuthenticateResponse(response) = marshal_response {
+                println!("permit: {}, context: {}", response.permit, response.context);
                 // Check if we have received an actual permit
                 if response.permit > 1 {
                     // We have received an actual permit
@@ -190,7 +209,10 @@ where
         )
     }
 
-    async fn verify(connection: ProtocolType::Connection) -> Result<()> {
+    async fn verify(
+        verification_data: &mut Self::VerificationData,
+        connection: &ProtocolType::Connection,
+    ) -> Result<()> {
         // Receive the signed message from the user
         let message = bail!(
             connection.recv_message().await,
@@ -226,24 +248,52 @@ where
             fail_verification_with_message!(connection, "failed to verify");
         }
 
-        // make sure timestamp is within 5 seconds
+        // Convert the timestamp to something usable
         let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-            fail_verification_with_message!(connection, "timestamp is too old");
+            fail_verification_with_message!(connection, "malformed timestamp");
         };
 
-        // IMPORTANT TODO: REDIS CHECK REDIS CHECK
-        if timestamp.as_secs() - message.timestamp < 5 {
-            bail!(
-                connection
-                    .send_message(Message::AuthenticateResponse(AuthenticateResponse {
-                        // random permit for now
-                        permit: 9898,
-                        context: String::new(),
-                    }))
-                    .await,
-                Connection,
-                "failed to send authentication response message"
-            );
+        // Make sure the timestamp is within 5 seconds
+        if timestamp.as_secs() - message.timestamp > 5 {
+            fail_verification_with_message!(connection, "timestamp is too old");
+        }
+
+        // Get the broker with the least amount of connections
+        // TODO: do a macro for this
+        let broker_with_least_connections = match verification_data
+            .redis_client
+            .get_with_least_connections()
+            .await
+        {
+            Ok(broker) => broker,
+            Err(err) => {
+                warn!("failed to get brokers from Redis: {err}");
+                fail_verification_with_message!(connection, "internal server error");
+            }
+        };
+
+        // Generate and issue a permit for said broker
+        let permit = match verification_data
+            .redis_client
+            .issue_permit(&broker_with_least_connections)
+            .await
+        {
+            Ok(broker) => broker,
+            Err(err) => {
+                warn!("failed to issue permit to Redis: {err}");
+                fail_verification_with_message!(connection, "internal server error");
+            }
+        };
+
+        // Send the permit to the user, along with the public broker adcertise address
+        if let Err(err) = connection
+            .send_message(Message::AuthenticateResponse(AuthenticateResponse {
+                permit,
+                context: broker_with_least_connections.user_advertise_address,
+            }))
+            .await
+        {
+            warn!("failed to send authenticate response to user: {err}");
         }
 
         Ok(())

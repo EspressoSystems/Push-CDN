@@ -7,11 +7,19 @@ environment:
 processes:
   redis:
     command: echo 'requirepass changeme!' | keydb-server - --save "" --appendonly no
+
   marshal_0:
     command: cargo run --package marshal
     depends_on:
       redis:
         condition: process_started
+
+  broker_0:
+    command: cargo run --package broker
+    depends_on:
+      redis:
+        condition: process_started
+
   client_0:
     command: cargo run --bin client
     depends_on:

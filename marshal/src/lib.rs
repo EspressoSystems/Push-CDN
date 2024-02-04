@@ -3,19 +3,21 @@
 //! (right now) with the least amount of connections. It's basically a load
 //! balancer for the brokers.
 
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{marker::PhantomData, sync::Arc};
 
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        auth::Flow,
+        auth::{Flow, UserToMarshal, UserVerificationData},
         protocols::{Listener, Protocol},
     },
     error::{Error, Result},
     redis,
 };
-use tokio::time::Instant;
+use tokio::spawn;
+use tracing::{info, warn};
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
@@ -23,8 +25,11 @@ use tokio::time::Instant;
 pub struct Marshal<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: Flow<SignatureScheme, ProtocolType>,
-> {
+> where
+    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
+{
     /// The underlying connection listener. Used to accept new connections.
     listener: Arc<ProtocolType::Listener>,
 
@@ -33,14 +38,17 @@ pub struct Marshal<
 
     /// We need this `PhantomData` to allow us to specify the signature scheme,
     /// protocol type, and authentication flow.
-    pd: PhantomData<(SignatureScheme, AuthFlow)>,
+    pd: PhantomData<SignatureScheme>,
 }
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-        AuthFlow: Flow<SignatureScheme, ProtocolType>,
-    > Marshal<SignatureScheme, ProtocolType, AuthFlow>
+    > Marshal<SignatureScheme, ProtocolType>
+where
+    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
 {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
@@ -65,8 +73,8 @@ impl<
         );
 
         // Create the Redis client
-        let mut redis_client = bail!(
-            redis::Client::new(redis_endpoint.clone(), Some("marshal".to_string())).await,
+        let redis_client = bail!(
+            redis::Client::new(redis_endpoint.clone(), None).await,
             Connection,
             "failed to create Redis client"
         );
@@ -79,6 +87,25 @@ impl<
         })
     }
 
+    pub async fn handle_connection(
+        connection: ProtocolType::Connection,
+        redis_client: redis::Client,
+    ) {
+        // Create verification data from the `Redis client`
+        let mut verification_data = UserVerificationData { redis_client };
+
+        // Verify (authenticate) the connection
+        if let Err(err) = <UserToMarshal as Flow<SignatureScheme, ProtocolType>>::verify(
+            &mut verification_data,
+            &connection,
+        )
+        .await
+        {
+            info!("client failed authentication: {err}");
+            return;
+        };
+    }
+
     /// The main loop for a marshal.
     /// Consumes self.
     ///
@@ -87,20 +114,21 @@ impl<
     pub async fn start(self) -> Result<()> {
         // Listen for connections forever
         loop {
-            // Accept a connection. If we fail, print the error cand keep going.
+            // Accept a connection. If we fail, print the error and keep going.
             //
             // TODO: figure out when an endpoint closes, should I be looping on it? What are the criteria
             // for closing? It would error but what does that actually _mean_? Is it recoverable?
             let connection = match self.listener.accept().await {
                 Ok(connection) => connection,
                 Err(err) => {
-                    tracing::error!("failed to accept connection: {}", err);
+                    warn!("failed to accept connection: {}", err);
                     continue;
                 }
             };
 
-            // Authenticate the connection
-            AuthFlow::verify(connection).await?;
+            // Create a task to handle the connection
+            let redis_client = self.redis_client.clone();
+            spawn(Self::handle_connection(connection, redis_client));
         }
     }
 }

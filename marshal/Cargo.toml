@@ -10,3 +10,5 @@ jf-primitives.workspace = true
 proto.path = "../proto"
 tokio.workspace = true
 tracing.workspace = true
+ark-serialize.workspace = true
+tracing-subscriber.workspace = true

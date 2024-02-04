@@ -10,3 +10,5 @@ jf-primitives.workspace = true
 proto.path = "../proto"
 ark-serialize.workspace = true
 tokio.workspace = true
+tracing-subscriber.workspace = true
+rand.workspace = true
