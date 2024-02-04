@@ -21,16 +21,16 @@ async fn main() -> Result<()> {
         subscribed_topics: Mutex::from(HashSet::from_iter([Topic::DA, Topic::Global])),
     };
 
-    let client = Client::<BLS, Quic>::new(Config {
+    let _client = Client::<BLS, Quic>::new(Config {
         endpoint: "127.0.0.1:8080".to_string(),
         auth_data,
         pd: PhantomData,
     })
     .await?;
 
-    client
-        .send_direct_message(verification_key, vec![123])
-        .await?;
+    // client
+    //     .send_direct_message(verification_key, vec![123])
+    //     .await?;
 
     // println!("{:?}", client.receive_message().await);
 

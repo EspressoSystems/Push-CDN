@@ -3,7 +3,7 @@
 //! (right now) with the least amount of connections. It's basically a load
 //! balancer for the brokers.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
@@ -13,7 +13,9 @@ use proto::{
         protocols::{Listener, Protocol},
     },
     error::{Error, Result},
+    redis,
 };
+use tokio::time::Instant;
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
@@ -23,7 +25,14 @@ pub struct Marshal<
     ProtocolType: Protocol,
     AuthFlow: Flow<SignatureScheme, ProtocolType>,
 > {
+    /// The underlying connection listener. Used to accept new connections.
     listener: Arc<ProtocolType::Listener>,
+
+    /// The redis client we use to issue permits and check for brokers that are up
+    redis_client: redis::Client,
+
+    /// We need this `PhantomData` to allow us to specify the signature scheme,
+    /// protocol type, and authentication flow.
     pd: PhantomData<(SignatureScheme, AuthFlow)>,
 }
 
@@ -40,6 +49,7 @@ impl<
     /// - If we fail to bind to the local address
     pub async fn new(
         bind_address: String,
+        redis_endpoint: String,
         maybe_tls_cert_path: Option<String>,
         maybe_tls_key_path: Option<String>,
     ) -> Result<Self> {
@@ -54,9 +64,17 @@ impl<
             format!("failed to listen to address {}", bind_address)
         );
 
+        // Create the Redis client
+        let mut redis_client = bail!(
+            redis::Client::new(redis_endpoint.clone(), Some("marshal".to_string())).await,
+            Connection,
+            "failed to create Redis client"
+        );
+
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
+            redis_client,
             pd: PhantomData,
         })
     }
