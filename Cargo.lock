@@ -385,6 +385,7 @@ version = "0.1.0"
 dependencies = [
  "ark-serialize",
  "jf-primitives",
+ "parking_lot",
  "proto",
  "tokio",
  "tracing",
@@ -486,6 +487,7 @@ dependencies = [
  "proto",
  "rand",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -1294,7 +1296,6 @@ dependencies = [
  "capnp",
  "capnpc",
  "jf-primitives",
- "parking_lot",
  "pem",
  "quinn",
  "rand",

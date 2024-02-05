@@ -2,7 +2,6 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
 
@@ -16,41 +15,30 @@ use crate::{
     redis,
 };
 
-use super::AuthenticationFlow;
+use super::Auth;
 
-/// Contains the data we need to authenticate a user as a marshal
-#[derive(Clone)]
-pub struct MarshalToUser {
-    /// The `Redis` client we use to issue permits
-    pub redis_client: redis::Client,
-}
-
-#[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > AuthenticationFlow<SignatureScheme, ProtocolType> for MarshalToUser
+    > Auth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
-    /// We have no auxiliary data to return
-    type Return = ();
-
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
-    /// 2. Validate and remove the message
+    /// 2. Validate the message
     /// 3. Issue a permit
     /// 4. Return the permit
     ///
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    async fn authenticate(
-        &mut self,
+    pub async fn verify_by_key(
         connection: &ProtocolType::Connection,
-    ) -> Result<Self::Return> {
+        redis_client: &mut redis::Client,
+    ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
             connection.recv_message().await,
@@ -98,20 +86,18 @@ where
 
         // Get the broker with the least amount of connections
         // TODO: do a macro for this
-        let broker_with_least_connections =
-            match self.redis_client.get_with_least_connections().await {
-                Ok(broker) => broker,
-                Err(err) => {
-                    error!("failed to get the broker with the least connections from Redis: {err}");
-                    fail_verification_with_message!(connection, "internal server error");
-                }
-            };
+        let broker_with_least_connections = match redis_client.get_with_least_connections().await {
+            Ok(broker) => broker,
+            Err(err) => {
+                error!("failed to get the broker with the least connections from Redis: {err}");
+                fail_verification_with_message!(connection, "internal server error");
+            }
+        };
 
         // Generate and issue a permit for said broker
         // TODO: add bounds check for verification key. There's the possibility it could be too big, if
         // verify does not check that.
-        let permit = match self
-            .redis_client
+        let permit = match redis_client
             .issue_permit(
                 &broker_with_least_connections,
                 Duration::from_secs(5),

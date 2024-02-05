@@ -54,7 +54,7 @@ pub enum Update<V> {
 /// follower.update(leader.get_updates_inclusive(follower.tail()));
 /// ```
 #[derive(Default, Clone)]
-pub struct LoggedSet<V: Ord + Clone + Default + Hash> {
+pub struct LoggedSet<V: Clone + Eq + PartialEq + Hash> {
     /// The tail of the set. this refers to the latest (not yet seen) log
     tail: usize,
     /// The head of the set, meaning: the index of the oldest log we have
@@ -65,10 +65,16 @@ pub struct LoggedSet<V: Ord + Clone + Default + Hash> {
     logs: VecDeque<Log<V>>,
 }
 
-impl<V: Ord + Clone + Default + Hash> LoggedSet<V> {
+impl<V: Clone + Eq + PartialEq + Hash> LoggedSet<V> {
     /// Create a new, empty `LoggedSet`.
     pub fn new() -> Self {
-        Self::default()
+        // Create a new, empty `Self`
+        Self {
+            tail: 0,
+            head: 0,
+            set: HashSet::new(),
+            logs: VecDeque::new(),
+        }
     }
 
     /// Insert an element into the `LoggedSet`. This is semantically equivalent

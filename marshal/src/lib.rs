@@ -9,7 +9,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        auth::{marshal::MarshalToUser, AuthenticationFlow},
+        auth::Auth,
         protocols::{Listener, Protocol},
     },
     crypto::Serializable,
@@ -87,20 +87,15 @@ where
         })
     }
 
+    /// Handles a user's connection, including authentication.
     pub async fn handle_connection(
         connection: ProtocolType::Connection,
-        redis_client: redis::Client,
+        mut redis_client: redis::Client,
     ) {
-        // Create verification data from the `Redis client`
-        let mut verification = MarshalToUser { redis_client };
-
         // Verify (authenticate) the connection
-        if <MarshalToUser as AuthenticationFlow<SignatureScheme, ProtocolType>>::authenticate(
-            &mut verification,
-            &connection,
-        )
-        .await
-        .is_err()
+        if Auth::<SignatureScheme, ProtocolType>::verify_by_key(&connection, &mut redis_client)
+            .await
+            .is_err()
         {
             return;
         };

@@ -1,67 +1,41 @@
 //! In this crate we deal with the authentication flow as a user.
 
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-use tokio::sync::Mutex;
 
 use crate::{
     bail,
     connection::protocols::{Connection, Protocol},
     crypto::{self, DeterministicRng, Serializable},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
 };
 
-use super::AuthenticationFlow;
+use super::Auth;
 
-/// This struct defines an implementation wherein we connect to the broker
-/// using the permit issued to us by the marshal.
-#[derive(Clone)]
-pub struct UserToMarshalToBroker<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-> {
-    /// The underlying (public) verification key, used to authenticate with the server. Checked
-    /// against the stake table.
-    pub verification_key: Arc<SignatureScheme::VerificationKey>,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    pub signing_key: Arc<SignatureScheme::SigningKey>,
-
-    /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
-    /// when we connect to a new server.
-    pub subscribed_topics: Arc<Mutex<HashSet<Topic>>>,
-}
-
-#[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > AuthenticationFlow<SignatureScheme, ProtocolType> for UserToMarshalToBroker<SignatureScheme>
+    > Auth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
-    /// We have no auxiliary data to return
-    type Return = ();
-
-    /// The authentication steps on `UserToBrokerToMarshal`'s connection:
+    /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
-    /// 2. Send a signed message to the marshal
-    /// 3. Receive a permit from the marshal
-    /// 4. Authenticate with the permit to a broker
+    /// 2. Send a signed message
+    /// 3. Receive a permit
     ///
     /// # Errors
     /// - If we fail authentication
     /// - If our connection fails
-    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<()> {
+    pub async fn authenticate_with_key(
+        connection: &ProtocolType::Connection,
+        verification_key: &SignatureScheme::VerificationKey,
+        signing_key: &SignatureScheme::SigningKey,
+    ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
             SystemTime::now().duration_since(UNIX_EPOCH),
@@ -74,7 +48,7 @@ where
         let signature = bail!(
             SignatureScheme::sign(
                 &(),
-                &self.signing_key,
+                signing_key,
                 timestamp.to_le_bytes(),
                 &mut DeterministicRng(0),
             ),
@@ -84,7 +58,7 @@ where
 
         // Serialize the verify key
         let verification_key_bytes = bail!(
-            crypto::serialize(&self.verification_key),
+            crypto::serialize(verification_key),
             Serialize,
             "failed to serialize verification key"
         );
@@ -118,11 +92,11 @@ where
         );
 
         // Make sure the message is the proper type
-        let (broker_address, permit) = if let Message::AuthenticateResponse(response) = response {
+        if let Message::AuthenticateResponse(response) = response {
             // Check if we have received an actual permit
             if response.permit > 1 {
                 // We have received an actual permit
-                (response.context, response.permit)
+                Ok((response.context, response.permit))
             } else {
                 // We haven't, we failed authentication :(
                 // TODO: fix these error types
@@ -135,15 +109,21 @@ where
             return Err(Error::Parse(
                 "failed to parse marshal response: wrong message type".to_string(),
             ));
-        };
+        }
+    }
 
-        // Disconnect from the marshal, connect to the broker
-        let connection = bail!(
-            ProtocolType::Connection::connect(broker_address).await,
-            Connection,
-            "failed to connect to broker"
-        );
-
+    /// TODO: clean up comments
+    /// The authentication implementation for a user to a broker. We take the following steps:
+    /// 1. Send the permit to the broker
+    /// 2. Wait for a response
+    ///
+    /// # Errors
+    /// - If authentication fails
+    /// - If our connection fails
+    pub async fn authenticate_with_permit(
+        connection: &ProtocolType::Connection,
+        permit: u64,
+    ) -> Result<()> {
         // Form the authentication message
         let auth_message = Message::AuthenticateWithPermit(AuthenticateWithPermit { permit });
 

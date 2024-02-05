@@ -18,7 +18,7 @@ pub const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 1024;
 /// Having a value that is too high can degrade performance.
 pub const QUIC_MAX_CONCURRENT_STREAMS: u64 = 10;
 
-/// Include the built capnp-rust bindings
+/// Include the built `capnp-rust` bindings
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]
 pub mod messages_capnp {
     include!(concat!(env!("OUT_DIR"), "/messages_capnp.rs"));

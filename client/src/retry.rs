@@ -1,52 +1,48 @@
-//! This file provides a `Sticky` connection, which allows for reconnections
-//! on top of a normal implementation of a `Fallible` connection.
+//! This file provides a `Retry` connection, which allows for reconnections
+//! on top of a normal connection.
 //!
 //! TODO FOR ALL CRATES: figure out where we need to bail,
 //! and where we can just return. Most of the errors already have
 //! enough context from previous bails.
 
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
+use proto::{
+    connection::{
+        auth::Auth,
+        protocols::{Connection, Protocol},
+    },
+    crypto::Serializable,
+    error::{Error, Result},
+    message::{Message, Topic},
+};
 use tokio::{
-    sync::{RwLock, Semaphore},
+    sync::{Mutex, RwLock, Semaphore},
     time::sleep,
 };
 use tracing::error;
 
-use crate::{
-    bail,
-    error::{Error, Result},
-    message::Message,
-};
+use crate::bail;
 
-use super::{
-    auth::AuthenticationFlow,
-    protocols::{Connection, Protocol},
-};
-
-/// `Sticky` is a wrapper around a `Fallible` connection.
+/// `Retry` is a wrapper around a `Fallible` connection.
 ///
-/// It employs synchronization around a `Fallible`, as well as retry logic for both switching
-/// connections at a certain failure threshold and reconnecting under said threshold.
-///
+/// It employs synchronization around a `Fallible`, as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Sticky<
+pub struct Retry<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
-    pub inner: Arc<Inner<SignatureScheme, ProtocolType, AuthFlow>>,
+    pub inner: Arc<Inner<SignatureScheme, ProtocolType>>,
 }
 
-/// `Inner` is held exclusively by `Sticky`, wherein an `Arc` is used
+/// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
 pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
@@ -55,33 +51,50 @@ pub struct Inner<
     /// The underlying connection, which we modify to facilitate reconnections.
     connection: RwLock<ProtocolType::Connection>,
 
-    /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow,
-
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so we don't spawn multiple tasks at once
     reconnect_semaphore: Semaphore,
 
+    /// The underlying (public) verification key, used to authenticate with the server. Checked
+    /// against the stake table.
+    pub verification_key: SignatureScheme::VerificationKey,
+
+    /// The underlying (private) signing key, used to sign messages to send to the server during the
+    /// authentication phase.
+    pub signing_key: SignatureScheme::SigningKey,
+
+    /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
+    /// when we connect to a new server.
+    pub subscribed_topics: Arc<Mutex<HashSet<Topic>>>,
+
     /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
     /// `SignatureScheme` downstream.
-    pd: PhantomData<(SignatureScheme, ProtocolType, AuthFlow)>,
+    pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }
 
-/// The configuration needed to construct a `Sticky` connection.
+/// The configuration needed to construct a `Retry` connection.
 pub struct Config<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
 
-    /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow,
+    /// The underlying (public) verification key, used to authenticate with the server. Checked
+    /// against the stake table.
+    pub verification_key: SignatureScheme::VerificationKey,
+
+    /// The underlying (private) signing key, used to sign messages to send to the server during the
+    /// authentication phase.
+    pub signing_key: SignatureScheme::SigningKey,
+
+    /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
+    /// when we connect to a new server.
+    pub subscribed_topics: Vec<Topic>,
 
     /// The phantom data we need to be able to make use of these types
-    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+    pub pd: PhantomData<ProtocolType>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -121,27 +134,19 @@ macro_rules! try_with_reconnect {
                 // Loop to connect and authenticate
                 let connection = loop {
                     // Create a connection
-                    let connection = match ProtocolType::Connection::connect(inner.endpoint.clone()).await {
-                        Ok(connection) => connection,
+                    match connect_and_authenticate::<SignatureScheme, ProtocolType>(
+                        &inner.endpoint,
+                        &inner.verification_key,
+                        &inner.signing_key
+                    )
+                    .await{
+                        Ok(connection) => break connection,
                         Err(err) => {
-                            error!("failed to connect to endpoint: {err}. retrying");
+                            error!("failed connection: {err}");
                             // Sleep so we don't overload the server
                             sleep(Duration::from_secs(5)).await;
-                            continue
                         }
-                    };
-
-                    // Try to authenticate the connection
-                    match AuthFlow::authenticate(&mut inner.auth_data.clone(), &connection)
-                    .await
-                    {
-                        Ok(_) => {
-                        break connection},
-                        Err(err) => error!("failed to authenticate with endpoint: {err}. retrying"),
                     }
-
-                    // Sleep so we don't overload the server
-                    sleep(Duration::from_secs(5)).await;
                 };
 
                 // Set connection to new connection
@@ -164,10 +169,13 @@ macro_rules! try_with_reconnect {
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-        AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
-    > Sticky<SignatureScheme, ProtocolType, AuthFlow>
+    > Retry<SignatureScheme, ProtocolType>
+where
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable,
 {
-    /// Creates a new `Sticky` connection from a `Config` and an (optional) pre-existing
+    /// Creates a new `Retry` connection from a `Config` and an (optional) pre-existing
     /// `Fallible` connection.
     ///
     /// This allows us to create elastic clients that always try to maintain a connection
@@ -178,13 +186,15 @@ impl<
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
     pub async fn from_config_and_connection(
-        config: Config<SignatureScheme, ProtocolType, AuthFlow>,
+        config: Config<SignatureScheme, ProtocolType>,
         maybe_connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
-            mut auth_data,
+            verification_key,
+            signing_key,
+            subscribed_topics,
             pd: _,
         } = config;
 
@@ -198,45 +208,31 @@ impl<
         let connection = if let Some(connection) = maybe_connection {
             connection
         } else {
-            // Make the connection
-            let connection = bail!(
-                ProtocolType::Connection::connect(endpoint.clone()).await,
-                Connection,
-                "failed to connect to endpoint"
-            );
-
-            // Authenticate the connection (if not provided)
             bail!(
-                AuthFlow::authenticate(&mut auth_data, &connection).await,
-                Authentication,
-                "failed to authenticate"
-            );
-
-            connection
+                connect_and_authenticate::<SignatureScheme, ProtocolType>(
+                    &endpoint,
+                    &verification_key,
+                    &signing_key
+                )
+                .await,
+                Connection,
+                "failed initial connection"
+            )
         };
 
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(Inner {
-                auth_data,
                 endpoint,
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),
+                verification_key,
+                signing_key,
+                subscribed_topics: Arc::new(Mutex::new(HashSet::from_iter(subscribed_topics))),
                 pd: PhantomData,
             }),
         })
-    }
-
-    /// Sends a pre-formed message to the underlying fallible connection. Reconnection logic is here,
-    /// but retry logic needs to be handled by the caller (e.g. re-send messages)
-    ///
-    /// # Errors
-    /// - If we are in the middle of reconnecting
-    /// - If the message sending failed
-    pub async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
-        // Try to send the message, reconnecting if needed
-        Ok(try_with_reconnect!(self, send_message_raw, message,))
     }
 
     /// Sends a message to the underlying fallible connection. Reconnection logic is here,
@@ -268,4 +264,53 @@ impl<
         // Try to send the message, reconnecting if needed
         Ok(try_with_reconnect!(self, recv_message,))
     }
+}
+
+async fn connect_and_authenticate<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ProtocolType: Protocol,
+>(
+    marshal_endpoint: &str,
+    verification_key: &SignatureScheme::VerificationKey,
+    signing_key: &SignatureScheme::SigningKey,
+) -> Result<ProtocolType::Connection>
+where
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable,
+{
+    // Make the connection to the marshal
+    let connection = bail!(
+        ProtocolType::Connection::connect(marshal_endpoint.to_owned()).await,
+        Connection,
+        "failed to connect to endpoint"
+    );
+
+    // Authenticate the connection to the marshal (if not provided)
+    let (broker_address, permit) = bail!(
+        Auth::<SignatureScheme, ProtocolType>::authenticate_with_key(
+            &connection,
+            verification_key,
+            signing_key
+        )
+        .await,
+        Authentication,
+        "failed to authenticate to marshal"
+    );
+
+    // Make the connection to the broker
+    let connection = bail!(
+        ProtocolType::Connection::connect(broker_address).await,
+        Connection,
+        "failed to connect to broker"
+    );
+
+    // Authenticate the connection to the broker
+    bail!(
+        Auth::<SignatureScheme, ProtocolType>::authenticate_with_permit(&connection, permit).await,
+        Authentication,
+        "failed to authenticate to broker"
+    );
+
+    Ok(connection)
 }

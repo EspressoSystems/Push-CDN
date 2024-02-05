@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     };
 
     // Create new `Broker`
-    let marshal = Broker::<BLS, BLS, Quic, Tcp>::new(broker_config).await?;
+    let marshal = Broker::<BLS, Tcp, BLS, Quic>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;

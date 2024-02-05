@@ -201,7 +201,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn get_other_brokers(&mut self) -> Result<Vec<BrokerIdentifier>> {
+    pub async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
         // Get all registered brokers
         let mut brokers: HashSet<String> = bail!(
             redis::cmd("SMEMBERS")
@@ -216,9 +216,9 @@ impl Client {
         brokers.remove(&self.identifier.to_string());
 
         // Convert to broker identifiers
-        let mut brokers_parsed = Vec::new();
+        let mut brokers_parsed = HashSet::new();
         for broker in brokers {
-            brokers_parsed.push(broker.try_into()?);
+            brokers_parsed.insert(broker.try_into()?);
         }
 
         // Return all brokers (excluding ourselves)

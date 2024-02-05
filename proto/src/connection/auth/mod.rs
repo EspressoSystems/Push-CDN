@@ -1,14 +1,10 @@
-//! This file defines authentication flows to be used when connecting
-//! and reconnecting. We need this because it allows us to have the same connection code,
-//! but with different authentication methods. For example, broker <-> broker
-//! is different from user <-> broker.
+//! This file defines all authentication flows that the Push CDN implements.
 
 // TODO IN GENERAL: figure out if connection dropping on big messages is working
 
-use async_trait::async_trait;
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
+use std::marker::PhantomData;
 
-use crate::error::Result;
+use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
 use super::protocols::Protocol;
 
@@ -34,19 +30,12 @@ macro_rules! fail_verification_with_message {
     };
 }
 
-/// The `Authentication` trait implements a connection flow that can both authenticate
-/// and verify authentication for a particular connection.
-#[async_trait]
-pub trait AuthenticationFlow<
+/// This is the `Auth` struct that we define methods to for authentication purposes.
+pub struct Auth<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
->: Send + Sync + 'static + Clone
-{
-    /// Used for if we want to return an authentication `Result`. Perhaps something like the
-    /// verification key.
-    type Return;
-
-    /// This is where we request or verify authentication. We pass in a connection, which,
-    /// if it is verified, returns a resulting, successful connection.
-    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<Self::Return>;
+> {
+    /// We use `PhantomData` here so we can be generic over a signature scheme
+    /// and protocol type
+    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }

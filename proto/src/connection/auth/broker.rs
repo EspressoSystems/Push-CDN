@@ -1,56 +1,44 @@
 //! In this crate we deal with the authentication flow as a broker.
 
-use async_trait::async_trait;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
 
 use crate::{
     bail,
     connection::protocols::{Connection, Protocol},
-    crypto::{self, Serializable},
+    crypto::{self, DeterministicRng, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
-    message::{AuthenticateResponse, Message},
+    message::{AuthenticateResponse, AuthenticateWithKey, Message},
     redis::{self, BrokerIdentifier},
 };
 
-use super::AuthenticationFlow;
+use super::Auth;
 
-/// Contains the data we need to authenticate a user.
-#[derive(Clone)]
-pub struct BrokerToUser {
-    /// Our personal identifier
-    pub identifier: BrokerIdentifier,
-    /// The `Redis` client, so we can check the user's permit
-    pub redis_client: redis::Client,
-}
-
-#[async_trait]
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > AuthenticationFlow<SignatureScheme, ProtocolType> for BrokerToUser
+    > Auth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
-    /// We want to return the user's verification key
-    type Return = SignatureScheme::VerificationKey;
-
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
     /// 2. Validate and remove the permit from `Redis`
-    /// 3. Validate the signature
-    /// 4. Send a response
+    /// 3. Send a response
     ///
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    async fn authenticate(
-        &mut self,
+    pub async fn verify_by_permit(
         connection: &ProtocolType::Connection,
-    ) -> Result<Self::Return> {
+        broker_identifier: &BrokerIdentifier,
+        redis_client: &mut redis::Client,
+    ) -> Result<SignatureScheme::VerificationKey> {
         // Receive the permit
         let auth_message = bail!(
             connection.recv_message().await,
@@ -65,9 +53,8 @@ where
         };
 
         // Check the permit with `Redis`
-        let serialized_verification_key = match self
-            .redis_client
-            .validate_permit(&self.identifier, auth_message.permit)
+        let serialized_verification_key = match redis_client
+            .validate_permit(broker_identifier, auth_message.permit)
             .await
         {
             // The permit did not exist
@@ -103,5 +90,93 @@ where
 
         // Return the verification key
         Ok(verification_key)
+    }
+
+    /// The authentication implementation for a broker to another broker (outbound). We take the
+    /// following steps:
+    /// 1. Send a signed message to the broker
+    /// 2. Wait for a response
+    ///
+    /// # Errors
+    /// - If authentication fails
+    /// - If our connection fails
+    pub async fn authenticate_broker_outbound(
+        connection: &ProtocolType::Connection,
+        verification_key: &SignatureScheme::VerificationKey,
+        signing_key: &SignatureScheme::SigningKey,
+        identifier: &BrokerIdentifier,
+    ) -> Result<BrokerIdentifier> {
+        // Get the current timestamp, which we sign to avoid replay attacks
+        let timestamp = bail!(
+            SystemTime::now().duration_since(UNIX_EPOCH),
+            Parse,
+            "failed to get timestamp: time went backwards"
+        )
+        .as_secs();
+
+        // Sign the timestamp from above
+        let signature = bail!(
+            SignatureScheme::sign(
+                &(),
+                signing_key,
+                timestamp.to_le_bytes(),
+                &mut DeterministicRng(0),
+            ),
+            Crypto,
+            "failed to sign message"
+        );
+
+        // Serialize the verify key
+        let verification_key_bytes = bail!(
+            crypto::serialize(verification_key),
+            Serialize,
+            "failed to serialize verification key"
+        );
+
+        // Serialize the signature
+        let signature_bytes = bail!(
+            crypto::serialize(&signature),
+            Serialize,
+            "failed to serialize signature"
+        );
+
+        // We authenticate to the broker with our key
+        let message = Message::AuthenticateWithKey(AuthenticateWithKey {
+            timestamp,
+            verification_key: verification_key_bytes,
+            signature: signature_bytes,
+        });
+
+        // Create and send the authentication message from the above operations
+        bail!(
+            connection.send_message(message).await,
+            Connection,
+            "failed to send auth message to marshal"
+        );
+
+        // Wait for the response with the permit and address
+        let response = bail!(
+            connection.recv_message().await,
+            Connection,
+            "failed to receive message from marshal"
+        );
+
+        // Make sure the message is the proper type
+        if let Message::AuthenticateResponse(response) = response {
+            // We have failed authentication if the permit != 1
+            if response.permit != 1 {
+                return Err(Error::Authentication(format!(
+                    "failed authentication: {}",
+                    response.context
+                )));
+            }
+        } else {
+            // We received the wrong response message
+            return Err(Error::Parse(
+                "failed to parse broker response: wrong message type".to_string(),
+            ));
+        };
+
+        todo!()
     }
 }
