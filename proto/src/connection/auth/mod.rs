@@ -42,7 +42,11 @@ pub trait AuthenticationFlow<
     ProtocolType: Protocol,
 >: Send + Sync + 'static + Clone
 {
+    /// Used for if we want to return an authentication `Result`. Perhaps something like the
+    /// verification key.
+    type Return;
+
     /// This is where we request or verify authentication. We pass in a connection, which,
     /// if it is verified, returns a resulting, successful connection.
-    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<()>;
+    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<Self::Return>;
 }

@@ -49,6 +49,9 @@ where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
+    /// We have no auxiliary data to return
+    type Return = ();
+
     /// The authentication steps on `UserToBrokerToMarshal`'s connection:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message to the marshal

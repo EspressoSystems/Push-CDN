@@ -1,6 +1,6 @@
 //! In this crate we deal with the authentication flow as a marshal.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
@@ -35,6 +35,9 @@ where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
+    /// We have no auxiliary data to return
+    type Return = ();
+
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate and remove the message
@@ -44,7 +47,10 @@ where
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<()> {
+    async fn authenticate(
+        &mut self,
+        connection: &ProtocolType::Connection,
+    ) -> Result<Self::Return> {
         // Receive the signed message from the user
         let auth_message = bail!(
             connection.recv_message().await,
@@ -102,9 +108,15 @@ where
             };
 
         // Generate and issue a permit for said broker
+        // TODO: add bounds check for verification key. There's the possibility it could be too big, if
+        // verify does not check that.
         let permit = match self
             .redis_client
-            .issue_permit(&broker_with_least_connections)
+            .issue_permit(
+                &broker_with_least_connections,
+                Duration::from_secs(5),
+                auth_message.verification_key,
+            )
             .await
         {
             Ok(broker) => broker,

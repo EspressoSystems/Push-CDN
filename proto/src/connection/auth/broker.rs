@@ -7,7 +7,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::{Connection, Protocol},
-    crypto::Serializable,
+    crypto::{self, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
@@ -35,15 +35,22 @@ where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
+    /// We want to return the user's verification key
+    type Return = SignatureScheme::VerificationKey;
+
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
     /// 2. Validate and remove the permit from `Redis`
-    /// 3. Send a response
+    /// 3. Validate the signature
+    /// 4. Send a response
     ///
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    async fn authenticate(&mut self, connection: &ProtocolType::Connection) -> Result<()> {
+    async fn authenticate(
+        &mut self,
+        connection: &ProtocolType::Connection,
+    ) -> Result<Self::Return> {
         // Receive the permit
         let auth_message = bail!(
             connection.recv_message().await,
@@ -58,20 +65,24 @@ where
         };
 
         // Check the permit with `Redis`
-        match self
+        let serialized_verification_key = match self
             .redis_client
             .validate_permit(&self.identifier, auth_message.permit)
             .await
         {
-            Ok(false) => {
-                fail_verification_with_message!(connection, "malformed verification key");
+            // The permit did not exist
+            Ok(None) => {
+                fail_verification_with_message!(connection, "invalid or expired permit");
             }
+
+            // We failed to contact `Redis`
             Err(err) => {
                 error!("failed to validate permit with Redis: {err}");
                 fail_verification_with_message!(connection, "internal server error");
             }
 
-            Ok(true) => (),
+            // The permit existed, return the associated verification key
+            Ok(Some(serialized_verification_key)) => serialized_verification_key,
         };
 
         // Form the response message
@@ -83,6 +94,14 @@ where
         // Send the successful response to the user
         let _ = connection.send_message(response_message).await;
 
-        Ok(())
+        // Serialize the verification key
+        let verification_key = bail!(
+            crypto::deserialize(&serialized_verification_key),
+            Crypto,
+            "failed to deserialize verification key"
+        );
+
+        // Return the verification key
+        Ok(verification_key)
     }
 }

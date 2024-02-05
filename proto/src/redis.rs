@@ -47,7 +47,7 @@ impl Client {
                 user_advertise_address: String::new(),
                 broker_advertise_address: String::new(),
             },
-            |identifier| identifier
+            |identifier| identifier,
         );
 
         // Return the thinly wrapped `Self`.
@@ -230,15 +230,22 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn issue_permit(&mut self, broker: &BrokerIdentifier) -> Result<u64> {
+    pub async fn issue_permit(
+        &mut self,
+        for_broker: &BrokerIdentifier,
+        expiry: Duration,
+        verification_key: Vec<u8>,
+    ) -> Result<u64> {
         // Create random permit number
         // TODO: figure out if it makes sense to initialize this somewhere else
         let permit = StdRng::from_entropy().next_u64();
 
         // Issue the permit
         bail!(
-            redis::cmd("SADD")
-                .arg(&[format!("{broker}/permits"), permit.to_string()])
+            redis::cmd("SET")
+                .arg(&[format!("{for_broker}/permits/{permit}")])
+                .arg(verification_key)
+                .arg(&["EX", &expiry.as_secs().to_string()])
                 .query_async(&mut self.underlying_connection)
                 .await,
             Connection,
@@ -250,7 +257,7 @@ impl Client {
     }
 
     /// Validate and remove a permit belonging to a particular broker.
-    /// Returns `true` if validation was successful, and `false` if not.
+    /// Returns `Some(validation_key)` if successful, and `None` if not.
     ///
     /// # Errors
     /// - If the `Redis` connection fails
@@ -258,20 +265,16 @@ impl Client {
         &mut self,
         broker: &BrokerIdentifier,
         permit: u64,
-    ) -> Result<bool> {
+    ) -> Result<Option<Vec<u8>>> {
         // Remove the permit
-        match bail!(
-            redis::cmd("SREM")
-                .arg(&[format!("{broker}/permits"), permit.to_string()])
+        Ok(bail!(
+            redis::cmd("GETDEL")
+                .arg(format!("{broker}/permits/{permit}"))
                 .query_async(&mut self.underlying_connection)
                 .await,
             Connection,
             "failed to connect to Redis"
-        ) {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(Error::Parse("unexpected Redis response".to_string())),
-        }
+        ))
     }
 }
 
