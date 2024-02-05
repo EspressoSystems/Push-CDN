@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    auth::Flow,
+    auth::AuthenticationFlow,
     protocols::{Connection, Protocol},
 };
 
@@ -36,7 +36,7 @@ use super::{
 pub struct Sticky<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
     pub inner: Arc<Inner<SignatureScheme, ProtocolType, AuthFlow>>,
 }
@@ -46,7 +46,7 @@ pub struct Sticky<
 pub struct Inner<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
@@ -56,7 +56,7 @@ pub struct Inner<
     connection: RwLock<ProtocolType::Connection>,
 
     /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow::AuthenticationData,
+    pub auth_data: AuthFlow,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so we don't spawn multiple tasks at once
@@ -71,14 +71,17 @@ pub struct Inner<
 pub struct Config<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
-    AuthFlow: Flow<SignatureScheme, ProtocolType>,
+    AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
 > {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
 
     /// This is the authentication data that we need to be able to authenticate
-    pub auth_data: AuthFlow::AuthenticationData,
+    pub auth_data: AuthFlow,
+
+    /// The phantom data we need to be able to make use of these types
+    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -100,6 +103,8 @@ macro_rules! try_with_reconnect {
             Ok(res) => res,
             Err(err) => {
             // Acquire semaphore. If another task is doing this, just return an error
+            // TODO: global sleep. If we try to connect twice, it happens sequentially without waiting (because the sleep
+            // only happens on the failed case. We can maybe store a variable somewhere and wait for that.
             if $self.inner.reconnect_semaphore.try_acquire().is_ok() {
                 // Acquire write guard, drop read guard
                 drop(read_guard);
@@ -119,16 +124,19 @@ macro_rules! try_with_reconnect {
                     let connection = match ProtocolType::Connection::connect(inner.endpoint.clone()).await {
                         Ok(connection) => connection,
                         Err(err) => {
-                            error!("failed to connect to endpoint: {err} retrying");
-                        continue
+                            error!("failed to connect to endpoint: {err}. retrying");
+                            // Sleep so we don't overload the server
+                            sleep(Duration::from_secs(5)).await;
+                            continue
                         }
                     };
 
                     // Try to authenticate the connection
-                    match AuthFlow::authenticate(&inner.auth_data, &connection)
+                    match AuthFlow::authenticate(&mut inner.auth_data.clone(), &connection)
                     .await
                     {
-                        Ok(_) => break connection,
+                        Ok(_) => {
+                        break connection},
                         Err(err) => error!("failed to authenticate with endpoint: {err}. retrying"),
                     }
 
@@ -156,7 +164,7 @@ macro_rules! try_with_reconnect {
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-        AuthFlow: Flow<SignatureScheme, ProtocolType>,
+        AuthFlow: AuthenticationFlow<SignatureScheme, ProtocolType>,
     > Sticky<SignatureScheme, ProtocolType, AuthFlow>
 {
     /// Creates a new `Sticky` connection from a `Config` and an (optional) pre-existing
@@ -176,7 +184,8 @@ impl<
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
-            auth_data,
+            mut auth_data,
+            pd: _,
         } = config;
 
         // Perform the initial connection and authentication if not provided.
@@ -197,8 +206,8 @@ impl<
             );
 
             // Authenticate the connection (if not provided)
-            let _permit = bail!(
-                AuthFlow::authenticate(&auth_data, &connection).await,
+            bail!(
+                AuthFlow::authenticate(&mut auth_data, &connection).await,
                 Authentication,
                 "failed to authenticate"
             );

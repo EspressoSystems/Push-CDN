@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
 
     // Create new `Marshal`
     let marshal = Marshal::<BLS, Quic>::new(
-        "0.0.0.0:8080".to_string(),
+        "0.0.0.0:8082".to_string(),
         "redis://:changeme!@127.0.0.1:6379".to_string(),
         None,
         None,

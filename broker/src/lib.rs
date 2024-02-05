@@ -1,18 +1,29 @@
 //! This file contains the implementation of the `Broker`, which routes messages
 //! for the Push CDN.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+    marker::PhantomData,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
-    connection::protocols::{Connection, Listener, Protocol},
+    connection::{
+        auth::{broker::BrokerToUser, AuthenticationFlow},
+        protocols::{Listener, Protocol},
+    },
+    crypto::Serializable,
     error::{Error, Result},
     parse_socket_address,
     redis::{self, BrokerIdentifier},
 };
-use tokio::spawn;
-use tracing::warn;
+use tokio::{select, spawn, time::sleep};
+use tracing::{error, warn};
 
 /// The broker's configuration. We need this when we create a new one.
 /// TODO: clean up these generics. could be a generic type that implements both
@@ -44,45 +55,71 @@ pub struct Config<BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (),
     pub maybe_tls_key_path: Option<String>,
 }
 
-pub struct Inner<PrivateSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>>
-{
+/// The broker `Inner` that we use to share common data between broker tasks.
+struct Inner<
+    // TODO: clean these up with some sort of generic trick or something
+    BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    UserProtocolType: Protocol,
+    BrokerProtocolType: Protocol,
+> {
+    /// The number of connected users (that we post to Redis so that marshals can equally
+    /// distribute users)
+    num_connected_users: AtomicU64,
+
+    /// A broker identifier that we can use to establish uniqueness among brokers.
+    identifier: BrokerIdentifier,
+
+    // The `Redis` client that we will use to maintain consistency between brokers and marshals
+    redis_client: redis::Client,
+
     /// The underlying (public) verification key, used to authenticate with other brokers
-    verification_key: PrivateSignatureScheme::VerificationKey,
+    verification_key: BrokerSignatureScheme::VerificationKey,
 
     /// The underlying (private) signing key, used to authenticate with other brokers
-    signing_key: PrivateSignatureScheme::SigningKey,
+    signing_key: BrokerSignatureScheme::SigningKey,
+
+    /// The `PhantomData` that we need to be generic over protocol types.
+    pd: PhantomData<(UserProtocolType, BrokerProtocolType, UserSignatureScheme)>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
 pub struct Broker<
-    PrivateSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     UserProtocolType: Protocol,
     BrokerProtocolType: Protocol,
 > {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<PrivateSignatureScheme>>,
-
-    /// The `PhantomData` we need to be able to be generic over a signature scheme.
-    pd: PhantomData<PrivateSignatureScheme>,
+    inner: Arc<
+        Inner<BrokerSignatureScheme, UserSignatureScheme, UserProtocolType, BrokerProtocolType>,
+    >,
 
     /// The public (user -> broker) listener
     user_listener: UserProtocolType::Listener,
 
     /// The private (broker <-> broker) listener
     broker_listener: BrokerProtocolType::Listener,
-
-    // The `Redis` client that we will use to maintain consistency between brokers and marshals
-    redis_client: redis::Client,
 }
 
 impl<
-        PrivateSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         UserProtocolType: Protocol,
         BrokerProtocolType: Protocol,
-    > Broker<PrivateSignatureScheme, UserProtocolType, BrokerProtocolType>
+    > Broker<BrokerSignatureScheme, UserSignatureScheme, UserProtocolType, BrokerProtocolType>
+where
+    UserSignatureScheme::Signature: Serializable,
+    UserSignatureScheme::VerificationKey: Serializable,
+    UserSignatureScheme::SigningKey: Serializable,
 {
     /// Create a new `Broker` from a `Config`
-    pub async fn new(config: Config<PrivateSignatureScheme>) -> Result<Self> {
+    /// 
+    /// # Errors
+    /// - If we fail to create the `Redis` client
+    /// - If we fail to bind to our public endpoint
+    /// - If we fail to bind to our private endpoint
+    pub async fn new(config: Config<BrokerSignatureScheme>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             user_advertise_address,
@@ -99,16 +136,15 @@ impl<
             maybe_tls_key_path,
         } = config;
 
+        // Create a unique broker identifier
+        let identifier = BrokerIdentifier {
+            user_advertise_address,
+            broker_advertise_address,
+        };
+
         // Create the `Redis` client we will use to maintain consistency
         let redis_client = bail!(
-            redis::Client::new(
-                redis_endpoint,
-                Some(BrokerIdentifier {
-                    user_advertise_address,
-                    broker_advertise_address,
-                }),
-            )
-            .await,
+            redis::Client::new(redis_endpoint, Some(identifier.clone()),).await,
             Parse,
             "failed to create Redis client"
         );
@@ -145,31 +181,100 @@ impl<
             )
         );
 
+        // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
                 verification_key,
                 signing_key,
+                num_connected_users: AtomicU64::default(),
+                redis_client,
+                identifier,
+                pd: PhantomData,
             }),
             user_listener,
             broker_listener,
-            redis_client,
-            pd: PhantomData,
         })
     }
 
-    async fn handle_broker_connection(connection: BrokerProtocolType::Connection) {}
+    /// This function handles a broker (private) connection. We take the following steps:
+    /// 1. Authenticate the broker
+    /// 2. TODO
+    async fn handle_broker_connection(
+        inner: Arc<
+            Inner<BrokerSignatureScheme, UserSignatureScheme, UserProtocolType, BrokerProtocolType>,
+        >,
+        connection: BrokerProtocolType::Connection,
+    ) {
+    }
 
-    async fn handle_user_connection(connection: UserProtocolType::Connection) {}
+    /// This function handles a user (public) connection. We take the following steps:
+    /// 1. Authenticate the user
+    /// 2. TODO
+    async fn handle_user_connection(
+        inner: Arc<
+            Inner<BrokerSignatureScheme, UserSignatureScheme, UserProtocolType, BrokerProtocolType>,
+        >,
+        connection: UserProtocolType::Connection,
+    ) {
+        // Create verification data from the `Redis` client and our identifier
+        let mut verification = BrokerToUser {
+            redis_client: inner.redis_client.clone(),
+            identifier: inner.identifier.clone(),
+        };
+
+        // Verify (authenticate) the connection
+        if <BrokerToUser as AuthenticationFlow<
+            UserSignatureScheme,
+            UserProtocolType,
+        >>::authenticate(&mut verification, &connection)
+        .await.is_err()
+        {
+            return;
+        };
+
+        println!("meow");
+    }
 
     /// The main loop for a broker.
     /// Consumes self.
     ///
     /// # Errors
-    /// Right now, we return a `Result` but don't actually ever error.
+    /// If any of the following tasks exit:
+    /// - The heartbeat (Redis) task
+    /// - The user connection handler
+    /// - The broker connection handler
     pub async fn start(self) -> Result<()> {
+        // Clone `inner` so we can use shared data
+        let inner = self.inner.clone();
+
+        // Spawn the heartbeat task, which we use to register with `Redis` every so often.
+        let heartbeat_task = spawn(async move {
+            // Clone the `Redis` client, which needs to be mutable
+            let mut redis_client = inner.redis_client.clone();
+            loop {
+                // Register with `Redis` every 20 seconds, updating our number of connected users
+                if let Err(err) = redis_client
+                    .perform_heartbeat(
+                        inner.num_connected_users.load(Ordering::Relaxed),
+                        Duration::from_secs(60),
+                    )
+                    .await
+                {
+                    // If we fail, we want to see this
+                    error!("failed to perform heartbeat: {}", err);
+                }
+
+                // Sleep for 20 seconds
+                sleep(Duration::from_secs(20)).await;
+            }
+        });
+
+        // Clone `inner` so we can use shared data
+        let inner = self.inner.clone();
+
         // Spawn the public (user) listener task
         // TODO: maybe macro this, since it's repeat code with the private listener task
-        spawn(async move {
+        let user_listener_task = spawn(async move {
             loop {
                 // Accept a connection. If we fail, print the error and keep going.
                 //
@@ -183,12 +288,17 @@ impl<
                     }
                 };
 
-                spawn(Self::handle_user_connection(connection));
+                // Spawn a task to handle the [user/public] connection
+                let inner = inner.clone();
+                spawn(Self::handle_user_connection(inner, connection));
             }
         });
 
+        // Clone `inner` so we can use shared data
+        let inner = self.inner.clone();
+
         // Spawn the private (broker) listener task
-        spawn(async move {
+        let broker_listener_task = spawn(async move {
             loop {
                 // Accept a connection. If we fail, print the error and keep going.
                 //
@@ -202,10 +312,23 @@ impl<
                     }
                 };
 
-                spawn(Self::handle_broker_connection(connection));
+                // Spawn a task to handle the [broker/private] connection
+                let inner = inner.clone();
+                spawn(Self::handle_broker_connection(inner, connection));
             }
         });
 
-        Ok(())
+        // If one of the tasks exists, we want to return (stopping the program)
+        select! {
+            _ = heartbeat_task => {
+                Err(Error::Exited("heartbeat task exited!".to_string()))
+            }
+            _ = user_listener_task => {
+                Err(Error::Exited("user listener task exited!".to_string()))
+            }
+            _ = broker_listener_task => {
+                Err(Error::Exited("broker listener task exited!".to_string()))
+            }
+        }
     }
 }

@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
         broker_advertise_address: "127.0.0.1:8081".to_string(),
         broker_bind_address: "127.0.0.1:8081".to_string(),
 
-        redis_endpoint: "127.0.0.1:6789".to_string(),
+        redis_endpoint: "redis://:changeme!@127.0.0.1:6379".to_string(),
 
         signing_key,
         verification_key,
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     };
 
     // Create new `Broker`
-    let marshal = Broker::<BLS, Quic, Tcp>::new(broker_config).await?;
+    let marshal = Broker::<BLS, BLS, Quic, Tcp>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;

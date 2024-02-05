@@ -47,7 +47,7 @@ impl Client {
                 user_advertise_address: String::new(),
                 broker_advertise_address: String::new(),
             },
-            |identifier| identifier.into(),
+            |identifier| identifier
         );
 
         // Return the thinly wrapped `Self`.
@@ -72,7 +72,7 @@ impl Client {
     pub async fn perform_heartbeat(
         &mut self,
         num_connections: u64,
-        heartbeat_interval: Duration,
+        heartbeat_expiry: Duration,
     ) -> Result<()> {
         // Set up atomic transaction
         // TODO: macro this bail to something like bail_redis
@@ -100,7 +100,7 @@ impl Client {
                 .arg(&[
                     "brokers",
                     &self.identifier.to_string(),
-                    &heartbeat_interval.as_secs().to_string()
+                    &heartbeat_expiry.as_secs().to_string()
                 ])
                 .query_async(&mut self.underlying_connection)
                 .await,
@@ -115,7 +115,7 @@ impl Client {
                     format!("{}/num_connections", self.identifier),
                     num_connections.to_string(),
                     "EX".to_string(),
-                    heartbeat_interval.as_secs().to_string()
+                    heartbeat_expiry.as_secs().to_string()
                 ])
                 .query_async(&mut self.underlying_connection)
                 .await,
@@ -194,7 +194,7 @@ impl Client {
 
         // Return the broker with the least amount of connections, for which we
         // will issue a permit. Try to parse the broker address from a `String`.
-        Ok(broker_with_least_connections.try_into()?)
+        broker_with_least_connections.try_into()
     }
 
     /// Get all other brokers, not including our own identifier (if applicable).
@@ -254,10 +254,14 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn validate_permit(&mut self, broker: BrokerIdentifier, permit: u64) -> Result<bool> {
+    pub async fn validate_permit(
+        &mut self,
+        broker: &BrokerIdentifier,
+        permit: u64,
+    ) -> Result<bool> {
         // Remove the permit
         match bail!(
-            redis::cmd("SDEL")
+            redis::cmd("SREM")
                 .arg(&[format!("{broker}/permits"), permit.to_string()])
                 .query_async(&mut self.underlying_connection)
                 .await,
@@ -288,7 +292,7 @@ impl TryFrom<String> for BrokerIdentifier {
         let mut split = value.split('/');
 
         // Create a new `Self` from the split string
-        Ok(BrokerIdentifier {
+        Ok(Self {
             user_advertise_address: split
                 .next()
                 .ok_or_else(|| {

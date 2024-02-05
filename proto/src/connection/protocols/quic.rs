@@ -19,6 +19,7 @@ use super::{Connection, Listener, Protocol};
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
 /// listeners, connections, etc.
+#[derive(Clone)]
 pub struct Quic;
 
 /// We define the `Quic` protocol as being composed of both a QUIC listener
@@ -198,7 +199,7 @@ impl Connection for QuicConnection {
         endpoint.set_default_client_config(config);
 
         // Connect with QUIC endpoint to remote address
-        Ok(Self(bail!(
+        let connection = Self(bail!(
             bail!(
                 endpoint.connect(remote_address, domain_name),
                 Connection,
@@ -207,7 +208,9 @@ impl Connection for QuicConnection {
             .await,
             Connection,
             "failed to connect to remote address"
-        )))
+        ));
+
+        Ok(connection)
     }
 }
 

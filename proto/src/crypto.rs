@@ -8,10 +8,14 @@ use crate::{
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
 use jf_primitives::signatures::SignatureScheme;
-use rand::{rngs::StdRng, CryptoRng, RngCore, SeedableRng};
+use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
 use rustls::ClientConfig;
 use std::sync::Arc;
+
+/// Helps clean up some trait boundaries
+pub trait Serializable: CanonicalSerialize + CanonicalDeserialize {}
+impl<T: CanonicalSerialize + CanonicalDeserialize> Serializable for T {}
 
 /// The oxymoron function. Used mostly with crypto key generation to generate
 /// "random" values that are actually deterministic based on the input.

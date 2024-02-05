@@ -12,7 +12,7 @@ pub mod tcp;
 /// TODO: find out if there is a better way than the `u64` cast
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
 
-pub trait Protocol: Send + Sync + 'static {
+pub trait Protocol: Send + Sync + 'static + Clone {
     type Connection: Connection;
     type Listener: Listener<Self::Connection>;
 }

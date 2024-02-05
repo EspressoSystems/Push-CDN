@@ -1,16 +1,15 @@
 //! In here we define an API that is a little more higher-level and ergonomic
 //! for end users. It is a light wrapper on top of a `Sticky` connection.
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        auth::UserToMarshal,
+        auth::user::UserToMarshalToBroker,
         protocols::Protocol,
         sticky::{self, Sticky},
     },
-    crypto,
+    crypto::{self, Serializable},
     error::Error,
     error::Result,
     message::{Broadcast, Direct, Message, Subscribe, Topic, Unsubscribe},
@@ -22,11 +21,11 @@ use proto::{
 pub struct Client<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
->(Sticky<SignatureScheme, ProtocolType, UserToMarshal>)
+>(Sticky<SignatureScheme, ProtocolType, UserToMarshalToBroker<SignatureScheme>>)
 where
-    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize;
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable;
 
 pub type Config<SignatureScheme, ProtocolType, AuthFlow> =
     sticky::Config<SignatureScheme, ProtocolType, AuthFlow>;
@@ -36,9 +35,9 @@ impl<
         ProtocolType: Protocol,
     > Client<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable,
 {
     /// Creates a new client from the given `Config`. Immediately will attempt
     /// a conection if none is supplied.
@@ -46,7 +45,9 @@ where
     /// # Errors
     /// Errors if the downstream `Sticky` object was unable to be made.
     /// This usually happens when we can't bind to the specified endpoint.
-    pub async fn new(config: Config<SignatureScheme, ProtocolType, UserToMarshal>) -> Result<Self> {
+    pub async fn new(
+        config: Config<SignatureScheme, ProtocolType, UserToMarshalToBroker<SignatureScheme>>,
+    ) -> Result<Self> {
         Self::new_with_connection(config, Option::None).await
     }
 
@@ -58,7 +59,7 @@ where
     /// Errors if the downstream `Sticky` object was unable to be created.
     /// This usually happens when we can't bind to the specified endpoint.
     pub async fn new_with_connection(
-        config: Config<SignatureScheme, ProtocolType, UserToMarshal>,
+        config: Config<SignatureScheme, ProtocolType, UserToMarshalToBroker<SignatureScheme>>,
         connection: Option<ProtocolType::Connection>,
     ) -> Result<Self> {
         Ok(Self(bail!(

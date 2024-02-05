@@ -24,6 +24,7 @@ use super::{Connection, Listener, Protocol};
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
+#[derive(Clone)]
 pub struct Tcp;
 
 /// We define the `Tcp` protocol as being composed of both a TCP listener

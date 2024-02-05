@@ -5,19 +5,19 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
-        auth::{Flow, UserToMarshal, UserVerificationData},
+        auth::{marshal::MarshalToUser, AuthenticationFlow},
         protocols::{Listener, Protocol},
     },
+    crypto::Serializable,
     error::{Error, Result},
     redis,
 };
 use tokio::spawn;
-use tracing::{info, warn};
+use tracing::warn;
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
@@ -26,9 +26,9 @@ pub struct Marshal<
     SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     ProtocolType: Protocol,
 > where
-    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable,
 {
     /// The underlying connection listener. Used to accept new connections.
     listener: Arc<ProtocolType::Listener>,
@@ -46,9 +46,9 @@ impl<
         ProtocolType: Protocol,
     > Marshal<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::VerificationKey: CanonicalSerialize + CanonicalDeserialize,
-    SignatureScheme::SigningKey: CanonicalSerialize + CanonicalDeserialize,
+    SignatureScheme::Signature: Serializable,
+    SignatureScheme::VerificationKey: Serializable,
+    SignatureScheme::SigningKey: Serializable,
 {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
@@ -92,16 +92,16 @@ where
         redis_client: redis::Client,
     ) {
         // Create verification data from the `Redis client`
-        let mut verification_data = UserVerificationData { redis_client };
+        let mut verification = MarshalToUser { redis_client };
 
         // Verify (authenticate) the connection
-        if let Err(err) = <UserToMarshal as Flow<SignatureScheme, ProtocolType>>::verify(
-            &mut verification_data,
+        if <MarshalToUser as AuthenticationFlow<SignatureScheme, ProtocolType>>::authenticate(
+            &mut verification,
             &connection,
         )
         .await
+        .is_err()
         {
-            info!("client failed authentication: {err}");
             return;
         };
     }
