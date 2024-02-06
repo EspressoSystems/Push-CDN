@@ -2,12 +2,6 @@
 
 // TODO IN GENERAL: figure out if connection dropping on big messages is working
 
-use std::marker::PhantomData;
-
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-
-use super::protocols::Protocol;
-
 pub mod broker;
 pub mod marshal;
 pub mod user;
@@ -28,14 +22,4 @@ macro_rules! fail_verification_with_message {
         // Return up the stack
         return Err(Error::Authentication($context.to_string()));
     };
-}
-
-/// This is the `Auth` struct that we define methods to for authentication purposes.
-pub struct Auth<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
-    /// We use `PhantomData` here so we can be generic over a signature scheme
-    /// and protocol type
-    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }

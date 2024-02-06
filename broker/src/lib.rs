@@ -4,7 +4,7 @@
 // TODO: inter-broker message batching
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     hash::Hash,
     marker::PhantomData,
     sync::{
@@ -18,15 +18,16 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 // TODO: figure out if we should use Tokio's here
 use parking_lot::RwLock;
 use proto::{
-    bail,
+    authenticate_with_broker, bail,
     connection::{
-        auth::Auth,
+        auth::broker::BrokerAuth,
         protocols::{Connection, Listener, Protocol},
     },
     crypto::Serializable,
     error::{Error, Result},
     parse_socket_address,
     redis::{self, BrokerIdentifier},
+    verify_broker,
 };
 use tokio::{select, spawn, time::sleep};
 use tracing::{error, warn};
@@ -84,8 +85,7 @@ struct Inner<
     /// The (clonable) `Redis` client that we will use to maintain consistency between brokers and marshals
     redis_client: redis::Client,
 
-    /// The brokers we are connected to
-    broker_connections: RwLock<HashMap<BrokerIdentifier, BrokerProtocolType::Connection>>,
+    /// The list of all brokers we are connected to
     brokers_connected: RwLock<HashSet<BrokerIdentifier>>,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
@@ -215,7 +215,6 @@ where
                 identifier,
                 verification_key,
                 signing_key,
-                broker_connections: RwLock::from(HashMap::new()),
                 brokers_connected: RwLock::from(HashSet::new()),
                 pd: PhantomData,
             }),
@@ -232,7 +231,22 @@ where
             Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
         >,
         connection: BrokerProtocolType::Connection,
+        is_outbound: bool,
     ) {
+        // Depending on which way the direction came in, we will want to authenticate with a different
+        // flow.
+        let broker_address = if is_outbound {
+            // If we reached out to the other broker first, authenticate first.
+            let broker_address = authenticate_with_broker!(connection, inner);
+            verify_broker!(connection, inner);
+            broker_address
+        } else {
+            // If the other broker reached out to us first, authenticate second.
+            verify_broker!(connection, inner);
+            authenticate_with_broker!(connection, inner)
+        };
+
+        
     }
 
     /// This function handles a user (public) connection. We take the following steps:
@@ -245,12 +259,13 @@ where
         connection: UserProtocolType::Connection,
     ) {
         // Verify (authenticate) the connection
-        let Ok(verification_key) = Auth::<UserSignatureScheme, UserProtocolType>::verify_by_permit(
-            &connection,
-            &inner.identifier,
-            &mut inner.redis_client.clone(),
-        )
-        .await
+        let Ok(verification_key) =
+            BrokerAuth::<UserSignatureScheme, UserProtocolType>::verify_user(
+                &connection,
+                &inner.identifier,
+                &mut inner.redis_client.clone(),
+            )
+            .await
         else {
             return;
         };
@@ -316,16 +331,8 @@ where
                                     }
                                 };
 
-                                // Verify (authenticate) the connection
-                                if Auth::<BrokerSignatureScheme, BrokerProtocolType>::authenticate_broker_outbound(&connection, &inner.verification_key, &inner.signing_key, &inner.identifier)
-                                    .await
-                                    .is_err()
-                                {
-                                    return;
-                                };
-
                                 // Handle the broker connection
-                                Self::handle_broker_connection(inner, connection).await;
+                                Self::handle_broker_connection(inner, connection, true).await;
                             });
                         }
                     }
@@ -386,7 +393,7 @@ where
 
                 // Spawn a task to handle the [broker/private] connection
                 let inner = inner.clone();
-                spawn(Self::handle_broker_connection(inner, connection));
+                spawn(Self::handle_broker_connection(inner, connection, false));
             }
         });
 

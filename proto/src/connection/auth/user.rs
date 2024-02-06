@@ -1,6 +1,9 @@
 //! In this crate we deal with the authentication flow as a user.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    marker::PhantomData,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
@@ -12,12 +15,20 @@ use crate::{
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
 };
 
-use super::Auth;
+/// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
+pub struct UserAuth<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ProtocolType: Protocol,
+> {
+    /// We use `PhantomData` here so we can be generic over a signature scheme
+    /// and protocol type
+    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+}
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > Auth<SignatureScheme, ProtocolType>
+    > UserAuth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
@@ -31,7 +42,7 @@ where
     /// # Errors
     /// - If we fail authentication
     /// - If our connection fails
-    pub async fn authenticate_with_key(
+    pub async fn authenticate_with_marshal(
         connection: &ProtocolType::Connection,
         verification_key: &SignatureScheme::VerificationKey,
         signing_key: &SignatureScheme::SigningKey,
@@ -100,15 +111,15 @@ where
             } else {
                 // We haven't, we failed authentication :(
                 // TODO: fix these error types
-                return Err(Error::Authentication(format!(
+                Err(Error::Authentication(format!(
                     "failed authentication: {}",
                     response.context
-                )));
+                )))
             }
         } else {
-            return Err(Error::Parse(
+            Err(Error::Parse(
                 "failed to parse marshal response: wrong message type".to_string(),
-            ));
+            ))
         }
     }
 
@@ -120,7 +131,7 @@ where
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    pub async fn authenticate_with_permit(
+    pub async fn authenticate_with_broker(
         connection: &ProtocolType::Connection,
         permit: u64,
     ) -> Result<()> {

@@ -1,6 +1,9 @@
 //! In this crate we deal with the authentication flow as a broker.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    marker::PhantomData,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
@@ -15,12 +18,59 @@ use crate::{
     redis::{self, BrokerIdentifier},
 };
 
-use super::Auth;
+/// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
+pub struct BrokerAuth<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ProtocolType: Protocol,
+> {
+    /// We use `PhantomData` here so we can be generic over a signature scheme
+    /// and protocol type
+    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+}
+
+/// We  use this macro upstream to conditionally order broker authentication flows
+#[macro_export]
+macro_rules! authenticate_with_broker {
+    ($connection: expr, $inner: expr) => {
+        // Prove to the other broker
+        match BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::authenticate_with_broker(
+            &$connection,
+            &$inner.verification_key,
+            &$inner.signing_key,
+        )
+        .await
+        {
+            Ok(broker_address) => broker_address,
+            Err(err) => {
+                error!("failed authentication with broker: {err}");
+                return;
+            }
+        }
+    };
+}
+
+/// We  use this macro upstream to conditionally order broker authentication flows
+#[macro_export]
+macro_rules! verify_broker {
+    ($connection: expr, $inner: expr) => {
+        // Wait for other brokers' proof
+        if let Err(err) = BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::verify_broker(
+            &$connection,
+            &$inner.identifier,
+            &$inner.verification_key,
+        )
+        .await
+        {
+            error!("failed to verify broker: {err}");
+            return;
+        };
+    };
+}
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > Auth<SignatureScheme, ProtocolType>
+    > BrokerAuth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
@@ -34,7 +84,7 @@ where
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    pub async fn verify_by_permit(
+    pub async fn verify_user(
         connection: &ProtocolType::Connection,
         broker_identifier: &BrokerIdentifier,
         redis_client: &mut redis::Client,
@@ -92,19 +142,17 @@ where
         Ok(verification_key)
     }
 
-    /// The authentication implementation for a broker to another broker (outbound). We take the
-    /// following steps:
-    /// 1. Send a signed message to the broker
-    /// 2. Wait for a response
-    ///
+    /// Authenticate with a broker (as a broker).
+    /// Is the same as the `authenticate_with_broker` flow as a user, but 
+    /// we return a `BrokerIdentifier` instead.
+    /// 
     /// # Errors
-    /// - If authentication fails
-    /// - If our connection fails
-    pub async fn authenticate_broker_outbound(
+    /// - If we fail to authenticate
+    /// - If we have a connection failure
+    pub async fn authenticate_with_broker(
         connection: &ProtocolType::Connection,
         verification_key: &SignatureScheme::VerificationKey,
         signing_key: &SignatureScheme::SigningKey,
-        identifier: &BrokerIdentifier,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -140,7 +188,7 @@ where
             "failed to serialize signature"
         );
 
-        // We authenticate to the broker with our key
+        // We authenticate to the marshal with a key
         let message = Message::AuthenticateWithKey(AuthenticateWithKey {
             timestamp,
             verification_key: verification_key_bytes,
@@ -163,20 +211,93 @@ where
 
         // Make sure the message is the proper type
         if let Message::AuthenticateResponse(response) = response {
-            // We have failed authentication if the permit != 1
-            if response.permit != 1 {
-                return Err(Error::Authentication(format!(
+            // Check if we have passed authentication
+            if response.permit == 1 {
+                // We have. Return the address we received
+                Ok(bail!(
+                    response.context.try_into(),
+                    Parse,
+                    "failed to parse broker address"
+                ))
+            } else {
+                // We haven't, we failed authentication :(
+                // TODO: fix these error types
+                Err(Error::Authentication(format!(
                     "failed authentication: {}",
                     response.context
-                )));
+                )))
             }
         } else {
-            // We received the wrong response message
-            return Err(Error::Parse(
-                "failed to parse broker response: wrong message type".to_string(),
-            ));
+            Err(Error::Parse(
+                "failed to parse marshal response: wrong message type".to_string(),
+            ))
+        }
+    }
+
+    pub async fn verify_broker(
+        connection: &ProtocolType::Connection,
+        our_identifier: &BrokerIdentifier,
+        our_verification_key: &SignatureScheme::VerificationKey,
+    ) -> Result<()> {
+        // Receive the signed message from the user
+        let auth_message = bail!(
+            connection.recv_message().await,
+            Connection,
+            "failed to receive message from user"
+        );
+
+        // See if we're the right type of message
+        let Message::AuthenticateWithKey(auth_message) = auth_message else {
+            // TODO: macro for this error thing
+            fail_verification_with_message!(connection, "wrong message type");
         };
 
-        todo!()
+        // Deserialize the user's verification key
+        let Ok(verification_key) = crypto::deserialize(&auth_message.verification_key) else {
+            fail_verification_with_message!(connection, "malformed verification key");
+        };
+
+        // Deserialize the signature
+        let Ok(signature) = crypto::deserialize(&auth_message.signature) else {
+            fail_verification_with_message!(connection, "malformed signature");
+        };
+
+        // Verify the signature
+        if SignatureScheme::verify(
+            &(),
+            &verification_key,
+            auth_message.timestamp.to_le_bytes(),
+            &signature,
+        )
+        .is_err()
+        {
+            fail_verification_with_message!(connection, "failed to verify");
+        }
+
+        // Convert the timestamp to something usable
+        let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+            fail_verification_with_message!(connection, "malformed timestamp");
+        };
+
+        // Make sure the timestamp is within 5 seconds
+        if timestamp.as_secs() - auth_message.timestamp > 5 {
+            fail_verification_with_message!(connection, "timestamp is too old");
+        }
+
+        // Check our verification key against theirs
+        if verification_key != *our_verification_key {
+            fail_verification_with_message!(connection, "signature did not use broker key");
+        }
+
+        // Form a response message
+        let response_message = Message::AuthenticateResponse(AuthenticateResponse {
+            permit: 1,
+            context: our_identifier.to_string(),
+        });
+
+        // Send the permit to the user, along with the public broker advertise address
+        let _ = connection.send_message(response_message).await;
+
+        Ok(())
     }
 }

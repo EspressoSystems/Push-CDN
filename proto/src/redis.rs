@@ -278,7 +278,7 @@ impl Client {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct BrokerIdentifier {
     /// The address that a broker advertises to publicly (to users)
     pub user_advertise_address: String,

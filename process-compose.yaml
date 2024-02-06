@@ -15,7 +15,13 @@ processes:
         condition: process_started
 
   broker_0:
-    command: cargo run --package broker
+    command: cargo run --package broker -- -b 8082 -u 8083
+    depends_on:
+      redis:
+        condition: process_started
+
+  broker_1:
+    command: cargo run --package broker -- -b 8084 -u 8085
     depends_on:
       redis:
         condition: process_started

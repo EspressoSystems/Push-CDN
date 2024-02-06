@@ -1,6 +1,9 @@
 //! In this crate we deal with the authentication flow as a marshal.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    marker::PhantomData,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
@@ -15,12 +18,20 @@ use crate::{
     redis,
 };
 
-use super::Auth;
+/// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
+pub struct MarshalAuth<
+    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+    ProtocolType: Protocol,
+> {
+    /// We use `PhantomData` here so we can be generic over a signature scheme
+    /// and protocol type
+    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+}
 
 impl<
         SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
         ProtocolType: Protocol,
-    > Auth<SignatureScheme, ProtocolType>
+    > MarshalAuth<SignatureScheme, ProtocolType>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
@@ -35,7 +46,7 @@ where
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    pub async fn verify_by_key(
+    pub async fn verify_user(
         connection: &ProtocolType::Connection,
         redis_client: &mut redis::Client,
     ) -> Result<()> {
@@ -112,7 +123,7 @@ where
             }
         };
 
-        // Form the response message
+        // Form a response message
         let response_message = Message::AuthenticateResponse(AuthenticateResponse {
             permit,
             context: broker_with_least_connections.user_advertise_address,

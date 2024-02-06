@@ -11,7 +11,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
 use proto::{
     connection::{
-        auth::Auth,
+        auth::user::UserAuth,
         protocols::{Connection, Protocol},
     },
     crypto::Serializable,
@@ -288,7 +288,7 @@ where
 
     // Authenticate the connection to the marshal (if not provided)
     let (broker_address, permit) = bail!(
-        Auth::<SignatureScheme, ProtocolType>::authenticate_with_key(
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(
             &connection,
             verification_key,
             signing_key
@@ -307,7 +307,8 @@ where
 
     // Authenticate the connection to the broker
     bail!(
-        Auth::<SignatureScheme, ProtocolType>::authenticate_with_permit(&connection, permit).await,
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(&connection, permit)
+            .await,
         Authentication,
         "failed to authenticate to broker"
     );
