@@ -4,7 +4,7 @@
 
 use capnp::{
     message::ReaderOptions,
-    serialize::{self, write_message_segments_to_words},
+    serialize::{self, write_message, write_message_segments_to_words},
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     error::{Error, Result},
     messages_capnp::{
         self, authenticate_response, authenticate_with_key, authenticate_with_permit, broadcast,
-        direct, subscribe, unsubscribe,
+        direct, subscribe, unsubscribe, users_connected, users_disconnected,
     },
 };
 
@@ -53,6 +53,26 @@ macro_rules! deserialize {
         )
     };
 
+    // Rule to deserialize `Users`
+    ($message:expr, Users) => {{
+        let mut users = Vec::new();
+        for user in bail!(
+            $message.get_users(),
+            Deserialize,
+            "failed to deserialize users"
+        ) {
+            users.push(
+                bail!(
+                    user.get_key(),
+                    Deserialize,
+                    "failed to deserialize user key"
+                )
+                .to_vec(),
+            );
+        }
+        users
+    }};
+
     // A rule for prettiness that just returns the value.
     // Helpful in the case it is a `bool` or similar primitive
     ($func_name:expr) => {
@@ -79,6 +99,11 @@ pub enum Message {
     Subscribe(Subscribe),
     /// The wrapper for an `Unsubscribe` message
     Unsubscribe(Unsubscribe),
+
+    /// The wrapper for a `UsersConnected` message
+    UsersConnected(UsersConnected),
+    /// The wrapper for a `UsersDisconnected` message
+    UsersDisconnected(UsersDisconnected),
 }
 
 impl Message {
@@ -179,6 +204,38 @@ impl Message {
                     "failed to serialize topics"
                 );
             }
+
+            Self::UsersConnected(to_serialize) => {
+                // Initialize a new `UsersConnected` message.
+                let mut message: users_connected::Builder = root.init_users_connected();
+
+                // Init the users
+                let mut users = message
+                    .reborrow()
+                    .init_users(to_serialize.users.len() as u32);
+
+                // For each user, reborrow and serialize
+                for (i, user) in to_serialize.users.iter().enumerate() {
+                    let mut cur_user = users.reborrow().get(i as u32);
+                    cur_user.set_key(&*user);
+                }
+            }
+
+            Self::UsersDisconnected(to_serialize) => {
+                // Initialize a new `UsersConnected` message.
+                let mut message: users_disconnected::Builder = root.init_users_disconnected();
+
+                // Init the users
+                let mut users = message
+                    .reborrow()
+                    .init_users(to_serialize.users.len() as u32);
+
+                // For each user, reborrow and serialize
+                for (i, user) in to_serialize.users.iter().enumerate() {
+                    let mut cur_user = users.reborrow().get(i as u32);
+                    cur_user.set_key(&*user);
+                }
+            }
         }
 
         Ok(write_message_segments_to_words(&message))
@@ -267,6 +324,22 @@ impl Message {
 
                     Self::Unsubscribe(Unsubscribe {
                         topics: deserialize!(message.get_topics(), Topic),
+                    })
+                }
+                messages_capnp::message::UsersConnected(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
+
+                    Self::UsersConnected(UsersConnected {
+                        users: deserialize!(message, Users),
+                    })
+                }
+                messages_capnp::message::UsersDisconnected(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
+
+                    Self::UsersDisconnected(UsersDisconnected {
+                        users: deserialize!(message, Users),
                     })
                 }
             },
@@ -376,6 +449,20 @@ pub struct Unsubscribe {
     pub topics: Vec<Topic>,
 }
 
+/// A message that is used to convey to other brokers that user(s) have connected to us.
+#[derive(PartialEq, Eq, Debug)]
+pub struct UsersConnected {
+    // The users connected to us
+    pub users: Vec<Vec<u8>>,
+}
+
+/// A message that is used to convey to other brokers that user(s) have disconnected from us.
+#[derive(PartialEq, Eq, Debug)]
+pub struct UsersDisconnected {
+    // The users that have disconnected from us
+    pub users: Vec<Vec<u8>>,
+}
+
 /// Serialization and deserialization parity tests
 #[cfg(test)]
 mod test {
@@ -436,6 +523,16 @@ mod test {
         // `Unsubscribe` message
         assert_serialize_deserialize!(Message::Unsubscribe(Unsubscribe {
             topics: vec![Topic::DA, Topic::Global],
+        }));
+
+        // `UsersConnected` message
+        assert_serialize_deserialize!(Message::UsersConnected(UsersConnected {
+            users: vec![vec![0u8, 1u8], vec![2u8, 3u8]],
+        }));
+
+        // `UsersDisconnected` message
+        assert_serialize_deserialize!(Message::UsersDisconnected(UsersDisconnected {
+            users: vec![vec![0u8, 1u8], vec![2u8, 3u8]],
         }));
     }
 }

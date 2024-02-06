@@ -199,39 +199,41 @@ where
         bail!(
             connection.send_message(message).await,
             Connection,
-            "failed to send auth message to marshal"
+            "failed to send auth message to broker"
         );
 
         // Wait for the response with the permit and address
         let response = bail!(
             connection.recv_message().await,
             Connection,
-            "failed to receive message from marshal"
+            "failed to receive message from broker"
         );
 
         // Make sure the message is the proper type
-        if let Message::AuthenticateResponse(response) = response {
+        let broker_address = if let Message::AuthenticateResponse(response) = response {
             // Check if we have passed authentication
             if response.permit == 1 {
                 // We have. Return the address we received
-                Ok(bail!(
+                bail!(
                     response.context.try_into(),
                     Parse,
                     "failed to parse broker address"
-                ))
+                )
             } else {
                 // We haven't, we failed authentication :(
                 // TODO: fix these error types
-                Err(Error::Authentication(format!(
+                return Err(Error::Authentication(format!(
                     "failed authentication: {}",
                     response.context
-                )))
+                )));
             }
         } else {
-            Err(Error::Parse(
-                "failed to parse marshal response: wrong message type".to_string(),
-            ))
-        }
+            return Err(Error::Parse(
+                "failed to parse broker response: wrong message type".to_string(),
+            ));
+        };
+
+        Ok(broker_address)
     }
 
     pub async fn verify_broker(

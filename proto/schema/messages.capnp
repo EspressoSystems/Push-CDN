@@ -20,6 +20,11 @@ struct Message {
         subscribe @5 :Subscribe;
         # The wrapper for an `Unsubscribe` message
         unsubscribe @6 :Unsubscribe;
+
+        # The wrapper for a `UsersConnected` message
+        usersConnected @7 :UsersConnected;
+        # The wrapper for an `UsersDisconnected` message
+        usersDisconnected @8 :UsersDisconnected;
     }
 }
 
@@ -93,4 +98,21 @@ struct Subscribe {
 struct Unsubscribe {
     # The topics no longer interested in
     topics @0: List(Topic);
+}
+
+
+# A message that is used to convey to other brokers that user(s) have connected to us.
+struct UsersConnected {
+    # The users connected to us
+    users @0: List(User);
+}
+
+# A message that is used to convey to other brokers that user(s) have disconnected from us.
+struct UsersDisconnected {
+    # The users that have disconnected from us
+    users @0: List(User);
+}
+
+struct User {
+    key @0: Data;
 }
