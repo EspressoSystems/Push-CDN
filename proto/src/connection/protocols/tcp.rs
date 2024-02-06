@@ -101,14 +101,14 @@ impl Connection for TcpConnection {
         );
 
         // Send the serialized message
-        self.send_message_raw(serialized_message).await
+        self.send_message_raw(Arc::from(serialized_message)).await
     }
 
     /// Send a pre-formed message over the connection.
     ///
     /// # Errors
     /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
+    async fn send_message_raw(&self, message: Arc<Vec<u8>>) -> Result<()> {
         // Lock the stream so we don't send message/message sizes interleaved
         let mut sender_guard = self.sender.lock().await;
 
@@ -125,6 +125,36 @@ impl Connection for TcpConnection {
             Connection,
             "failed to send message"
         );
+        drop(sender_guard);
+
+        Ok(())
+    }
+
+    /// Send a vector pre-formed messages over the connection.
+    ///
+    /// # Errors
+    /// - If we fail to deliver the message. This usually means a connection problem.
+    async fn send_messages_raw(&self, messages: Vec<Arc<Vec<u8>>>) -> Result<()> {
+        // Lock the stream so we don't send message/message sizes interleaved
+        let mut sender_guard = self.sender.lock().await;
+
+        // For each message:
+        for message in messages {
+            // Write the message size to the stream
+            bail!(
+                sender_guard.write_u64(message.len() as u64).await,
+                Connection,
+                "failed to send message size"
+            );
+
+            // Write the message to the stream
+            bail!(
+                sender_guard.write_all(&message).await,
+                Connection,
+                "failed to send message"
+            );
+        }
+
         drop(sender_guard);
 
         Ok(())

@@ -244,11 +244,11 @@ where
     /// - If the message sending failed
     pub async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize the message
-        let message = bail!(
+        let message = Arc::from(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
-        );
+        ));
 
         // Try to send the message, reconnecting if needed
         Ok(try_with_reconnect!(self, send_message_raw, message,))

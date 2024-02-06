@@ -245,8 +245,6 @@ where
             verify_broker!(connection, inner);
             authenticate_with_broker!(connection, inner)
         };
-
-        
     }
 
     /// This function handles a user (public) connection. We take the following steps:
@@ -310,6 +308,7 @@ where
                     Ok(brokers) => {
                         // Calculate the difference, spawn tasks to connect to them
                         for broker in brokers.difference(&inner.brokers_connected.read()) {
+                            // TODO: make this into a separate function
                             // Extrapolate the address to connect to
                             let to_connect_address = broker.broker_advertise_address.clone();
 

@@ -13,7 +13,7 @@ use crate::{
     MAX_MESSAGE_SIZE,
 };
 use core::hash::Hash;
-use std::net::ToSocketAddrs;
+use std::{net::ToSocketAddrs, sync::Arc};
 
 use super::{Connection, Listener, Protocol};
 
@@ -114,14 +114,14 @@ impl Connection for QuicConnection {
         );
 
         // Send the message
-        self.send_message_raw(message_bytes).await
+        self.send_message_raw(Arc::from(message_bytes)).await
     }
 
     /// Send a pre-formed message over the connection.
     ///
     /// # Errors
     /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message_raw(&self, message: Vec<u8>) -> Result<()> {
+    async fn send_message_raw(&self, message: Arc<Vec<u8>>) -> Result<()> {
         // Open the outgoing unidirectional stream
         let mut stream = bail!(
             self.0.open_uni().await,
@@ -143,6 +143,26 @@ impl Connection for QuicConnection {
             Connection,
             "failed to finish stream"
         ))
+    }
+
+    /// Send a vector of pre-formed message over the connection.
+    ///
+    /// TODO: FIGURE OUT IF WE WANT TO FRAME LIKE THIS. it may be more performant with batching
+    /// to not do it this way.
+    ///
+    /// # Errors
+    /// - If we fail to deliver any of the messages. This usually means a connection problem.
+    async fn send_messages_raw(&self, messages: Vec<Arc<Vec<u8>>>) -> Result<()> {
+        // Send each message over the connection
+        for message in messages {
+            bail!(
+                self.send_message_raw(message).await,
+                Connection,
+                "failed to send message"
+            );
+        }
+
+        Ok(())
     }
 
     /// Connect to a remote endpoint, returning an instance of `Self`. With QUIC,
