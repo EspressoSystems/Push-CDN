@@ -11,11 +11,11 @@ use jf_primitives::signatures::SignatureScheme;
 use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
 use rustls::ClientConfig;
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 /// Helps clean up some trait boundaries
-pub trait Serializable: CanonicalSerialize + CanonicalDeserialize {}
-impl<T: CanonicalSerialize + CanonicalDeserialize> Serializable for T {}
+pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash{}
+impl<T: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash> Serializable for T {}
 
 /// The oxymoron function. Used mostly with crypto key generation to generate
 /// "random" values that are actually deterministic based on the input.

@@ -433,6 +433,7 @@ version = "0.1.0"
 dependencies = [
  "ark-serialize",
  "clap",
+ "either",
  "jf-primitives",
  "local-ip-address",
  "parking_lot",

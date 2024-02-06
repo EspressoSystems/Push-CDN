@@ -1,22 +1,14 @@
 //! This file contains the implementation of the `Broker`, which routes messages
 //! for the Push CDN.
 
-// TODO: inter-broker message batching
+// TODO: convert QUIC to locked single sender/reciver
 
-use std::{
-    collections::HashSet,
-    hash::Hash,
-    marker::PhantomData,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+mod state;
+
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 // TODO: figure out if we should use Tokio's here
-use parking_lot::RwLock;
 use proto::{
     authenticate_with_broker, bail,
     connection::{
@@ -70,26 +62,20 @@ struct Inner<
     UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     UserProtocolType: Protocol,
 > where
-    UserSignatureScheme::VerificationKey: Hash,
+    UserSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::SigningKey: Serializable,
 {
-    /// The number of connected users (that we post to Redis so that marshals can equally
-    /// distribute users)
-    num_connected_users: AtomicU64,
-
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identifier: BrokerIdentifier,
 
     /// The (clonable) `Redis` client that we will use to maintain consistency between brokers and marshals
     redis_client: redis::Client,
 
-    /// The list of all brokers we are connected to
-    brokers_connected: RwLock<HashSet<BrokerIdentifier>>,
-
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
+    /// TODO: verif & signing key in one struct
     pub verification_key: BrokerSignatureScheme::VerificationKey,
 
     /// The underlying (private) signing key, used to sign messages to send to the server during the
@@ -108,7 +94,7 @@ pub struct Broker<
     UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
     UserProtocolType: Protocol,
 > where
-    UserSignatureScheme::VerificationKey: Hash,
+    UserSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::SigningKey: Serializable,
@@ -133,7 +119,7 @@ impl<
     > Broker<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
 where
     UserSignatureScheme::Signature: Serializable,
-    UserSignatureScheme::VerificationKey: Serializable + Hash,
+    UserSignatureScheme::VerificationKey: Serializable,
     UserSignatureScheme::SigningKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
     BrokerSignatureScheme::VerificationKey: Serializable,
@@ -210,12 +196,10 @@ where
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
-                num_connected_users: AtomicU64::default(),
                 redis_client,
                 identifier,
                 verification_key,
                 signing_key,
-                brokers_connected: RwLock::from(HashSet::new()),
                 pd: PhantomData,
             }),
             user_listener,
@@ -269,8 +253,17 @@ where
         };
 
         println!("meow");
-        // Add to our direct map
-        // inner.all_connected_users.write().insert(verification_key);
+
+        // // Create a new queued connection
+        // let connection_with_queue = ConnectionWithQueue{
+        //     connection: connection,
+        //     last_sent: SystemTime::now(),
+        //     buffer: Arc::default(),
+
+        // }
+
+        // // Add to our direct map
+        // inner.user_to_connection.write().await.insert(verification_key, Either::Left());
     }
 
     /// The main loop for a broker.
@@ -294,7 +287,8 @@ where
                 // Register with `Redis` every 20 seconds, updating our number of connected users
                 if let Err(err) = redis_client
                     .perform_heartbeat(
-                        inner.num_connected_users.load(Ordering::Relaxed),
+                        // todo: actually pull in this number
+                        0,
                         Duration::from_secs(60),
                     )
                     .await
@@ -307,7 +301,8 @@ where
                 match redis_client.get_other_brokers().await {
                     Ok(brokers) => {
                         // Calculate the difference, spawn tasks to connect to them
-                        for broker in brokers.difference(&inner.brokers_connected.read()) {
+                        // TODO for broker in brokers.difference(&inner.brokers_connected.read()) {
+                        for broker in brokers {
                             // TODO: make this into a separate function
                             // Extrapolate the address to connect to
                             let to_connect_address = broker.broker_advertise_address.clone();
