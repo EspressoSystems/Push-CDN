@@ -44,7 +44,6 @@ pub trait Connection: Send + Sync + 'static {
     /// - If we fail to deliver any of the messages. This usually means a connection problem.
     async fn send_messages_raw(&self, messages: Vec<Arc<Vec<u8>>>) -> Result<()>;
 
-
     /// Connect to a remote address, returning an instance of `Self`.
     ///
     /// # Errors

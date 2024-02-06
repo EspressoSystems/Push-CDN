@@ -143,9 +143,9 @@ where
     }
 
     /// Authenticate with a broker (as a broker).
-    /// Is the same as the `authenticate_with_broker` flow as a user, but 
+    /// Is the same as the `authenticate_with_broker` flow as a user, but
     /// we return a `BrokerIdentifier` instead.
-    /// 
+    ///
     /// # Errors
     /// - If we fail to authenticate
     /// - If we have a connection failure
