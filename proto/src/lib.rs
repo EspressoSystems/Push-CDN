@@ -6,7 +6,6 @@ pub mod crypto;
 pub mod error;
 pub mod message;
 pub mod redis;
-pub mod wal;
 
 /// Common constants used in both the client and server
 ///
