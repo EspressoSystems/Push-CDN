@@ -19,7 +19,7 @@ use super::{Connection, Listener, Protocol};
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
 /// listeners, connections, etc.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Quic;
 
 /// We define the `Quic` protocol as being composed of both a QUIC listener

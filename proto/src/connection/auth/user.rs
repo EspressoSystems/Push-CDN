@@ -1,6 +1,7 @@
 //! In this crate we deal with the authentication flow as a user.
 
 use std::{
+    collections::HashSet,
     marker::PhantomData,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -12,7 +13,7 @@ use crate::{
     connection::protocols::{Connection, Protocol},
     crypto::{self, DeterministicRng, Serializable},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
@@ -134,6 +135,7 @@ where
     pub async fn authenticate_with_broker(
         connection: &ProtocolType::Connection,
         permit: u64,
+        subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {
         // Form the authentication message
         let auth_message = Message::AuthenticateWithPermit(AuthenticateWithPermit { permit });
@@ -160,13 +162,23 @@ where
         };
 
         // Return okay if our response was good, or an error if not
-        if message.permit == 1 {
-            Ok(())
-        } else {
-            Err(Error::Parse(format!(
+        if message.permit != 1 {
+            return Err(Error::Parse(format!(
                 "authentication with broker failed: {}",
                 message.context
-            )))
+            )));
         }
+
+        // Send our interested topics to the broker
+        let topic_message = Message::Subscribe(Subscribe {
+            topics: Vec::from_iter(subscribed_topics),
+        });
+        bail!(
+            connection.send_message(topic_message).await,
+            Connection,
+            "failed to send topics to broker"
+        );
+
+        Ok(())
     }
 }

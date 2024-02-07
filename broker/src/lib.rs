@@ -5,7 +5,7 @@
 
 mod state;
 
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 // TODO: figure out if we should use Tokio's here
@@ -17,11 +17,13 @@ use proto::{
     },
     crypto::Serializable,
     error::{Error, Result},
+    message::Topic,
     parse_socket_address,
     redis::{self, BrokerIdentifier},
     verify_broker,
 };
-use tokio::{select, spawn, time::sleep};
+use state::{ConnectionLookup, ConnectionWithQueue};
+use tokio::{select, spawn, sync::RwLock, time::{sleep, Instant}};
 use tracing::{error, warn};
 
 /// The broker's configuration. We need this when we create a new one.
@@ -81,6 +83,10 @@ struct Inner<
     /// The underlying (private) signing key, used to sign messages to send to the server during the
     /// authentication phase.
     pub signing_key: BrokerSignatureScheme::SigningKey,
+
+    pub broker_connections: RwLock<ConnectionLookup<UserSignatureScheme, BrokerProtocolType>>,
+
+    pub user_connections: RwLock<ConnectionLookup<UserSignatureScheme, UserProtocolType>>,
 
     // connected_keys: LoggedSet<UserSignatureScheme::VerificationKey>,
     /// The `PhantomData` that we need to be generic over protocol types.
@@ -200,6 +206,8 @@ where
                 identifier,
                 verification_key,
                 signing_key,
+                broker_connections: RwLock::from(ConnectionLookup::default()),
+                user_connections: RwLock::from(ConnectionLookup::default()),
                 pd: PhantomData,
             }),
             user_listener,
@@ -229,6 +237,17 @@ where
             verify_broker!(connection, inner);
             authenticate_with_broker!(connection, inner)
         };
+
+        // Create a new queued connection
+        let connection = Arc::from(
+            ConnectionWithQueue::<BrokerProtocolType>::from_connection_and_params(
+                connection,
+                Duration::from_millis(50),
+                5000,
+            ),
+        );
+
+        // Add the connection to our map
     }
 
     /// This function handles a user (public) connection. We take the following steps:
@@ -241,7 +260,7 @@ where
         connection: UserProtocolType::Connection,
     ) {
         // Verify (authenticate) the connection
-        let Ok(verification_key) =
+        let Ok((verification_key, topics)) =
             BrokerAuth::<UserSignatureScheme, UserProtocolType>::verify_user(
                 &connection,
                 &inner.identifier,
@@ -252,18 +271,29 @@ where
             return;
         };
 
-        println!("meow");
+        // Create a new queued connection
+        let connection = Arc::from(
+            ConnectionWithQueue::<UserProtocolType>::from_connection_and_params(
+                connection,
+                Duration::from_millis(50),
+                5000,
+            ),
+        );
 
-        // // Create a new queued connection
-        // let connection_with_queue = ConnectionWithQueue{
-        //     connection: connection,
-        //     last_sent: SystemTime::now(),
-        //     buffer: Arc::default(),
+        println!("user subbed to {:?}", topics);
 
-        // }
+        // Add the connection to our maps
+        inner
+            .user_connections
+            .write()
+            .await
+            .subscribe_connection_to_broadcast(connection.clone(), topics);
 
-        // // Add to our direct map
-        // inner.user_to_connection.write().await.insert(verification_key, Either::Left());
+        inner
+            .user_connections
+            .write()
+            .await
+            .subscribe_connection_to_direct(connection.clone(), verification_key)
     }
 
     /// The main loop for a broker.

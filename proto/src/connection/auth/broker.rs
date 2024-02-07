@@ -14,7 +14,7 @@ use crate::{
     crypto::{self, DeterministicRng, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
-    message::{AuthenticateResponse, AuthenticateWithKey, Message},
+    message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
     redis::{self, BrokerIdentifier},
 };
 
@@ -88,7 +88,7 @@ where
         connection: &ProtocolType::Connection,
         broker_identifier: &BrokerIdentifier,
         redis_client: &mut redis::Client,
-    ) -> Result<SignatureScheme::VerificationKey> {
+    ) -> Result<(SignatureScheme::VerificationKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
             connection.recv_message().await,
@@ -138,8 +138,21 @@ where
             "failed to deserialize verification key"
         );
 
+        // Receive the subscribed topics
+        let subscribed_topics_message = bail!(
+            connection.recv_message().await,
+            Connection,
+            "failed to receive message from user"
+        );
+
+        // See if we're the right type of message
+        let Message::Subscribe(subscribed_topics_message) = subscribed_topics_message else {
+            // TODO: macro for this error thing
+            fail_verification_with_message!(connection, "wrong message type");
+        };
+
         // Return the verification key
-        Ok(verification_key)
+        Ok((verification_key, subscribed_topics_message.topics))
     }
 
     /// Authenticate with a broker (as a broker).

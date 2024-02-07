@@ -4,7 +4,7 @@
 
 use capnp::{
     message::ReaderOptions,
-    serialize::{self, write_message, write_message_segments_to_words},
+    serialize::{self, write_message_segments_to_words},
 };
 
 use crate::{

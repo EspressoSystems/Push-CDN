@@ -19,7 +19,7 @@ use proto::{
     message::{Message, Topic},
 };
 use tokio::{
-    sync::{Mutex, RwLock, Semaphore},
+    sync::{Mutex, MutexGuard, RwLock, Semaphore},
     time::sleep,
 };
 use tracing::error;
@@ -65,7 +65,7 @@ pub struct Inner<
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
-    pub subscribed_topics: Arc<Mutex<HashSet<Topic>>>,
+    pub subscribed_topics: Arc<RwLock<HashSet<Topic>>>,
 
     /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
     /// `SignatureScheme` downstream.
@@ -137,7 +137,8 @@ macro_rules! try_with_reconnect {
                     match connect_and_authenticate::<SignatureScheme, ProtocolType>(
                         &inner.endpoint,
                         &inner.verification_key,
-                        &inner.signing_key
+                        &inner.signing_key,
+                        inner.subscribed_topics.read().await.clone()
                     )
                     .await{
                         Ok(connection) => break connection,
@@ -198,6 +199,9 @@ where
             pd: _,
         } = config;
 
+        // Wrap subscribed topics so we can use it now and later
+        let subscribed_topics = Arc::new(RwLock::new(HashSet::from_iter(subscribed_topics)));
+
         // Perform the initial connection and authentication if not provided.
         // This is to validate that we have correct parameters and all.
         //
@@ -212,7 +216,8 @@ where
                 connect_and_authenticate::<SignatureScheme, ProtocolType>(
                     &endpoint,
                     &verification_key,
-                    &signing_key
+                    &signing_key,
+                    subscribed_topics.read().await.clone()
                 )
                 .await,
                 Connection,
@@ -229,7 +234,7 @@ where
                 reconnect_semaphore: Semaphore::const_new(1),
                 verification_key,
                 signing_key,
-                subscribed_topics: Arc::new(Mutex::new(HashSet::from_iter(subscribed_topics))),
+                subscribed_topics,
                 pd: PhantomData,
             }),
         })
@@ -273,6 +278,7 @@ async fn connect_and_authenticate<
     marshal_endpoint: &str,
     verification_key: &SignatureScheme::VerificationKey,
     signing_key: &SignatureScheme::SigningKey,
+    subscribed_topics: HashSet<Topic>,
 ) -> Result<ProtocolType::Connection>
 where
     SignatureScheme::Signature: Serializable,
@@ -307,7 +313,7 @@ where
 
     // Authenticate the connection to the broker
     bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(&connection, permit)
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(&connection, permit ,subscribed_topics)
             .await,
         Authentication,
         "failed to authenticate to broker"

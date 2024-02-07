@@ -127,7 +127,7 @@ where
     /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscriptions here so we maintain parity during a reconnection
-        let mut subscribed_guard = self.0.inner.subscribed_topics.lock().await;
+        let mut subscribed_guard = self.0.inner.subscribed_topics.write().await;
 
         // Calculate the real topics to send based on whatever's already in the set
         let topics_to_send: Vec<Topic> = topics
@@ -163,7 +163,7 @@ where
     /// If the connection or serialization has failed
     pub async fn unsubscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscriptions here so we maintain parity during a reconnection
-        let mut subscribed_guard = self.0.inner.subscribed_topics.lock().await;
+        let mut subscribed_guard = self.0.inner.subscribed_topics.write().await;
 
         // Calculate the real topics to send based on whatever's already in the set
         let topics_to_send: Vec<Topic> = topics

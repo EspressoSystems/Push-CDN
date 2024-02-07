@@ -3,6 +3,7 @@
 //! logic.
 
 use async_trait::async_trait;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -18,13 +19,13 @@ use crate::{
     message::Message,
     MAX_MESSAGE_SIZE,
 };
-use std::{net::ToSocketAddrs, sync::Arc};
+use std::{hash::Hash, net::ToSocketAddrs, sync::Arc};
 
 use super::{Connection, Listener, Protocol};
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Tcp;
 
 /// We define the `Tcp` protocol as being composed of both a TCP listener
@@ -40,6 +41,36 @@ impl Protocol for Tcp {
 pub struct TcpConnection {
     pub receiver: Arc<Mutex<OwnedReadHalf>>,
     pub sender: Arc<Mutex<OwnedWriteHalf>>,
+    pub stable_id: u64,
+}
+
+/// `PartialEq` for a `TcpConnection` connection is determined by the `stable_id` since it
+/// will not change for the duration of the connection.
+impl PartialEq for TcpConnection {
+    fn eq(&self, other: &Self) -> bool {
+        self.stable_id == other.stable_id
+    }
+}
+
+/// Assertion for `QuicConnection` that `PartialEq` == `Eq`
+impl Eq for TcpConnection {
+    fn assert_receiver_is_total_eq(&self) {}
+}
+
+/// `Hash` for a `TcpConnection` connection is determined by the `stable_id` since it
+/// will not change for the duration of the connection. We just want to hash that.
+impl Hash for TcpConnection {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.stable_id.hash(state);
+    }
+
+    /// This just calls `hash` on each item in the slice.
+    fn hash_slice<H: std::hash::Hasher>(data: &[Self], state: &mut H)
+    where
+        Self: Sized,
+    {
+        data.iter().for_each(|item| item.hash(state));
+    }
 }
 
 #[async_trait]
@@ -203,6 +234,7 @@ impl Connection for TcpConnection {
         Ok(Self {
             receiver: Arc::from(Mutex::from(read_half)),
             sender: Arc::from(Mutex::from(write_half)),
+            stable_id: StdRng::from_entropy().next_u64(),
         })
     }
 }
@@ -254,6 +286,7 @@ impl Listener<TcpConnection> for TcpListener {
         Ok(TcpConnection {
             receiver: Arc::from(Mutex::from(receiver)),
             sender: Arc::from(Mutex::from(sender)),
+            stable_id: StdRng::from_entropy().next_u64(),
         })
     }
 }

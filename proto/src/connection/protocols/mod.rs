@@ -1,6 +1,6 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{hash::Hash, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 
@@ -13,7 +13,7 @@ pub mod tcp;
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
 
 pub trait Protocol: Send + Sync + 'static + Clone {
-    type Connection: Connection;
+    type Connection: Connection + Clone + PartialEq + Hash;
     type Listener: Listener<Self::Connection>;
 }
 
