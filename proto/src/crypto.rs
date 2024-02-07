@@ -14,7 +14,7 @@ use rustls::ClientConfig;
 use std::{hash::Hash, sync::Arc};
 
 /// Helps clean up some trait boundaries
-pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash{}
+pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash {}
 impl<T: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash> Serializable for T {}
 
 /// The oxymoron function. Used mostly with crypto key generation to generate

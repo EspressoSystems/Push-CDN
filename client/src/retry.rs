@@ -19,7 +19,7 @@ use proto::{
     message::{Message, Topic},
 };
 use tokio::{
-    sync::{Mutex, MutexGuard, RwLock, Semaphore},
+    sync::{RwLock, Semaphore},
     time::sleep,
 };
 use tracing::error;
@@ -313,8 +313,12 @@ where
 
     // Authenticate the connection to the broker
     bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(&connection, permit ,subscribed_topics)
-            .await,
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(
+            &connection,
+            permit,
+            subscribed_topics
+        )
+        .await,
         Authentication,
         "failed to authenticate to broker"
     );

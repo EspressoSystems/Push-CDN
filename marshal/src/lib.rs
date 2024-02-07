@@ -93,12 +93,11 @@ where
         mut redis_client: redis::Client,
     ) {
         // Verify (authenticate) the connection
-        if MarshalAuth::<SignatureScheme, ProtocolType>::verify_user(&connection, &mut redis_client)
-            .await
-            .is_err()
-        {
-            return;
-        };
+        let _ = MarshalAuth::<SignatureScheme, ProtocolType>::verify_user(
+            &connection,
+            &mut redis_client,
+        )
+        .await;
     }
 
     /// The main loop for a marshal.

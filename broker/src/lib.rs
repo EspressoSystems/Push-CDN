@@ -5,7 +5,7 @@
 
 mod state;
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 // TODO: figure out if we should use Tokio's here
@@ -17,13 +17,12 @@ use proto::{
     },
     crypto::Serializable,
     error::{Error, Result},
-    message::Topic,
     parse_socket_address,
     redis::{self, BrokerIdentifier},
     verify_broker,
 };
 use state::{ConnectionLookup, ConnectionWithQueue};
-use tokio::{select, spawn, sync::RwLock, time::{sleep, Instant}};
+use tokio::{select, spawn, sync::RwLock, time::sleep};
 use tracing::{error, warn};
 
 /// The broker's configuration. We need this when we create a new one.

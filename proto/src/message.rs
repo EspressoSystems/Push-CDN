@@ -217,7 +217,7 @@ impl Message {
                 // For each user, reborrow and serialize
                 for (i, user) in to_serialize.users.iter().enumerate() {
                     let mut cur_user = users.reborrow().get(i as u32);
-                    cur_user.set_key(&*user);
+                    cur_user.set_key(user);
                 }
             }
 
@@ -233,7 +233,7 @@ impl Message {
                 // For each user, reborrow and serialize
                 for (i, user) in to_serialize.users.iter().enumerate() {
                     let mut cur_user = users.reborrow().get(i as u32);
-                    cur_user.set_key(&*user);
+                    cur_user.set_key(user);
                 }
             }
         }
