@@ -15,7 +15,7 @@ use proto::{
         auth::broker::BrokerAuth,
         protocols::{Connection, Listener, Protocol},
     },
-    crypto::Serializable,
+    crypto::{KeyPair, Serializable},
     error::{Error, Result},
     parse_socket_address,
     redis::{self, BrokerIdentifier},
@@ -43,11 +43,7 @@ pub struct Config<BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (),
     /// The redis endpoint. We use this to maintain consistency between brokers and marshals.
     pub redis_endpoint: String,
 
-    /// The underlying (public) verification key, used to authenticate with other brokers
-    pub verification_key: BrokerSignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to authenticate with other brokers
-    pub signing_key: BrokerSignatureScheme::SigningKey,
+    pub keypair: KeyPair<BrokerSignatureScheme>,
 
     /// An optional TLS cert path
     pub maybe_tls_cert_path: Option<String>,
@@ -77,11 +73,7 @@ struct Inner<
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
     /// TODO: verif & signing key in one struct
-    pub verification_key: BrokerSignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    pub signing_key: BrokerSignatureScheme::SigningKey,
+    pub keypair: KeyPair<BrokerSignatureScheme>,
 
     pub broker_connections: RwLock<ConnectionLookup<UserSignatureScheme, BrokerProtocolType>>,
 
@@ -145,8 +137,7 @@ where
             broker_advertise_address,
             broker_bind_address,
 
-            verification_key,
-            signing_key,
+            keypair,
 
             redis_endpoint,
             maybe_tls_cert_path,
@@ -203,8 +194,7 @@ where
             inner: Arc::from(Inner {
                 redis_client,
                 identifier,
-                verification_key,
-                signing_key,
+                keypair,
                 broker_connections: RwLock::from(ConnectionLookup::default()),
                 user_connections: RwLock::from(ConnectionLookup::default()),
                 pd: PhantomData,

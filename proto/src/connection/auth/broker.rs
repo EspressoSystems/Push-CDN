@@ -11,7 +11,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::{Connection, Protocol},
-    crypto::{self, DeterministicRng, Serializable},
+    crypto::{self, DeterministicRng, KeyPair, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
@@ -35,8 +35,7 @@ macro_rules! authenticate_with_broker {
         // Prove to the other broker
         match BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::authenticate_with_broker(
             &$connection,
-            &$inner.verification_key,
-            &$inner.signing_key,
+            &$inner.keypair,
         )
         .await
         {
@@ -57,7 +56,7 @@ macro_rules! verify_broker {
         if let Err(err) = BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::verify_broker(
             &$connection,
             &$inner.identifier,
-            &$inner.verification_key,
+            &$inner.keypair.verification_key,
         )
         .await
         {
@@ -164,8 +163,7 @@ where
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
         connection: &ProtocolType::Connection,
-        verification_key: &SignatureScheme::VerificationKey,
-        signing_key: &SignatureScheme::SigningKey,
+        keypair: &KeyPair<SignatureScheme>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -179,7 +177,7 @@ where
         let signature = bail!(
             SignatureScheme::sign(
                 &(),
-                signing_key,
+                &keypair.signing_key,
                 timestamp.to_le_bytes(),
                 &mut DeterministicRng(0),
             ),
@@ -189,7 +187,7 @@ where
 
         // Serialize the verify key
         let verification_key_bytes = bail!(
-            crypto::serialize(verification_key),
+            crypto::serialize(&keypair.verification_key),
             Serialize,
             "failed to serialize verification key"
         );

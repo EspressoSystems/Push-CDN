@@ -53,8 +53,10 @@ async fn main() -> Result<()> {
 
         redis_endpoint: args.redis_endpoint,
 
-        signing_key,
-        verification_key,
+        keypair: proto::crypto::KeyPair {
+            signing_key,
+            verification_key,
+        },
 
         // TODO: clap this
         maybe_tls_cert_path: None,

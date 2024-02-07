@@ -11,7 +11,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use crate::{
     bail,
     connection::protocols::{Connection, Protocol},
-    crypto::{self, DeterministicRng, Serializable},
+    crypto::{self, DeterministicRng, KeyPair, Serializable},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
 };
@@ -45,8 +45,7 @@ where
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
         connection: &ProtocolType::Connection,
-        verification_key: &SignatureScheme::VerificationKey,
-        signing_key: &SignatureScheme::SigningKey,
+        keypair: &KeyPair<SignatureScheme>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -60,7 +59,7 @@ where
         let signature = bail!(
             SignatureScheme::sign(
                 &(),
-                signing_key,
+                &keypair.signing_key,
                 timestamp.to_le_bytes(),
                 &mut DeterministicRng(0),
             ),
@@ -70,7 +69,7 @@ where
 
         // Serialize the verify key
         let verification_key_bytes = bail!(
-            crypto::serialize(verification_key),
+            crypto::serialize(&keypair.verification_key),
             Serialize,
             "failed to serialize verification key"
         );

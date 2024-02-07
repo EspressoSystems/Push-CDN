@@ -14,7 +14,7 @@ use proto::{
         auth::user::UserAuth,
         protocols::{Connection, Protocol},
     },
-    crypto::Serializable,
+    crypto::{KeyPair, Serializable},
     error::{Error, Result},
     message::{Message, Topic},
 };
@@ -55,13 +55,7 @@ pub struct Inner<
     /// to be. This is so we don't spawn multiple tasks at once
     reconnect_semaphore: Semaphore,
 
-    /// The underlying (public) verification key, used to authenticate with the server. Checked
-    /// against the stake table.
-    pub verification_key: SignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    pub signing_key: SignatureScheme::SigningKey,
+    pub keypair: KeyPair<SignatureScheme>,
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
@@ -83,11 +77,7 @@ pub struct Config<
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    pub verification_key: SignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    pub signing_key: SignatureScheme::SigningKey,
+    pub keypair: KeyPair<SignatureScheme>,
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
@@ -136,8 +126,7 @@ macro_rules! try_with_reconnect {
                     // Create a connection
                     match connect_and_authenticate::<SignatureScheme, ProtocolType>(
                         &inner.endpoint,
-                        &inner.verification_key,
-                        &inner.signing_key,
+                        &inner.keypair,
                         inner.subscribed_topics.read().await.clone()
                     )
                     .await{
@@ -193,8 +182,7 @@ where
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
-            verification_key,
-            signing_key,
+            keypair,
             subscribed_topics,
             pd: _,
         } = config;
@@ -215,8 +203,7 @@ where
             bail!(
                 connect_and_authenticate::<SignatureScheme, ProtocolType>(
                     &endpoint,
-                    &verification_key,
-                    &signing_key,
+                    &keypair,
                     subscribed_topics.read().await.clone()
                 )
                 .await,
@@ -232,8 +219,7 @@ where
                 // Use the existing connection
                 connection: RwLock::from(connection),
                 reconnect_semaphore: Semaphore::const_new(1),
-                verification_key,
-                signing_key,
+                keypair,
                 subscribed_topics,
                 pd: PhantomData,
             }),
@@ -276,8 +262,7 @@ async fn connect_and_authenticate<
     ProtocolType: Protocol,
 >(
     marshal_endpoint: &str,
-    verification_key: &SignatureScheme::VerificationKey,
-    signing_key: &SignatureScheme::SigningKey,
+    keypair: &KeyPair<SignatureScheme>,
     subscribed_topics: HashSet<Topic>,
 ) -> Result<ProtocolType::Connection>
 where
@@ -294,12 +279,8 @@ where
 
     // Authenticate the connection to the marshal (if not provided)
     let (broker_address, permit) = bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(
-            &connection,
-            verification_key,
-            signing_key
-        )
-        .await,
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(&connection, keypair)
+            .await,
         Authentication,
         "failed to authenticate to marshal"
     );

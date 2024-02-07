@@ -3,7 +3,12 @@
 use std::{marker::PhantomData, time::Duration};
 
 use client::{Client, Config};
-use proto::{connection::protocols::quic::Quic, crypto, error::Result, message::Topic};
+use proto::{
+    connection::protocols::quic::Quic,
+    crypto::{self, KeyPair},
+    error::Result,
+    message::Topic,
+};
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use rand::{rngs::StdRng, SeedableRng};
@@ -22,8 +27,10 @@ async fn main() -> Result<()> {
     // TODO: constructors for config
     let client = Client::<BLS, Quic>::new(Config {
         endpoint: "127.0.0.1:8082".to_string(),
-        verification_key,
-        signing_key,
+        keypair: KeyPair {
+            signing_key,
+            verification_key,
+        },
         subscribed_topics: vec![Topic::DA, Topic::Global],
 
         pd: PhantomData,

@@ -7,11 +7,21 @@ use crate::{
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
-use jf_primitives::signatures::SignatureScheme;
+use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
 use rustls::ClientConfig;
 use std::{hash::Hash, sync::Arc};
+
+/// We encapsulate keys here to help readability.
+pub struct KeyPair<SignatureScheme: JfSignatureScheme> {
+    /// The underlying (public) verification key, used to authenticate with the server.
+    pub verification_key: SignatureScheme::VerificationKey,
+
+    /// The underlying (private) signing key, used to sign messages to send to the server during the
+    /// authentication phase.
+    pub signing_key: SignatureScheme::SigningKey,
+}
 
 /// Helps clean up some trait boundaries
 pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash {}
@@ -92,7 +102,7 @@ where
 /// # Errors
 /// Errors only if the transitive key generation fails.
 pub fn generate_random_keypair<
-    Scheme: SignatureScheme<PublicParameter = ()>,
+    Scheme: JfSignatureScheme<PublicParameter = ()>,
     Rng: CryptoRng + RngCore,
 >(
     mut prng: Rng,
