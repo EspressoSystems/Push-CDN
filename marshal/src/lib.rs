@@ -10,7 +10,7 @@ use proto::{
     bail,
     connection::{
         auth::marshal::MarshalAuth,
-        protocols::{Listener, Protocol},
+        protocols::{Listener, Protocol, Sender},
     },
     crypto::Serializable,
     error::{Error, Result},
@@ -66,8 +66,7 @@ where
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            ProtocolType::Listener::bind(bind_address, maybe_tls_cert_path, maybe_tls_key_path)
-                .await,
+            ProtocolType::bind(bind_address, maybe_tls_cert_path, maybe_tls_key_path).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );
@@ -89,15 +88,18 @@ where
 
     /// Handles a user's connection, including authentication.
     pub async fn handle_connection(
-        connection: ProtocolType::Connection,
+        mut connection: (ProtocolType::Sender, ProtocolType::Receiver),
         mut redis_client: redis::Client,
     ) {
         // Verify (authenticate) the connection
         let _ = MarshalAuth::<SignatureScheme, ProtocolType>::verify_user(
-            &connection,
+            &mut connection,
             &mut redis_client,
         )
         .await;
+
+        // We don't care about this, just drop the connection immediately.
+        let _ = connection.0.finish().await;
     }
 
     /// The main loop for a marshal.

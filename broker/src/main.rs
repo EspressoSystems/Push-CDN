@@ -54,8 +54,8 @@ async fn main() -> Result<()> {
         redis_endpoint: args.redis_endpoint,
 
         keypair: proto::crypto::KeyPair {
-            signing_key,
             verification_key,
+            signing_key,
         },
 
         // TODO: clap this
@@ -64,10 +64,11 @@ async fn main() -> Result<()> {
     };
 
     // Create new `Broker`
-    let marshal = Broker::<BLS, Tcp, BLS, Quic>::new(broker_config).await?;
+    // Uses TCP from broker connections and Quic for user connections.
+    let broker = Broker::<BLS, Tcp, BLS, Quic>::new(broker_config).await?;
 
     // Start the main loop, consuming it
-    marshal.start().await?;
+    broker.start().await?;
 
     Ok(())
 }

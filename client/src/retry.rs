@@ -12,14 +12,15 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     connection::{
         auth::user::UserAuth,
-        protocols::{Connection, Protocol},
+        batch::BatchedSender,
+        protocols::{Protocol, Receiver},
     },
     crypto::{KeyPair, Serializable},
     error::{Error, Result},
     message::{Message, Topic},
 };
 use tokio::{
-    sync::{RwLock, Semaphore},
+    sync::{Mutex, RwLock, Semaphore},
     time::sleep,
 };
 use tracing::error;
@@ -48,8 +49,13 @@ pub struct Inner<
     /// or a marshal.
     endpoint: String,
 
-    /// The underlying connection, which we modify to facilitate reconnections.
-    connection: RwLock<ProtocolType::Connection>,
+    /// The send-side of the connection. We can `RwLock` here because the BatchedSender
+    /// is already using interior mutability tricks.
+    sender: RwLock<BatchedSender<ProtocolType>>,
+
+    /// The receive side of the connection. We need a write-lock here because it needs to be
+    /// mutable. TODO: do something like `BatchedSender` but with `OwnedReader` or something.
+    receiver: Mutex<ProtocolType::Receiver>,
 
     /// The task that runs in the background that reconnects us when we need
     /// to be. This is so we don't spawn multiple tasks at once
@@ -57,9 +63,9 @@ pub struct Inner<
 
     pub keypair: KeyPair<SignatureScheme>,
 
-    /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
+    /// The topics we're currently subscribed to. We need this so we can send our subscriptions
     /// when we connect to a new server.
-    pub subscribed_topics: Arc<RwLock<HashSet<Topic>>>,
+    pub subscribed_topics: RwLock<HashSet<Topic>>,
 
     /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
     /// `SignatureScheme` downstream.
@@ -91,69 +97,60 @@ pub struct Config<
 /// and receiving messages. You can specify the operation and it
 /// will reconnect on the operation's failure, while handling all
 /// reconnection logic and synchronization patterns.
-///
-/// TODO: document invariant with "messages will not retry"
 macro_rules! try_with_reconnect {
-    ($self: expr, $operation: ident,  $($arg:tt)*) => {{
-        // Acquire read guard for sending and receiving messages
-        let Ok(read_guard) = $self.inner.connection.try_read() else {
-            return Err(Error::Connection("message failed: reconnection in progress".to_string()));
-        };
-
+    ($self: expr, $subject: ident, $out: expr) => {{
         // Perform operation, see if it errors
-        let operation = read_guard.$operation($($arg)*).await;
-        match operation{
+        match $out {
             Ok(res) => res,
             Err(err) => {
-            // Acquire semaphore. If another task is doing this, just return an error
-            // TODO: global sleep. If we try to connect twice, it happens sequentially without waiting (because the sleep
-            // only happens on the failed case. We can maybe store a variable somewhere and wait for that.
-            if $self.inner.reconnect_semaphore.try_acquire().is_ok() {
-                // Acquire write guard, drop read guard
-                drop(read_guard);
+                // Acquire semaphore. If another task is doing this, just return an error
+                if $self.inner.reconnect_semaphore.try_acquire().is_ok() {
+                    // Clone everything we need to connect
+                    let inner = $self.inner.clone();
 
-                // Clone everything we need to connect
-                // TODO: we want to minimize cloning this. We should sign a message
-                // earlier.
-                let inner = $self.inner.clone();
+                    // Spawn a task to reconnect
+                    tokio::spawn(async move {
+                        // Get write guard on connection so we can write to it
+                        let mut send_guard = inner.sender.write().await;
+                        let mut receive_guard = inner.receiver.lock().await;
 
-                tokio::spawn(async move{
-                    // Get write guard on connection so we can write to it
-                    let mut write_guard = inner.connection.write().await;
+                        // Loop to connect and authenticate
+                        let connection = loop {
+                            // Create a connection
+                            match connect_and_authenticate::<SignatureScheme, ProtocolType>(
+                                &inner.endpoint,
+                                &inner.keypair,
+                                inner.subscribed_topics.read().await.clone(),
+                            )
+                            .await
+                            {
+                                Ok(connection) => break connection,
+                                Err(err) => {
+                                    error!("failed connection: {err}");
+                                    // Sleep so we don't overload the server
+                                    sleep(Duration::from_secs(5)).await;
+                                }
+                            }
+                        };
 
-                // Loop to connect and authenticate
-                let connection = loop {
-                    // Create a connection
-                    match connect_and_authenticate::<SignatureScheme, ProtocolType>(
-                        &inner.endpoint,
-                        &inner.keypair,
-                        inner.subscribed_topics.read().await.clone()
-                    )
-                    .await{
-                        Ok(connection) => break connection,
-                        Err(err) => {
-                            error!("failed connection: {err}");
-                            // Sleep so we don't overload the server
-                            sleep(Duration::from_secs(5)).await;
-                        }
-                    }
-                };
+                        // Update sender and receiver
+                        // TODO: parameterize duration and size
+                        *send_guard =
+                            BatchedSender::from(connection.0, Duration::from_millis(50), 1500);
+                        *receive_guard = connection.1;
 
-                // Set connection to new connection
-                *write_guard = connection;
+                        drop(send_guard);
+                        drop(receive_guard);
+                    });
+                }
 
-                // Drop here so other tasks can start sending messages
-                drop(write_guard);
-            });
+                // If somebody is already trying to reconnect, fail instantly
+                return Err(Error::Connection(format!(
+                    "connection failed, reconnecting to endpoint: {err}"
+                )));
+            }
         }
-
-        // If somebody is already trying to reconnect, fail instantly
-        return Err(Error::Connection(format!(
-            "connection failed, reconnecting to endpoint: {err}"
-        )));
-    }
-    }
-}};
+    }};
 }
 
 impl<
@@ -165,20 +162,15 @@ where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
-    /// Creates a new `Retry` connection from a `Config` and an (optional) pre-existing
-    /// `Fallible` connection.
-    ///
-    /// This allows us to create elastic clients that always try to maintain a connection
-    /// with each other.
+    /// Creates a new `Retry` connection from a `Config`
+    /// Attempts to make an initial connection.
+    /// This allows us to create elastic clients that always try to maintain a connection.
     ///
     /// # Errors
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
-    pub async fn from_config_and_connection(
-        config: Config<SignatureScheme, ProtocolType>,
-        maybe_connection: Option<ProtocolType::Connection>,
-    ) -> Result<Self> {
+    pub async fn from_config(config: Config<SignatureScheme, ProtocolType>) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
@@ -188,36 +180,31 @@ where
         } = config;
 
         // Wrap subscribed topics so we can use it now and later
-        let subscribed_topics = Arc::new(RwLock::new(HashSet::from_iter(subscribed_topics)));
+        let subscribed_topics = RwLock::new(HashSet::from_iter(subscribed_topics));
 
-        // Perform the initial connection and authentication if not provided.
-        // This is to validate that we have correct parameters and all.
-        //
-        // TODO: cancel conditionally depending on what kind of error, or retry-
-        // based.
-        //
-        // TODO: clean this up
-        let connection = if let Some(connection) = maybe_connection {
-            connection
-        } else {
-            bail!(
-                connect_and_authenticate::<SignatureScheme, ProtocolType>(
-                    &endpoint,
-                    &keypair,
-                    subscribed_topics.read().await.clone()
-                )
-                .await,
-                Connection,
-                "failed initial connection"
+        // Perform the initial connection and authentication
+        let connection = bail!(
+            connect_and_authenticate::<SignatureScheme, ProtocolType>(
+                &endpoint,
+                &keypair,
+                subscribed_topics.read().await.clone()
             )
-        };
+            .await,
+            Connection,
+            "failed initial connection"
+        );
 
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(Inner {
                 endpoint,
-                // Use the existing connection
-                connection: RwLock::from(connection),
+                // TODO: parameterize batch params
+                sender: RwLock::from(BatchedSender::from(
+                    connection.0,
+                    Duration::from_millis(50),
+                    1500,
+                )),
+                receiver: Mutex::from(connection.1),
                 reconnect_semaphore: Semaphore::const_new(1),
                 keypair,
                 subscribed_topics,
@@ -226,23 +213,30 @@ where
         })
     }
 
-    /// Sends a message to the underlying fallible connection. Reconnection logic is here,
-    /// but retry logic needs to be handled by the caller (e.g. re-send messages)
+    /// Sends a message to the underlying fallible connection. Reconnection is handled under
+    /// the hood. Messages will fail if the connection is currently closed or reconnecting.
     ///
     /// # Errors
-    /// - If we fail to serialize the message
-    /// - If we are in the middle of reconnecting
-    /// - If the message sending failed
-    pub async fn send_message(&self, message: Message) -> Result<()> {
+    /// If the message sending fails. For example:
+    /// - If we are reconnecting
+    /// - If we are disconnected
+    pub fn send_message(&self, message: &Message) -> Result<()> {
         // Serialize the message
-        let message = Arc::from(bail!(
+        let message = bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
-        ));
+        );
 
-        // Try to send the message, reconnecting if needed
-        Ok(try_with_reconnect!(self, send_message_raw, message,))
+        // Try to acquire the read lock. If we can't, we are reconnecting.
+        if let Ok(send_lock) = self.inner.sender.try_read() {
+            // Continue if we were able to acquire the lock
+            let out = send_lock.queue_message_back(Arc::from(message));
+            Ok(try_with_reconnect!(self, send_lock, out))
+        } else {
+            // Return an error if we're reconnecting
+            Err(Error::Connection("reconnection in progress".to_string()))
+        }
     }
 
     /// Receives a message from the underlying fallible connection. Reconnection logic is here,
@@ -252,8 +246,17 @@ where
     /// - If we are in the middle of reconnecting
     /// - If the message receiving failed
     pub async fn receive_message(&self) -> Result<Message> {
-        // Try to send the message, reconnecting if needed
-        Ok(try_with_reconnect!(self, recv_message,))
+        // We can use `try_lock` here because only two tasks will be using it:
+        // either we're receiving or somebody is reconnecting us.
+        if let Ok(mut receiver_guard) = self.inner.receiver.try_lock() {
+            // We were able to get the lock, we aren't reconnecting
+            let out = receiver_guard.recv_message().await;
+            Ok(try_with_reconnect!(self, send_lock, out))
+        } else {
+            // We couldn't get the lock, we are reconnecting
+            // Return an error
+            Err(Error::Connection("reconnection in progress".to_string()))
+        }
     }
 }
 
@@ -264,30 +267,33 @@ async fn connect_and_authenticate<
     marshal_endpoint: &str,
     keypair: &KeyPair<SignatureScheme>,
     subscribed_topics: HashSet<Topic>,
-) -> Result<ProtocolType::Connection>
+) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)>
 where
     SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
     // Make the connection to the marshal
-    let connection = bail!(
-        ProtocolType::Connection::connect(marshal_endpoint.to_owned()).await,
+    let mut connection = bail!(
+        ProtocolType::connect(marshal_endpoint.to_owned()).await,
         Connection,
         "failed to connect to endpoint"
     );
 
     // Authenticate the connection to the marshal (if not provided)
     let (broker_address, permit) = bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(&connection, keypair)
-            .await,
+        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(
+            &mut connection,
+            keypair
+        )
+        .await,
         Authentication,
         "failed to authenticate to marshal"
     );
 
     // Make the connection to the broker
-    let connection = bail!(
-        ProtocolType::Connection::connect(broker_address).await,
+    let mut connection = bail!(
+        ProtocolType::connect(broker_address).await,
         Connection,
         "failed to connect to broker"
     );
@@ -295,7 +301,7 @@ where
     // Authenticate the connection to the broker
     bail!(
         UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(
-            &connection,
+            &mut connection,
             permit,
             subscribed_topics
         )

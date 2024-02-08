@@ -61,14 +61,7 @@ macro_rules! deserialize {
             Deserialize,
             "failed to deserialize users"
         ) {
-            users.push(
-                bail!(
-                    user.get_key(),
-                    Deserialize,
-                    "failed to deserialize user key"
-                )
-                .to_vec(),
-            );
+            users.push(bail!(user, Deserialize, "failed to deserialize user key").to_vec());
         }
         users
     }};
@@ -112,10 +105,13 @@ impl Message {
     ///
     /// # Errors
     /// Errors if the downstream serialization fails.
+    /// 
+    /// # Panics
+    /// If we can't cast from a usize to a u32
     pub fn serialize(&self) -> Result<Vec<u8>> {
         // Create a new root message, our message base
-        let mut message = capnp::message::Builder::new_default();
-        let root: messages_capnp::message::Builder = message.init_root();
+        let mut default_message = capnp::message::Builder::new_default();
+        let root: messages_capnp::message::Builder = default_message.init_root();
 
         // Conditional logic based on what kind of message we passed in
         match self {
@@ -212,12 +208,11 @@ impl Message {
                 // Init the users
                 let mut users = message
                     .reborrow()
-                    .init_users(to_serialize.users.len() as u32);
+                    .init_users(u32::try_from(to_serialize.users.len()).expect("serialization failed"));
 
                 // For each user, reborrow and serialize
                 for (i, user) in to_serialize.users.iter().enumerate() {
-                    let mut cur_user = users.reborrow().get(i as u32);
-                    cur_user.set_key(user);
+                    users.reborrow().set(u32::try_from(i).expect("serialization failed"), user);
                 }
             }
 
@@ -228,17 +223,16 @@ impl Message {
                 // Init the users
                 let mut users = message
                     .reborrow()
-                    .init_users(to_serialize.users.len() as u32);
+                    .init_users(u32::try_from(to_serialize.users.len()).expect("serialization failed"));
 
                 // For each user, reborrow and serialize
                 for (i, user) in to_serialize.users.iter().enumerate() {
-                    let mut cur_user = users.reborrow().get(i as u32);
-                    cur_user.set_key(user);
+                    users.reborrow().set(u32::try_from(i).expect("serialization failed"), user);
                 }
             }
         }
 
-        Ok(write_message_segments_to_words(&message))
+        Ok(write_message_segments_to_words(&default_message))
     }
 
     /// `deserialize` is used to deserialize a message. It returns a

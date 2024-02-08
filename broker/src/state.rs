@@ -1,192 +1,175 @@
+//! The following crate defines the internal state-tracking primitives as used
+//! by the broker.
+
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
+    sync::Arc,
 };
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-// TODO: maybe use Tokio's RwLock
-use parking_lot::RwLock;
 use proto::{
-    connection::protocols::{Connection, Protocol},
-    crypto::Serializable,
+    connection::{batch::BatchedSender, protocols::Protocol},
     message::Topic,
 };
-use tokio::{spawn, sync::Mutex, time::Instant};
 
-pub struct ConnectionLookup<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> where
-    SignatureScheme::VerificationKey: Serializable,
-{
-    direct_message_lookup:
-        HashMap<SignatureScheme::VerificationKey, Arc<ConnectionWithQueue<ProtocolType>>>,
-    broadcast_message_lookup: HashMap<Topic, HashSet<Arc<ConnectionWithQueue<ProtocolType>>>>,
-    inverse_broadcast_message_lookup:
-        HashMap<Arc<ConnectionWithQueue<ProtocolType>>, HashSet<Topic>>,
+/// `ConnectionLookup` is what we use as a broker to "look up" where messages are supposed
+/// to be directed to.
+pub struct ConnectionLookup<ProtocolType: Protocol> {
+    /// What we use to look up direct messages. The mapping is key -> sender
+    key_to_connection: HashMap<Vec<u8>, Arc<BatchedSender<ProtocolType>>>,
+    /// Map is sender -> key. Helps us remove a sender on disconnection
+    connection_to_keys: HashMap<Arc<BatchedSender<ProtocolType>>, HashSet<Vec<u8>>>,
+    /// What we use to look up broadcast messages. The mapping is topic -> set[sender]
+    topic_to_connections: HashMap<Topic, HashSet<Arc<BatchedSender<ProtocolType>>>>,
+    /// What we use when removing a key in O(1) from the forward broadcast map. The mapping is
+    /// sender -> set[topic].
+    connection_to_topics: HashMap<Arc<BatchedSender<ProtocolType>>, HashSet<Topic>>,
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > Default for ConnectionLookup<SignatureScheme, ProtocolType>
-where
-    SignatureScheme::Signature: Serializable,
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
-{
+impl<ProtocolType: Protocol> Default for ConnectionLookup<ProtocolType> {
+    /// The default imeplementation is to just return empty maps. We need this because
+    /// of the trait bounds.
     fn default() -> Self {
         Self {
-            direct_message_lookup: HashMap::default(),
-            broadcast_message_lookup: HashMap::default(),
-            inverse_broadcast_message_lookup: HashMap::default(),
+            key_to_connection: HashMap::default(),
+            connection_to_keys: HashMap::default(),
+            topic_to_connections: HashMap::default(),
+            connection_to_topics: HashMap::default(),
         }
     }
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > ConnectionLookup<SignatureScheme, ProtocolType>
-where
-    SignatureScheme::VerificationKey: Serializable,
-{
-    pub fn subscribe_connection_to_broadcast(
+impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
+    /// Get the count of all keys
+    pub fn get_key_count(&self) -> usize{
+        self.key_to_connection.len()
+    }
+
+    /// This returns all keys we are currently responsible for.
+    pub fn get_all_keys(&self) -> Vec<Vec<u8>> {
+        // Iterate over every key in the direct lookup and return it.
+        self.key_to_connection.keys().cloned().collect()
+    }
+
+    /// This returns all topics that we are currently responsible for.
+    pub fn get_all_topics(&self) -> Vec<Topic> {
+        // TODO: figure out if we need a clone here
+        // Iterate over every key in the broadcast lookup and return it.
+        self.topic_to_connections.keys().cloned().collect()
+    }
+
+    /// This gets the associated connection for a direct message (if existing)
+    pub fn get_connection_by_key(&self, key: &Vec<u8>) -> Option<Arc<BatchedSender<ProtocolType>>> {
+        // Look up the direct message key and return it.
+        self.key_to_connection.get(key).cloned()
+    }
+
+    /// Subscribe a connection to some keys. This is used on the broker end
+    /// when we receive either a connection from that user, or the message that a broker
+    /// is interested in a particular user.
+    pub fn subscribe_connection_to_keys(
         &mut self,
-        connection: Arc<ConnectionWithQueue<ProtocolType>>,
+        connection: &Arc<BatchedSender<ProtocolType>>,
+        keys: Vec<Vec<u8>>,
+    ) {
+        for key in keys {
+            // Insert to the direct message lookup
+            self.key_to_connection.insert(key.clone(), connection.clone());
+
+            // Insert to the inverse
+            self.connection_to_keys
+                .entry(connection.clone())
+                .or_default()
+                .insert(key);
+        };
+    }
+
+    /// Unsubscribe a connection from a particular key. This is used on the broker end
+    /// when we lose a connection to a user, or a broker says they're not interested anymore.
+    pub fn unsubscribe_connection_from_keys(&mut self, keys: Vec<Vec<u8>>) {
+        for key in keys {
+            // Remove the key from the lookup
+            self.key_to_connection.remove(&key);
+        }
+    }
+
+    /// Fully unsubscribes a connection from all messages. Used to completely wipe a connection
+    /// when we are disconnected.
+    pub fn unsubscribe_connection(&mut self, connection: &Arc<BatchedSender<ProtocolType>>) {
+        if let Some(keys) = self.connection_to_keys.remove(connection) {
+            for key in keys {
+                self.key_to_connection.remove(&key);
+            }
+        };
+
+        if let Some(topics) = self.connection_to_topics.remove(connection) {
+            for topic in topics {
+                self.topic_to_connections.remove(&topic);
+            }
+        }
+    }
+
+    /// Look up the connections that are interested in a particular topic so we can
+    /// broadcast messages.
+    pub fn get_connections_by_topic(
+        &self,
+        topics: Vec<Topic>,
+    ) -> HashSet<Arc<BatchedSender<ProtocolType>>> {
+        let mut all_connections = HashSet::new();
+
+        // Since we don't want the intersection, iterate and add over every topic
+        for topic in topics {
+            // If the topic exists, add to our collection of connections.
+            if let Some(connections) = self.topic_to_connections.get(&topic) {
+                all_connections.extend(connections.clone());
+            }
+        }
+
+        all_connections
+    }
+
+    /// This subscribes a particular connection to some topics.
+    pub fn subscribe_connection_to_topics(
+        &mut self,
+        connection: Arc<BatchedSender<ProtocolType>>,
         topics: Vec<Topic>,
     ) {
-        //topic -> [connection]
+        // Add the connection to each topic.
+        // topic -> [connection]
         for topic in topics.clone() {
-            self.broadcast_message_lookup
+            self.topic_to_connections
                 .entry(topic)
                 .or_default()
                 .insert(connection.clone());
         }
-        //connection -> [topic]
-        self.inverse_broadcast_message_lookup
+        // Add each topic to the connection (this is for O(1) removal later)
+        // connection -> [topic]
+        self.connection_to_topics
             .entry(connection)
             .or_default()
             .extend(topics);
     }
 
-    pub fn unsubscribe_connection_from_broadcast(
+    /// This unsubscribes a particular connection from a topic.
+    pub fn unsubscribe_connection_from_topics(
         &mut self,
-        connection: Arc<ConnectionWithQueue<ProtocolType>>,
+        connection: &Arc<BatchedSender<ProtocolType>>,
         topics: Vec<Topic>,
     ) {
-        //topic -> [connection]
+        // For each topic, remove connection from it.
+        // topic -> [connection]
         for topic in topics.clone() {
-            // remove connection from topic, and remove topic if empty
-            if let Some(connections) = self.broadcast_message_lookup.get_mut(&topic) {
-                connections.remove(&connection);
+            // Remove connection from topic
+            if let Some(connections) = self.topic_to_connections.get_mut(&topic) {
+                connections.remove(connection);
             }
         }
 
-        //key -> [topic]
-        if let Some(connection_topics) = self.inverse_broadcast_message_lookup.get_mut(&connection)
-        {
+        // Remove the topic from the connection, if existing.
+        // key -> [topic]
+        if let Some(connection_topics) = self.connection_to_topics.get_mut(connection) {
             for topic in topics {
                 connection_topics.remove(&topic);
             }
-        }
-    }
-
-    pub fn subscribe_connection_to_direct(
-        &mut self,
-        connection: Arc<ConnectionWithQueue<ProtocolType>>,
-        key: SignatureScheme::VerificationKey,
-    ) {
-        self.direct_message_lookup.insert(key, connection);
-    }
-
-    pub fn unsubscribe_connection_from_direct(&mut self, key: SignatureScheme::VerificationKey) {
-        self.direct_message_lookup.remove(&key);
-    }
-}
-
-pub struct ConnectionWithQueue<ProtocolType: Protocol> {
-    queue: Mutex<Vec<Arc<Vec<u8>>>>,
-    connection: ProtocolType::Connection,
-
-    current_size: AtomicU64,
-    last_sent: RwLock<Instant>,
-
-    min_duration: Duration,
-    min_size: u64,
-}
-
-impl<ProtocolType: Protocol> PartialEq for ConnectionWithQueue<ProtocolType> {
-    fn eq(&self, other: &Self) -> bool {
-        self.connection == other.connection
-    }
-}
-
-impl<ProtocolType: Protocol> Eq for ConnectionWithQueue<ProtocolType> {
-    fn assert_receiver_is_total_eq(&self) {}
-}
-
-impl<ProtocolType: Protocol> Hash for ConnectionWithQueue<ProtocolType> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.connection.hash(state);
-    }
-
-    /// This just calls `hash` on each item in the slice.
-    fn hash_slice<H: std::hash::Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
-    {
-        data.iter().for_each(|item| item.hash(state));
-    }
-}
-
-impl<ProtocolType: Protocol> ConnectionWithQueue<ProtocolType> {
-    pub fn from_connection_and_params(
-        connection: ProtocolType::Connection,
-        min_duration: Duration,
-        min_size: u64,
-    ) -> Self {
-        Self {
-            queue: Mutex::default(),
-            connection,
-            current_size: AtomicU64::default(),
-            last_sent: RwLock::from(Instant::now()),
-            min_duration,
-            min_size,
-        }
-    }
-
-    pub async fn add_or_queue_message(&self, message: Arc<Vec<u8>>) {
-        // Push the reference to the message
-        let message_length = message.len() as u64;
-        let mut queue_guard = self.queue.lock().await;
-        queue_guard.push(message);
-
-        // Update our size
-        let before_send_size = self
-            .current_size
-            .fetch_add(message_length, Ordering::Relaxed);
-
-        // Bounds check to see if we should send
-        if (before_send_size + message_length) >= self.min_size
-            || self.last_sent.read().elapsed() >= self.min_duration
-        {
-            // Move messages out
-            // TODO: VEC WITH CAPACITY HERE
-            let messages = std::mem::replace(&mut *queue_guard, Vec::new());
-
-            // Spawn a task to flush our queue
-            // TODO: see if it's faster to not have this here
-            let connection = self.connection.clone();
-            spawn(async move {
-                // Send the entire batch of messages
-                let _ = connection.send_messages_raw(messages).await;
-            });
         }
     }
 }

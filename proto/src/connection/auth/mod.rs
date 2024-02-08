@@ -13,6 +13,7 @@ macro_rules! fail_verification_with_message {
     ($connection: expr, $context: expr) => {
         // Send the error message
         let _ = $connection
+            .0
             .send_message(Message::AuthenticateResponse(AuthenticateResponse {
                 permit: 0,
                 context: $context.to_string(),

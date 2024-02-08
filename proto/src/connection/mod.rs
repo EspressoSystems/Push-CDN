@@ -2,4 +2,5 @@
 //! for any network protocol.
 
 pub mod auth;
+pub mod batch;
 pub mod protocols;

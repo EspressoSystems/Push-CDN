@@ -10,7 +10,7 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Connection, Protocol},
+    connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, DeterministicRng, KeyPair, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
@@ -29,12 +29,13 @@ pub struct BrokerAuth<
 }
 
 /// We  use this macro upstream to conditionally order broker authentication flows
+/// TODO: do something else with these macros
 #[macro_export]
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
-        // Prove to the other broker
+        // Authenticate with the other broker, returning their reconnect address
         match BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::authenticate_with_broker(
-            &$connection,
+            &mut $connection,
             &$inner.keypair,
         )
         .await
@@ -52,9 +53,9 @@ macro_rules! authenticate_with_broker {
 #[macro_export]
 macro_rules! verify_broker {
     ($connection: expr, $inner: expr) => {
-        // Wait for other brokers' proof
+        // Verify the other broker's authentication
         if let Err(err) = BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::verify_broker(
-            &$connection,
+            &mut $connection,
             &$inner.identifier,
             &$inner.keypair.verification_key,
         )
@@ -84,20 +85,19 @@ where
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         broker_identifier: &BrokerIdentifier,
         redis_client: &mut redis::Client,
-    ) -> Result<(SignatureScheme::VerificationKey, Vec<Topic>)> {
+    ) -> Result<(Vec<u8>, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
 
         // See if we're the right type of message
         let Message::AuthenticateWithPermit(auth_message) = auth_message else {
-            // TODO: macro for this error thing
             fail_verification_with_message!(connection, "wrong message type");
         };
 
@@ -128,10 +128,10 @@ where
         });
 
         // Send the successful response to the user
-        let _ = connection.send_message(response_message).await;
+        let _ = connection.0.send_message(response_message).await;
 
-        // Serialize the verification key
-        let verification_key = bail!(
+        // Try to serialize the verification key
+        bail!(
             crypto::deserialize(&serialized_verification_key),
             Crypto,
             "failed to deserialize verification key"
@@ -139,7 +139,7 @@ where
 
         // Receive the subscribed topics
         let subscribed_topics_message = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -151,7 +151,10 @@ where
         };
 
         // Return the verification key
-        Ok((verification_key, subscribed_topics_message.topics))
+        Ok((
+            serialized_verification_key,
+            subscribed_topics_message.topics,
+        ))
     }
 
     /// Authenticate with a broker (as a broker).
@@ -162,7 +165,7 @@ where
     /// - If we fail to authenticate
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         keypair: &KeyPair<SignatureScheme>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -208,14 +211,14 @@ where
 
         // Create and send the authentication message from the above operations
         bail!(
-            connection.send_message(message).await,
+            connection.0.send_message(message).await,
             Connection,
             "failed to send auth message to broker"
         );
 
         // Wait for the response with the permit and address
         let response = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from broker"
         );
@@ -247,14 +250,19 @@ where
         Ok(broker_address)
     }
 
+    /// Verify a broker as a broker.
+    /// Will fail verification if it does not match our verification key.
+    ///
+    /// # Errors
+    /// - If verification has failed
     pub async fn verify_broker(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         our_identifier: &BrokerIdentifier,
         our_verification_key: &SignatureScheme::VerificationKey,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -309,7 +317,7 @@ where
         });
 
         // Send the permit to the user, along with the public broker advertise address
-        let _ = connection.send_message(response_message).await;
+        let _ = connection.0.send_message(response_message).await;
 
         Ok(())
     }

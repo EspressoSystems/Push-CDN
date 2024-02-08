@@ -10,7 +10,7 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Connection, Protocol},
+    connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
@@ -47,12 +47,12 @@ where
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         redis_client: &mut redis::Client,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -130,7 +130,7 @@ where
         });
 
         // Send the permit to the user, along with the public broker advertise address
-        let _ = connection.send_message(response_message).await;
+        let _ = connection.0.send_message(response_message).await;
 
         Ok(())
     }

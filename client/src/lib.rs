@@ -37,29 +37,13 @@ where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::SigningKey: Serializable,
 {
-    /// Creates a new client from the given `Config`. Immediately will attempt
-    /// a conection if none is supplied.
-    ///
+    /// Creates a new `Retry` from a configuration.
+    /// 
     /// # Errors
-    /// Errors if the downstream `Retry` object was unable to be made.
-    /// This usually happens when we can't bind to the specified endpoint.
+    /// If the initial connection fails
     pub async fn new(config: Config<SignatureScheme, ProtocolType>) -> Result<Self> {
-        Self::new_with_connection(config, Option::None).await
-    }
-
-    /// Creates a new client from the given `Config` and an optional `Connection`.
-    /// Proxies the config to the `Retry` constructor since a `Client` is just a
-    /// light wrapper.
-    ///
-    /// # Errors
-    /// Errors if the downstream `Retry` object was unable to be created.
-    /// This usually happens when we can't bind to the specified endpoint.
-    pub async fn new_with_connection(
-        config: Config<SignatureScheme, ProtocolType>,
-        connection: Option<ProtocolType::Connection>,
-    ) -> Result<Self> {
         Ok(Self(bail!(
-            Retry::from_config_and_connection(config, connection).await,
+            Retry::from_config(config).await,
             Connection,
             "failed to create client"
         )))
@@ -78,44 +62,39 @@ where
     }
 
     /// Sends a pre-serialized message to the server, denoting recipients in the form
-    /// of a vector of topics. Use `send_message_raw` when the message is already
-    /// formed. If it fails, we return an error but try to initiate a new connection
+    /// of a vector of topics. If it fails, we return an error but try to initiate a new connection
     /// in the background.
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
-        // TODO: conditionally match error on whether deserialization OR the connection failed
-
+    pub fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // Form and send the single message
-        self.send_message(Message::Broadcast(Broadcast { topics, message }))
-            .await
+        self.send_message(&Message::Broadcast(Broadcast { topics, message }))
     }
 
     /// Sends a pre-serialized message to the server, denoting interest in delivery
-    /// to a single recipient. Use `send_message_raw` when the message is already formed.
+    /// to a single recipient.
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub async fn send_direct_message(
+    pub fn send_direct_message(
         &self,
-        recipient: SignatureScheme::VerificationKey,
+        recipient: &SignatureScheme::VerificationKey,
         message: Vec<u8>,
     ) -> Result<()> {
         // Serialize recipient to a byte array before sending the message
         // TODO: maybe we can cache this.
         let recipient_bytes = bail!(
-            crypto::serialize(&recipient),
+            crypto::serialize(recipient),
             Serialize,
             "failed to serialize recipient"
         );
 
         // Form and send the single message
-        self.send_message(Message::Direct(Direct {
+        self.send_message(&Message::Direct(Direct {
             recipient: recipient_bytes,
             message,
         }))
-        .await
     }
 
     /// Sends a message to the server that asserts that this client is interested in
@@ -123,8 +102,6 @@ where
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    ///
-    /// TODO IMPORTANT: see if we want this, or if we'd prefer `set_subscriptions()`
     pub async fn subscribe(&self, topics: Vec<Topic>) -> Result<()> {
         // Lock subscriptions here so we maintain parity during a reconnection
         let mut subscribed_guard = self.0.inner.subscribed_topics.write().await;
@@ -137,10 +114,9 @@ where
 
         // Send the topics
         bail!(
-            self.send_message(Message::Subscribe(Subscribe {
+            self.send_message(&Message::Subscribe(Subscribe {
                 topics: topics_to_send.clone()
-            }))
-            .await,
+            })),
             Connection,
             "failed to send subscription message"
         );
@@ -173,10 +149,9 @@ where
 
         // Send the topics
         bail!(
-            self.send_message(Message::Unsubscribe(Unsubscribe {
+            self.send_message(&Message::Unsubscribe(Unsubscribe {
                 topics: topics_to_send.clone()
-            }))
-            .await,
+            })),
             Connection,
             "failed to send unsubscription message"
         );
@@ -192,12 +167,12 @@ where
         Ok(())
     }
 
-    /// Sends a pre-formed message over the wire. Various functions make use
-    /// of this one downstream.
+    /// Sends a message over the wire. Various functions make use
+    /// of this one upstream.
     ///
     /// # Errors
     /// - if the downstream message sending fails.
-    pub async fn send_message(&self, message: Message) -> Result<()> {
-        self.0.send_message(message).await
+    pub fn send_message(&self, message: &Message) -> Result<()> {
+        self.0.send_message(message)
     }
 }

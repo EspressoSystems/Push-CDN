@@ -10,7 +10,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 
 use crate::{
     bail,
-    connection::protocols::{Connection, Protocol},
+    connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, DeterministicRng, KeyPair, Serializable},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
@@ -44,7 +44,7 @@ where
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         keypair: &KeyPair<SignatureScheme>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -90,14 +90,14 @@ where
 
         // Create and send the authentication message from the above operations
         bail!(
-            connection.send_message(message).await,
+            connection.0.send_message(message).await,
             Connection,
             "failed to send auth message to marshal"
         );
 
         // Wait for the response with the permit and address
         let response = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive message from marshal"
         );
@@ -132,7 +132,7 @@ where
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &ProtocolType::Connection,
+        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {
@@ -141,14 +141,14 @@ where
 
         // Send the authentication message to the broker
         bail!(
-            connection.send_message(auth_message).await,
+            connection.0.send_message(auth_message).await,
             Connection,
             "failed to send message to broker"
         );
 
         // Wait for a response
         let response_message = bail!(
-            connection.recv_message().await,
+            connection.1.recv_message().await,
             Connection,
             "failed to receive response message from broker"
         );
@@ -173,7 +173,7 @@ where
             topics: Vec::from_iter(subscribed_topics),
         });
         bail!(
-            connection.send_message(topic_message).await,
+            connection.0.send_message(topic_message).await,
             Connection,
             "failed to send topics to broker"
         );
