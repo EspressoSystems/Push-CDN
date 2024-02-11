@@ -2,11 +2,11 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 use client::{Client, Config};
 use proto::{
-    connection::protocols::{quic::Quic},
+    connection::protocols::quic::Quic,
     crypto::{self, KeyPair},
     error::Result,
     message::{Message, Topic},
@@ -14,7 +14,7 @@ use proto::{
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::{join, spawn};
+use tokio::{join, spawn, time::sleep};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,6 +65,9 @@ async fn main() -> Result<()> {
         .await?,
     );
 
+    // Wait 5 seconds so broker has time to propagate info about us
+    sleep(Duration::from_secs(5)).await;
+
     // Run our first client, which sends a message to our second.
     let client1 = spawn(async move {
         // Clone our client
@@ -75,7 +78,7 @@ async fn main() -> Result<()> {
             // Send a message to client 2
             let message = "hello client2";
             client1_
-                .send_direct_message(&verification_key_2, "hello client2".as_bytes().to_vec())
+                .send_direct_message(&verification_key_2, b"hello client2".to_vec())
                 .expect("failed to send message");
 
             println!("client 1 sent \"{message}\"");
@@ -111,7 +114,7 @@ async fn main() -> Result<()> {
             // Send a message to client 2
             let message = "hello client1";
             client2_
-                .send_direct_message(&verification_key_1, "hello client1".as_bytes().to_vec())
+                .send_direct_message(&verification_key_1, b"hello client1".to_vec())
                 .expect("failed to send message");
 
             println!("client 2 sent \"{message}\"");

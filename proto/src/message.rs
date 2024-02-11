@@ -8,11 +8,11 @@ use capnp::{
 };
 
 use crate::{
-    bail,
+    bail, bail_option,
     error::{Error, Result},
     messages_capnp::{
         self, authenticate_response, authenticate_with_key, authenticate_with_permit, broadcast,
-        direct, subscribe, unsubscribe, users_connected, users_disconnected,
+        direct,
     },
 };
 
@@ -21,6 +21,26 @@ macro_rules! serialize {
     // Rule to serialize a `Topic`.
     ($object:expr, Topic) => {
         $object.into_iter().map(|topic| topic.into()).collect()
+    };
+}
+
+macro_rules! checked_to_u32 {
+    ($from: expr) => {
+        bail!(u32::try_from($from), Deserialize, "failed to try from u32")
+    };
+}
+
+macro_rules! try_get {
+    ($message: expr, $i: expr) => {
+        bail!(
+            bail_option!(
+                $message.try_get($i),
+                Deserialize,
+                "failed to deserialize message"
+            ),
+            Deserialize,
+            "not in schema"
+        )
     };
 }
 
@@ -39,6 +59,17 @@ macro_rules! deserialize {
         .collect()
     };
 
+    ($message: expr, List) => {{
+        let mut deserialized_list = Vec::new();
+
+        for i in 0..$message.len() {
+            let item = try_get!($message, i);
+            deserialized_list.push(item.into());
+        }
+
+        deserialized_list
+    }};
+
     // Rule to deserialize a `Vec<u8>`
     ($func_name:expr, Vec<u8>) => {
         bail!($func_name, Deserialize, "failed to deserialize Vec<u8>").to_vec()
@@ -52,19 +83,6 @@ macro_rules! deserialize {
             "failed to parse String"
         )
     };
-
-    // Rule to deserialize `Users`
-    ($message:expr, Users) => {{
-        let mut users = Vec::new();
-        for user in bail!(
-            $message.get_users(),
-            Deserialize,
-            "failed to deserialize users"
-        ) {
-            users.push(bail!(user, Deserialize, "failed to deserialize user key").to_vec());
-        }
-        users
-    }};
 
     // A rule for prettiness that just returns the value.
     // Helpful in the case it is a `bool` or similar primitive
@@ -89,14 +107,14 @@ pub enum Message {
     Broadcast(Broadcast),
 
     /// The wrapper for an `Subscribe` message
-    Subscribe(Subscribe),
+    Subscribe(Vec<Topic>),
     /// The wrapper for an `Unsubscribe` message
-    Unsubscribe(Unsubscribe),
+    Unsubscribe(Vec<Topic>),
 
     /// The wrapper for a `UsersConnected` message
-    UsersConnected(UsersConnected),
+    UsersConnected(Vec<Vec<u8>>),
     /// The wrapper for a `UsersDisconnected` message
-    UsersDisconnected(UsersDisconnected),
+    UsersDisconnected(Vec<Vec<u8>>),
 }
 
 impl Message {
@@ -105,7 +123,7 @@ impl Message {
     ///
     /// # Errors
     /// Errors if the downstream serialization fails.
-    /// 
+    ///
     /// # Panics
     /// If we can't cast from a usize to a u32
     pub fn serialize(&self) -> Result<Vec<u8>> {
@@ -171,63 +189,37 @@ impl Message {
 
             Self::Subscribe(to_serialize) => {
                 // Initialize a new `Subscribe` message.
-                let mut message: subscribe::Builder = root.init_subscribe();
+                let mut message = root.init_subscribe(checked_to_u32!(to_serialize.len()));
 
-                // Serialize topics
-                let serialized_topics: Vec<messages_capnp::Topic> =
-                    serialize!(to_serialize.topics.clone(), Topic);
-
-                // Set each field
-                bail!(
-                    message.set_topics(&*serialized_topics),
-                    Serialize,
-                    "failed to serialize topics"
-                );
+                for (i, topic) in to_serialize.iter().enumerate() {
+                    message.set(checked_to_u32!(i), topic.clone().into());
+                }
             }
 
             Self::Unsubscribe(to_serialize) => {
                 // Initialize a new `Subscribe` message.
-                let mut message: unsubscribe::Builder = root.init_unsubscribe();
+                let mut message = root.init_unsubscribe(checked_to_u32!(to_serialize.len()));
 
-                // Serialize topics
-                let serialized_topics: Vec<messages_capnp::Topic> =
-                    serialize!(to_serialize.topics.clone(), Topic);
-
-                // Set each field
-                bail!(
-                    message.set_topics(&*serialized_topics),
-                    Serialize,
-                    "failed to serialize topics"
-                );
+                for (i, topic) in to_serialize.iter().enumerate() {
+                    message.set(checked_to_u32!(i), topic.clone().into());
+                }
             }
 
             Self::UsersConnected(to_serialize) => {
                 // Initialize a new `UsersConnected` message.
-                let mut message: users_connected::Builder = root.init_users_connected();
+                let mut message = root.init_users_connected(checked_to_u32!(to_serialize.len()));
 
-                // Init the users
-                let mut users = message
-                    .reborrow()
-                    .init_users(u32::try_from(to_serialize.users.len()).expect("serialization failed"));
-
-                // For each user, reborrow and serialize
-                for (i, user) in to_serialize.users.iter().enumerate() {
-                    users.reborrow().set(u32::try_from(i).expect("serialization failed"), user);
+                for (i, user) in to_serialize.iter().enumerate() {
+                    message.set(checked_to_u32!(i), user);
                 }
             }
 
             Self::UsersDisconnected(to_serialize) => {
-                // Initialize a new `UsersConnected` message.
-                let mut message: users_disconnected::Builder = root.init_users_disconnected();
+                // Initialize a new `Subscribe` message.
+                let mut message = root.init_users_disconnected(checked_to_u32!(to_serialize.len()));
 
-                // Init the users
-                let mut users = message
-                    .reborrow()
-                    .init_users(u32::try_from(to_serialize.users.len()).expect("serialization failed"));
-
-                // For each user, reborrow and serialize
-                for (i, user) in to_serialize.users.iter().enumerate() {
-                    users.reborrow().set(u32::try_from(i).expect("serialization failed"), user);
+                for (i, user) in to_serialize.iter().enumerate() {
+                    message.set(checked_to_u32!(i), user);
                 }
             }
         }
@@ -308,33 +300,25 @@ impl Message {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::Subscribe(Subscribe {
-                        topics: deserialize!(message.get_topics(), Topic),
-                    })
+                    Self::Subscribe(deserialize!(message, List))
                 }
                 messages_capnp::message::Unsubscribe(maybe_message) => {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::Unsubscribe(Unsubscribe {
-                        topics: deserialize!(message.get_topics(), Topic),
-                    })
+                    Self::Unsubscribe(deserialize!(message, List))
                 }
                 messages_capnp::message::UsersConnected(maybe_message) => {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::UsersConnected(UsersConnected {
-                        users: deserialize!(message, Users),
-                    })
+                    Self::UsersConnected(deserialize!(message, List))
                 }
                 messages_capnp::message::UsersDisconnected(maybe_message) => {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::UsersDisconnected(UsersDisconnected {
-                        users: deserialize!(message, Users),
-                    })
+                    Self::UsersDisconnected(deserialize!(message, List))
                 }
             },
         )
@@ -510,23 +494,21 @@ mod test {
         }));
 
         // `Subscribe` message
-        assert_serialize_deserialize!(Message::Subscribe(Subscribe {
-            topics: vec![Topic::DA, Topic::Global],
-        }));
+        assert_serialize_deserialize!(Message::Subscribe(vec![Topic::DA, Topic::Global],));
 
         // `Unsubscribe` message
-        assert_serialize_deserialize!(Message::Unsubscribe(Unsubscribe {
-            topics: vec![Topic::DA, Topic::Global],
-        }));
+        assert_serialize_deserialize!(Message::Unsubscribe(vec![Topic::DA, Topic::Global],));
 
         // `UsersConnected` message
-        assert_serialize_deserialize!(Message::UsersConnected(UsersConnected {
-            users: vec![vec![0u8, 1u8], vec![2u8, 3u8]],
-        }));
+        assert_serialize_deserialize!(Message::UsersConnected(vec![
+            vec![0u8, 1u8],
+            vec![2u8, 3u8]
+        ]));
 
         // `UsersDisconnected` message
-        assert_serialize_deserialize!(Message::UsersDisconnected(UsersDisconnected {
-            users: vec![vec![0u8, 1u8], vec![2u8, 3u8]],
-        }));
+        assert_serialize_deserialize!(Message::UsersDisconnected(vec![
+            vec![0u8, 1u8],
+            vec![2u8, 3u8]
+        ]));
     }
 }

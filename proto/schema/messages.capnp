@@ -16,16 +16,11 @@ struct Message {
         # The wrapper for a `Broadcast` message
         broadcast @4 :Broadcast;
 
-        # The wrapper for a `Subscribe` message
-        subscribe @5 :Subscribe;
-        # The wrapper for an `Unsubscribe` message
-        unsubscribe @6 :Unsubscribe;
+        subscribe @5 :List(Topic);
+        unsubscribe @6 :List(Topic);
 
-        # The wrapper for a `UsersConnected` message
-        usersConnected @7 :UsersConnected;
-        # The wrapper for an `UsersDisconnected` message
-        usersDisconnected @8 :UsersDisconnected;
-
+        usersConnected @7 :List(Data);
+        usersDisconnected @8 :List(Data);
     }
 }
 
@@ -87,28 +82,4 @@ struct Broadcast {
     topics @0: List(Topic);
     # The actual message data
     message @1: Data;
-}
-
-# A message that is used to convey interest in some particular topic(s).
-struct Subscribe {
-    # The topics interested in
-    topics @0: List(Topic);
-}
-
-# A message that is used to convey disinterest in some particular topic(s).
-struct Unsubscribe {
-    # The topics no longer interested in
-    topics @0: List(Topic);
-}
-
-# A message that is used to convey to other brokers that user(s) have connected to us.
-struct UsersConnected {
-    # The user [keys] connected to us
-    users @0: List(Data);
-}
-
-# A message that is used to convey to other brokers that user(s) have disconnected from us.
-struct UsersDisconnected {
-    # The user [keys] that have disconnected from us
-    users @0: List(Data);
 }

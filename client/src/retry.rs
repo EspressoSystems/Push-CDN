@@ -12,7 +12,7 @@ use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     connection::{
         auth::user::UserAuth,
-        batch::BatchedSender,
+        batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
     },
     crypto::{KeyPair, Serializable},
@@ -231,7 +231,7 @@ where
         // Try to acquire the read lock. If we can't, we are reconnecting.
         if let Ok(send_lock) = self.inner.sender.try_read() {
             // Continue if we were able to acquire the lock
-            let out = send_lock.queue_message_back(Arc::from(message));
+            let out = send_lock.queue_message(Arc::from(message), Position::Back);
             Ok(try_with_reconnect!(self, send_lock, out))
         } else {
             // Return an error if we're reconnecting

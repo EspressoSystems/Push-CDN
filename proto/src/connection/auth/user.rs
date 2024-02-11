@@ -13,7 +13,7 @@ use crate::{
     connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, DeterministicRng, KeyPair, Serializable},
     error::{Error, Result},
-    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Subscribe, Topic},
+    message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
@@ -169,9 +169,7 @@ where
         }
 
         // Send our interested topics to the broker
-        let topic_message = Message::Subscribe(Subscribe {
-            topics: Vec::from_iter(subscribed_topics),
-        });
+        let topic_message = Message::Subscribe(Vec::from_iter(subscribed_topics));
         bail!(
             connection.0.send_message(topic_message).await,
             Connection,

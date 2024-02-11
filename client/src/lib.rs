@@ -10,7 +10,7 @@ use proto::{
     crypto::{self, Serializable},
     error::Error,
     error::Result,
-    message::{Broadcast, Direct, Message, Subscribe, Topic, Unsubscribe},
+    message::{Broadcast, Direct, Message, Topic},
 };
 use retry::Retry;
 
@@ -38,7 +38,7 @@ where
     SignatureScheme::SigningKey: Serializable,
 {
     /// Creates a new `Retry` from a configuration.
-    /// 
+    ///
     /// # Errors
     /// If the initial connection fails
     pub async fn new(config: Config<SignatureScheme, ProtocolType>) -> Result<Self> {
@@ -114,9 +114,7 @@ where
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Subscribe(Subscribe {
-                topics: topics_to_send.clone()
-            })),
+            self.send_message(&Message::Subscribe(topics_to_send.clone())),
             Connection,
             "failed to send subscription message"
         );
@@ -149,9 +147,7 @@ where
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Unsubscribe(Unsubscribe {
-                topics: topics_to_send.clone()
-            })),
+            self.send_message(&Message::Unsubscribe(topics_to_send.clone())),
             Connection,
             "failed to send unsubscription message"
         );

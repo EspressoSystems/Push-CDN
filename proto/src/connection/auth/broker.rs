@@ -153,7 +153,7 @@ where
         // Return the verification key
         Ok((
             serialized_verification_key,
-            subscribed_topics_message.topics,
+            subscribed_topics_message,
         ))
     }
 

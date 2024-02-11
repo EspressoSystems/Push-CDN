@@ -3,26 +3,29 @@
 
 // TODO: massive cleanup on this file
 
+mod map;
 mod state;
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
+use slotmap::Key;
 // TODO: figure out if we should use Tokio's here
 use proto::{
     authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
-        batch::BatchedSender,
+        batch::{BatchedSender, Position},
         protocols::{Listener, Protocol, Receiver},
     },
     crypto::{KeyPair, Serializable},
     error::{Error, Result},
-    message::{Message, Subscribe, UsersConnected, UsersDisconnected},
+    message::Message,
     parse_socket_address,
     redis::{self, BrokerIdentifier},
     verify_broker,
 };
+use slotmap::DefaultKey;
 use state::ConnectionLookup;
 use tokio::{select, spawn, sync::RwLock, time::sleep};
 use tracing::{error, info, warn};
@@ -76,22 +79,71 @@ struct Inner<
     /// against the stake table.
     keypair: KeyPair<BrokerSignatureScheme>,
 
-    /// A set of all other brokers. We need this to send to all connected brokers.
-    other_brokers: RwLock<HashSet<(BrokerIdentifier, Arc<BatchedSender<BrokerProtocolType>>)>>,
+    connected_broker_identities: RwLock<HashSet<BrokerIdentifier>>,
 
     /// A map of interests to their possible broker connections. We use this to facilitate
-    /// where messages go. They need to be separate because of possible separate protocol
+    /// where messages go. They need to be separate because of possibly different protocol
     /// types.
     broker_connection_lookup: RwLock<ConnectionLookup<BrokerProtocolType>>,
 
     /// A map of interests to their possible user connections. We use this to facilitate
-    /// where messages go. They need to be separate because of possible separate protocol
+    /// where messages go. They need to be separate because of possibly different protocol
     /// types.
     user_connection_lookup: RwLock<ConnectionLookup<UserProtocolType>>,
 
     // connected_keys: LoggedSet<UserSignatureScheme::VerificationKey>,
     /// The `PhantomData` that we need to be generic over protocol types.
     pd: PhantomData<(UserProtocolType, BrokerProtocolType, UserSignatureScheme)>,
+}
+
+macro_rules! send_or_remove_many {
+    ($connections: expr, $lookup:expr, $message: expr, $position: expr) => {
+        for connection in $connections {
+            if connection
+                .1
+                .queue_message($message.clone(), $position)
+                .is_err()
+            {
+                get_lock!($lookup, write).remove_connection(connection.0);
+            };
+        }
+    };
+}
+
+macro_rules! send_direct {
+    ($lookup: expr, $key: expr, $message: expr) => {{
+        let connections = $lookup.read().await.get_connections_by_key(&$key).clone();
+        send_or_remove_many!(connections, $lookup, $message, Position::Back);
+    }};
+}
+
+macro_rules! send_broadcast {
+    ($lookup:expr, $topics: expr, $message: expr) => {{
+        let connections = $lookup
+            .read()
+            .await
+            .get_connections_by_topic($topics.clone())
+            .clone();
+        send_or_remove_many!(connections, $lookup, $message, Position::Back);
+    }};
+}
+
+macro_rules! get_lock {
+    ($lock :expr, $type: expr) => {
+        paste::item! {
+            $lock.$type().await
+        }
+    };
+}
+
+macro_rules! new_serialized_message {
+    ($type: ident, $data: expr) => {
+        Arc::<Vec<u8>>::from(bail!(
+            Message::$type($data).serialize(),
+            Connection,
+            "broker disconnected"
+        ))
+    };
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -116,84 +168,6 @@ pub struct Broker<
 
     /// The private (broker <-> broker) listener
     broker_listener: BrokerProtocolType::Listener,
-}
-
-macro_rules! remove_local_and_exit_on_error {
-    ($operation: expr, $inner: expr, $sender: expr, $object: ident) => {
-        match $operation {
-            Ok(op) => op,
-            Err(_) => {
-                remove_local!($inner, $sender, $object);
-                return;
-            }
-        }
-    };
-}
-
-macro_rules! remove_local {
-    ($inner: expr, $sender: expr, user) => {
-        // Remove all connections associated with the user
-        $inner
-            .user_connection_lookup
-            .write()
-            .await
-            .unsubscribe_connection(&$sender);
-    };
-
-    ($inner: expr, $sender: expr, broker) => {
-        // Remove all connections associated with the broker
-        $inner
-            .broker_connection_lookup
-            .write()
-            .await
-            .unsubscribe_connection(&$sender.clone());
-
-        // Remove from "all brokers"
-        $inner.other_brokers.write().await.retain(|(_, broker)| broker != &$sender);
-    };
-}
-
-macro_rules! remove_remote_and_exit_on_error {
-    ($operation: expr, $inner: expr, $key: expr) => {
-        match $operation {
-            Ok(op) => op,
-            Err(_) => {
-                remove_remote!($inner, $key);
-                return;
-            }
-        }
-    };
-}
-
-macro_rules! remove_remote {
-    ($inner:expr, $key: expr) => {
-        // Tell all other brokers that we're done with the user
-        // TODO IMP: IF REMOVE TOPIC, SEND THAT TOPIC IS UNSUBSCRIBE
-        let brokers:Vec<(BrokerIdentifier, Arc<BatchedSender<BrokerProtocolType>>)> =
-            $inner.other_brokers.read().await.iter().cloned().collect();
-
-        // For all brokers, send the disconect message
-        if !brokers.is_empty() {
-            let disconnected_message =
-            // TODO: see if we need clone here
-                Message::UsersDisconnected(UsersDisconnected { users: vec![$key.clone()] });
-
-            // TODO: DOCUMENT THIS EXPECT
-            // Serialize the message
-            let disconnected_message:Arc<Vec<u8>> = Arc::from(
-                disconnected_message
-                    .serialize()
-                    .expect("serialization to succeed"),
-            );
-
-            // Send the message
-            for broker in brokers {
-                // If we fail to send it, remove the broker
-                // TODO: remove brokers here on error
-                let _ = broker.1.queue_message_back(disconnected_message.clone());
-            }
-        }
-    };
 }
 
 impl<
@@ -279,7 +253,7 @@ where
                 redis_client,
                 identifier,
                 keypair,
-                other_brokers: RwLock::default(),
+                connected_broker_identities: RwLock::default(),
                 broker_connection_lookup: RwLock::default(),
                 user_connection_lookup: RwLock::default(),
                 pd: PhantomData,
@@ -311,154 +285,56 @@ where
         };
 
         // Create new batch sender
-        let (sender, mut receiver) = connection;
+        let (sender, receiver) = connection;
         // TODO: parameterize max interval and max size
-        let sender = Arc::new(BatchedSender::from(sender, Duration::from_millis(50), 1500));
+        let sender = Arc::from(BatchedSender::<BrokerProtocolType>::from(
+            sender,
+            Duration::from_millis(50),
+            1500,
+        ));
 
-        // Freeze the sender before adding it so we don't receive messages out of order
+        // Add to our connected broker identities so we don't try to reconnect
+        get_lock!(inner.connected_broker_identities, write).insert(broker_address.clone());
+
+        // Freeze the sender before adding it to our connections so we don't receive messages out of order.
+        // This is to enforce message ordering
         let _ = sender.freeze();
 
-        // Add to "other brokers" so we can start adding relevant messages to the queue
-        inner
-            .other_brokers
+        // Add our connection to the list of connections
+        let connection_id = inner
+            .broker_connection_lookup
             .write()
             .await
-            .insert((broker_address.clone(), sender.clone()));
+            .add_connection(sender.clone());
 
-        // Create and serialize a message with the keys we're connected to
-        // TODO: macro for this
-        let users = inner.user_connection_lookup.read().await.get_all_keys();
-        let message = Message::UsersConnected(UsersConnected { users });
+        // Get all brokers (excluding ourselves)
+        let all_brokers = get_lock!(inner.broker_connection_lookup, read).get_all_connections();
 
-        // If we fail serialization, remove from the "all/other brokers" map.
-        let message = Arc::from(remove_local_and_exit_on_error!(
-            message.serialize(),
-            inner,
-            sender,
-            broker
-        ));
+        // Send all relevant updates to brokers, flushing our updates. Send the partial updates
+        // to everyone, and the full to the new broker.
+        let _ = inner
+            .send_updates_to_brokers(all_brokers, vec![(connection_id, sender.clone())])
+            .await;
 
-        // Put the message at the front of the queue so that we send messages in order
-        let _ = sender.queue_message_front(message);
-
-        // Create and serialize a message with the topics we're interested in
-        let topics = inner.user_connection_lookup.read().await.get_all_topics();
-        let message = Message::Subscribe(Subscribe { topics });
-
-        // If we fail serialization, remove from the "all/other brokers" map.
-        let message = Arc::from(remove_local_and_exit_on_error!(
-            message.serialize(),
-            inner,
-            sender,
-            broker
-        ));
-
-        // Put the message at the front of the queue so that we send messages in order
-        let _ = sender.queue_message_front(message);
-
-        // Unfreeze our queue, which flushes it and lets us finally send (in order) messages.
+        // Unfreeze the sender, flushing the updates
         let _ = sender.unfreeze();
 
-        info!("received connection from broker {}", broker_address);
+        info!("connected to broker {}", broker_address);
 
-        // The message receive loop. On exit, remove the broker's connection everywhere
-        while let Ok(message) = receiver.recv_message().await {
-            // See what type of message this is
-            match message {
-                // A direct message. We want this to go to either the associated broker or user.
-                Message::Direct(direct) => {
-                    // Find out where the message is supposed to go
-                    let possible_user = inner
-                        .user_connection_lookup
-                        .read()
-                        .await
-                        .get_connection_by_key(&direct.recipient);
+        // If we error, come back to the callback so we can remove the connection from the list.
+        if let Err(err) = inner.broker_recv_loop(connection_id, receiver).await {
+            error!("broker disconnected with error: {err}");
+        };
 
-                    // If user is connected, queue the message for sending
-                    // TODO: max queue size before force quit
-                    if let Some(user) = possible_user {
-                        // Create a new `Data` and `Arc` it.
-                        let message = Arc::new(remove_local_and_exit_on_error!(
-                            Message::serialize(&Message::Direct(direct)),
-                            inner,
-                            sender,
-                            broker
-                        ));
+        info!("disconnected from broker {}", broker_address);
 
-                        // Send them the message. If we fail, remove them
-                        if user.queue_message_back(message).is_err() {
-                            remove_local!(inner, user, user);
-                        }
-                    }
-                }
+        // Remove from the connected broker identities so that we may
+        // try to reconnect inthe future.
+        get_lock!(inner.connected_broker_identities, write).remove(&broker_address);
 
-                Message::Broadcast(broadcast) => {
-                    // TODO: macro this
-                    // Find out where the message is supposed to go
-                    let connections = inner
-                        .user_connection_lookup
-                        .read()
-                        .await
-                        .get_connections_by_topic(broadcast.topics.clone());
-
-                    // If there are any users, queue the message to send for all of them
-                    if !connections.is_empty() {
-                        // Create a new `Data` and `Arc` it.
-                        let message = Arc::new(remove_local_and_exit_on_error!(
-                            Message::serialize(&Message::Broadcast(broadcast)),
-                            inner,
-                            sender,
-                            broker
-                        ));
-
-                        // For each user, them the message. If we fail, remove them
-                        for user in connections {
-                            if user.queue_message_back(message.clone()).is_err() {
-                                remove_local!(inner, user, user);
-                            }
-                        }
-                    }
-                }
-
-                // If we receive a subscribe message from a broker, subscribe them to those topics
-                Message::Subscribe(subscribe) => inner
-                    .broker_connection_lookup
-                    .write()
-                    .await
-                    .subscribe_connection_to_topics(sender.clone(), subscribe.topics),
-
-                // If we receive an unsubscribe message from a broker, unsubscribe them from those topics
-                Message::Unsubscribe(unsubscribe) => inner
-                    .broker_connection_lookup
-                    .write()
-                    .await
-                    .unsubscribe_connection_from_topics(&sender, unsubscribe.topics),
-
-                // If we receive a `UsersConnected` message, subscribe that connection to the keys it presented
-                Message::UsersConnected(users_connected) => inner
-                    .broker_connection_lookup
-                    .write()
-                    .await
-                    .subscribe_connection_to_keys(&sender, users_connected.users),
-
-                // If we receive a `UsersConnected` message, unsubscribe that connection from the keys it presented
-                Message::UsersDisconnected(users_disconnected) => inner
-                    .broker_connection_lookup
-                    .write()
-                    .await
-                    .unsubscribe_connection_from_keys(users_disconnected.users),
-
-                // We should not be receiving any of these messages
-                Message::AuthenticateResponse(_)
-                | Message::AuthenticateWithKey(_)
-                | Message::AuthenticateWithPermit(_) => {
-                    remove_local!(inner, sender, broker);
-                    return;
-                }
-            }
-        }
-
-        remove_local!(inner, sender, broker);
+        // Remove from our connections so that we don't send any more data
+        // their way.
+        get_lock!(inner.broker_connection_lookup, write).remove_connection(connection_id);
     }
 
     /// This function handles a user (public) connection.
@@ -481,193 +357,36 @@ where
         };
 
         // Create new batch sender
-        let (sender, mut receiver) = connection;
+        let (sender, receiver) = connection;
         let sender = Arc::new(BatchedSender::<UserProtocolType>::from(
             sender,
             Duration::from_millis(50),
             1500,
         ));
 
-        // Send the information to other brokers, if any.
-        // Remove them if we failed to send to them,
-        // TODO: WAL HERE maybe
-        let brokers: Vec<(BrokerIdentifier, Arc<BatchedSender<BrokerProtocolType>>)> =
-            inner.other_brokers.read().await.iter().cloned().collect();
-        if !brokers.is_empty() {
-            let connected_message = Message::UsersConnected(UsersConnected {
-                users: vec![verification_key.clone()],
-            });
-            let subscribed_message = Message::Subscribe(Subscribe {
-                topics: topics.clone(),
-            });
-
-            // Arc and serialize the messages, prepare for sending
-            let connected_message: Arc<Vec<u8>> = Arc::from(remove_remote_and_exit_on_error!(
-                connected_message.serialize(),
-                inner,
-                verification_key
-            ));
-            let subscribed_message: Arc<Vec<u8>> = Arc::from(remove_remote_and_exit_on_error!(
-                subscribed_message.serialize(),
-                inner,
-                verification_key
-            ));
-
-            // Send the messages
-            for broker in brokers {
-                let _ = broker.1.queue_message_back(connected_message.clone());
-                let _ = broker.1.queue_message_back(subscribed_message.clone());
-            }
-        };
+        // Add the connection to the list of connections
+        let connection_id = get_lock!(inner.user_connection_lookup, write).add_connection(sender);
 
         // Add the user for their topics
+        get_lock!(inner.user_connection_lookup, write)
+            .subscribe_connection_id_to_topics(connection_id, topics);
+
+        // Add the user for their key
+        get_lock!(inner.user_connection_lookup, write)
+            .subscribe_connection_id_to_keys(connection_id, vec![verification_key]);
+
+        info!("received connection from user {:?}", connection_id.data());
+
+        // This runs the main loop for receiving information from the user
+        let () = inner.user_recv_loop(connection_id, receiver).await;
+
+        info!("user {:?} disconnected", connection_id.data());
+        // Once the main loop ends, we remove the connection
         inner
             .user_connection_lookup
             .write()
             .await
-            .subscribe_connection_to_topics(sender.clone(), topics);
-
-        // Add the user for their keys
-        inner
-            .user_connection_lookup
-            .write()
-            .await
-            .subscribe_connection_to_keys(&sender, vec![verification_key.clone()]);
-
-        info!(
-            "received connection from user {:?}",
-            hex::encode(&verification_key)
-        );
-
-        // The message receive loop. On exit, remove the broker's connection everywhere
-        while let Ok(message) = receiver.recv_message().await {
-            // See what type of message this is
-            match message {
-                // A direct message. This is supposed to go to the interested broker AND/OR interested user only
-                Message::Direct(direct) => {
-                    // Find out where the message is supposed to go
-                    let broker_connection = inner
-                        .broker_connection_lookup
-                        .read()
-                        .await
-                        .get_connection_by_key(&direct.recipient);
-
-                    let user_connection = inner
-                        .user_connection_lookup
-                        .read()
-                        .await
-                        .get_connection_by_key(&direct.recipient);
-
-                    if let Some(connection) = user_connection {
-                        // `Arc` and serialize it.
-                        // TODO IMP DOCUMENT INVARIANT
-                        let message = Arc::new(
-                            Message::Direct(direct)
-                                .serialize()
-                                .expect("serialization to succeed"),
-                        );
-
-                        // If we fail to send the message, remove the user
-                        if connection.queue_message_back(message).is_err() {
-                            remove_local!(inner, sender, user);
-                            remove_remote!(inner, verification_key);
-                        }
-                    } else if let Some(connection) = broker_connection {
-                        // `Arc` and serialize it.
-                        let message = Arc::new(
-                            Message::Direct(direct)
-                                .serialize()
-                                .expect("serialization to succeed"),
-                        );
-
-                        // If we fail to send the message, remove the broker
-                        if connection.queue_message_back(message).is_err() {
-                            remove_local!(inner, connection, broker);
-                        };
-                    };
-                }
-
-                // A broadcast message. This is supposed to go to the interested brokers AND/OR interested users only
-                Message::Broadcast(broadcast) => {
-                    // Figure out which brokers this message should go to
-                    let broker_connections = inner
-                        .broker_connection_lookup
-                        .read()
-                        .await
-                        .get_connections_by_topic(broadcast.topics.clone());
-
-                    // Figure out which users the message is supposed to go
-                    let user_connections = inner
-                        .user_connection_lookup
-                        .read()
-                        .await
-                        .get_connections_by_topic(broadcast.topics.clone());
-
-                    // If there are any users, queue the message to send for all of them
-                    if !(broker_connections.is_empty() && user_connections.is_empty()) {
-                        // Create a new `Data` and `Arc` it.
-                        let message = Arc::new(
-                            Message::Broadcast(broadcast)
-                                .serialize()
-                                .expect("serialization failed"),
-                        );
-
-                        // For each broker, send them the message. If we fail, remove them
-                        for broker in broker_connections {
-                            if broker.queue_message_back(message.clone()).is_err() {
-                                remove_local!(inner, broker, broker);
-                            }
-                        }
-
-                        // For each broker, send them the message. If we fail, remove them
-                        for user in user_connections {
-                            if user.queue_message_back(message.clone()).is_err() {
-                                remove_local!(inner, sender, user);
-                                remove_remote!(inner, verification_key);
-                            }
-                        }
-                    }
-                }
-
-                // If we receive a subscription from the user, send to other brokers and update locally
-                Message::Subscribe(subscribe) => {
-                    // Send the information to other brokers, if any.
-                    // Remove them if we failed to send to them,
-                    // TODO: WAL HERE maybe
-                    let brokers: Vec<(BrokerIdentifier, Arc<BatchedSender<BrokerProtocolType>>)> =
-                        inner.other_brokers.read().await.iter().cloned().collect();
-                    if !brokers.is_empty() {
-                        let subscribed_message = Message::Subscribe(subscribe);
-
-                        // Arc and serialize the messages, prepare for sending
-                        let subscribed_message: Arc<Vec<u8>> = Arc::from(
-                            subscribed_message
-                                .serialize()
-                                .expect("serialization to succeed"),
-                        );
-
-                        // Send the messages
-                        for broker in brokers {
-                            // TODO: consider failing here
-                            let _ = broker.1.queue_message_back(subscribed_message.clone());
-                        }
-                    };
-                }
-
-                // If we receive an unsubscription from the user, send to other brokers and update locally
-                // TODO: THIS
-                Message::Unsubscribe(_)
-                | Message::AuthenticateResponse(_)
-                | Message::AuthenticateWithKey(_)
-                | Message::AuthenticateWithPermit(_)
-                | Message::UsersConnected(_)
-                | Message::UsersDisconnected(_) => {}
-            }
-        }
-
-        // If we fail, remove locally and remote (with other brokers)
-        remove_local!(inner, sender, user);
-        remove_remote!(inner, verification_key);
+            .remove_connection(connection_id);
     }
 
     /// The main loop for a broker.
@@ -684,71 +403,10 @@ where
 
         // Spawn the heartbeat task, which we use to register with `Redis` every so often.
         // We also use it to check for new brokers who may have joined.
-        let heartbeat_task = spawn(async move {
-            // Clone the `Redis` client, which needs to be mutable
-            let mut redis_client = inner.redis_client.clone();
-            loop {
-                // Register with `Redis` every 20 seconds, updating our number of connected users
-                if let Err(err) = redis_client
-                    .perform_heartbeat(
-                        // todo: actually pull in this number
-                        inner.user_connection_lookup.read().await.get_key_count() as u64,
-                        Duration::from_secs(60),
-                    )
-                    .await
-                {
-                    // If we fail, we want to see this
-                    error!("failed to perform heartbeat: {}", err);
-                }
+        let heartbeat_task = spawn(Self::heartbeat_task(inner.clone()));
 
-                // Check for new brokers, spawning tasks to connect to them if necessary
-                match redis_client.get_other_brokers().await {
-                    Ok(brokers) => {
-                        // Calculate the difference, spawn tasks to connect to them
-                        for broker in brokers.difference(
-                            &inner
-                                .other_brokers
-                                .read()
-                                .await
-                                .iter()
-                                .map(|(identifier, _)| identifier.clone())
-                                .collect(),
-                        ) {
-                            // TODO: make this into a separate function
-                            // Extrapolate the address to connect to
-                            let to_connect_address = broker.broker_advertise_address.clone();
-
-                            // Clone the inner because we need it for the possible new broker task
-                            let inner = inner.clone();
-
-                            // Spawn task to connect to a broker we haven't seen
-                            spawn(async move {
-                                // Connect to the broker
-                                let connection =
-                                    match BrokerProtocolType::connect(to_connect_address).await {
-                                        Ok(connection) => connection,
-                                        Err(err) => {
-                                            error!("failed to connect to broker: {err}");
-                                            return;
-                                        }
-                                    };
-
-                                // Handle the broker connection
-                                Self::handle_broker_connection(inner, connection, true).await;
-                            });
-                        }
-                    }
-
-                    Err(err) => {
-                        // This is an important error as well
-                        error!("failed to get other brokers: {}", err);
-                    }
-                }
-
-                // Sleep for 20 seconds
-                sleep(Duration::from_secs(20)).await;
-            }
-        });
+        // Spawn the updates task, which updates other brokers with our topics and keys periodically.
+        let send_updates_task = spawn(Self::send_updates_task(inner));
 
         // Clone `inner` so we can use shared data
         let inner = self.inner.clone();
@@ -801,6 +459,9 @@ where
 
         // If one of the tasks exists, we want to return (stopping the program)
         select! {
+            _ = send_updates_task => {
+                Err(Error::Exited("send updates task exited!".to_string()))
+            }
             _ = heartbeat_task => {
                 Err(Error::Exited("heartbeat task exited!".to_string()))
             }
@@ -811,5 +472,294 @@ where
                 Err(Error::Exited("broker listener task exited!".to_string()))
             }
         }
+    }
+
+    async fn send_updates_task(
+        inner: Arc<
+            Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
+        >,
+    ) {
+        loop {
+            // Send other brokers our subscription and topic updates. None of them get full updates.
+            if let Err(err) = inner
+                .send_updates_to_brokers(
+                    vec![],
+                    get_lock!(inner.broker_connection_lookup, read)
+                        .get_all_connections()
+                        .clone(),
+                )
+                .await
+            {
+                error!("failed to send updates to other brokers: {err}")
+            };
+
+            sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    async fn heartbeat_task(
+        inner: Arc<
+            Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
+        >,
+    ) {
+        // Clone the `Redis` client, which needs to be mutable
+        let mut redis_client = inner.redis_client.clone();
+
+        // Run this forever, unless we run into a panic (e.g. the "as" conversion.)
+        loop {
+            // Register with `Redis` every n seconds, updating our number of connected users
+            if let Err(err) = redis_client
+                .perform_heartbeat(
+                    get_lock!(inner.user_connection_lookup, read).get_connection_count() as u64,
+                    Duration::from_secs(60),
+                )
+                .await
+            {
+                // If we fail, we want to see this
+                error!("failed to perform heartbeat: {}", err);
+            }
+
+            // Check for new brokers, spawning tasks to connect to them if necessary
+            match redis_client.get_other_brokers().await {
+                Ok(brokers) => {
+                    // Calculate the difference, spawn tasks to connect to them
+                    for broker in brokers
+                        .difference(&get_lock!(inner.connected_broker_identities, read).clone())
+                    {
+                        // TODO: make this into a separate function
+                        // Extrapolate the address to connect to
+                        let to_connect_address = broker.broker_advertise_address.clone();
+
+                        // Clone the inner because we need it for the possible new broker task
+                        let inner = inner.clone();
+
+                        // Spawn task to connect to a broker we haven't seen
+                        spawn(async move {
+                            // Connect to the broker
+                            let connection =
+                                match BrokerProtocolType::connect(to_connect_address).await {
+                                    Ok(connection) => connection,
+                                    Err(err) => {
+                                        error!("failed to connect to broker: {err}");
+                                        return;
+                                    }
+                                };
+
+                            // Handle the broker connection
+                            Self::handle_broker_connection(inner, connection, true).await;
+                        });
+                    }
+                }
+
+                Err(err) => {
+                    // This is an important error as well
+                    error!("failed to get other brokers: {}", err);
+                }
+            }
+
+            // Sleep for 20 seconds
+            sleep(Duration::from_secs(20)).await;
+        }
+    }
+}
+
+macro_rules! send_update_to_brokers {
+    ($lookup:expr, $message_type: ident, $data:expr, $recipients: expr, $position: ident) => {{
+        // If the data is not empty, make a message of the specified type
+        if !$data.is_empty() {
+            // Create a `Subscribe` message, which contains the full list of topics we're subscribed to
+            let message = new_serialized_message!($message_type, $data);
+
+            // For each recipient, send to the destined position in the queue
+            send_or_remove_many!(
+                $recipients,
+                $lookup,
+                message,
+                Position::$position
+            );
+        }
+    }};
+}
+
+impl<
+        BrokerSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        BrokerProtocolType: Protocol,
+        UserSignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
+        UserProtocolType: Protocol,
+    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+where
+    UserSignatureScheme::VerificationKey: Serializable,
+    BrokerSignatureScheme::Signature: Serializable,
+    BrokerSignatureScheme::VerificationKey: Serializable,
+    BrokerSignatureScheme::SigningKey: Serializable,
+{
+    pub async fn broker_recv_loop(
+        self: &Arc<Self>,
+        connection_id: DefaultKey,
+        mut receiver: BrokerProtocolType::Receiver,
+    ) -> Result<()> {
+        while let Ok(message) = receiver.recv_message().await {
+            match message {
+                // If we receive a direct message from a broker, we want to send it to all users with that key
+                Message::Direct(ref direct) => {
+                    let message: Arc<Vec<u8>> =
+                        Arc::from(message.serialize().expect("serialization failed"));
+
+                    send_direct!(self.user_connection_lookup, direct.recipient, message);
+                }
+
+                // If we receive a broadcast message from a broker, we want to send it to all interested users
+                Message::Broadcast(ref broadcast) => {
+                    let message: Arc<Vec<u8>> =
+                        Arc::from(message.serialize().expect("serialization failed"));
+
+                    send_broadcast!(self.user_connection_lookup, broadcast.topics, message);
+                }
+
+                // If we receive a subscribe message from a broker, we add them as "interested" locally.
+                Message::Subscribe(subscribe) => get_lock!(self.broker_connection_lookup, write)
+                    .subscribe_connection_id_to_topics(connection_id, subscribe),
+
+                // If we receive a subscribe message from a broker, we remove them as "interested" locally.
+                Message::Unsubscribe(unsubscribe) => {
+                    get_lock!(self.broker_connection_lookup, write)
+                        .unsubscribe_connection_id_from_topics(connection_id, unsubscribe);
+                }
+
+                // If a broker has told us they have some users connected, we update our map as such
+                Message::UsersConnected(users) => get_lock!(self.broker_connection_lookup, write)
+                    .subscribe_connection_id_to_keys(connection_id, users),
+
+                // If a broker has told us they have some users disconnected, we update our map as such
+                Message::UsersDisconnected(users) => {
+                    get_lock!(self.broker_connection_lookup, write)
+                        .unsubscribe_connection_id_from_keys(connection_id, users);
+                }
+
+                // Do nothing if we receive an unexpected message
+                _ => {}
+            }
+        }
+
+        Err(Error::Connection("connection closed".to_string()))
+    }
+
+    pub async fn user_recv_loop(
+        self: &Arc<Self>,
+        connection_id: DefaultKey,
+        mut receiver: UserProtocolType::Receiver,
+    ) {
+        while let Ok(message) = receiver.recv_message().await {
+            match message {
+                // If we get a direct message from a user, send it to both users and brokers.
+                Message::Direct(ref direct) => {
+                    let message: Arc<Vec<u8>> =
+                        Arc::from(message.serialize().expect("serialization failed"));
+
+                    send_direct!(self.broker_connection_lookup, direct.recipient, message);
+                    send_direct!(self.user_connection_lookup, direct.recipient, message);
+                }
+
+                // If we get a broadcast message from a user, send it to both brokers and users.
+                Message::Broadcast(ref broadcast) => {
+                    let message: Arc<Vec<u8>> =
+                        Arc::from(message.serialize().expect("serialization failed"));
+
+                    send_broadcast!(self.broker_connection_lookup, broadcast.topics, message);
+                    send_broadcast!(self.user_connection_lookup, broadcast.topics, message);
+                }
+
+                // Subscribe messages from users will just update the state locally
+                Message::Subscribe(mut subscribe) => {
+                    subscribe.dedup();
+
+                    get_lock!(self.user_connection_lookup, write)
+                        .subscribe_connection_id_to_topics(connection_id, subscribe);
+                }
+
+                // Unsubscribe messages from users will just update the state locally
+                Message::Unsubscribe(mut unsubscribe) => {
+                    unsubscribe.dedup();
+
+                    get_lock!(self.user_connection_lookup, write)
+                        .unsubscribe_connection_id_from_topics(connection_id, unsubscribe);
+                }
+
+                _ => return,
+            }
+        }
+    }
+
+    pub async fn send_updates_to_brokers(
+        self: &Arc<Self>,
+        full: Vec<(DefaultKey, Arc<BatchedSender<BrokerProtocolType>>)>,
+        partial: Vec<(DefaultKey, Arc<BatchedSender<BrokerProtocolType>>)>,
+    ) -> Result<()> {
+        // When a broker connects, we have to send:
+        // 1. Our snapshot to the new broker (of what topics/users we're subscribed for)
+        // 2. A list of updates since that snapshot to all brokers.
+        // This is so we're all on the same page.
+        let topic_snapshot =
+            get_lock!(self.user_connection_lookup, write).get_topic_updates_since();
+
+        // Get the snapshot for which user keys we're responsible for
+        let key_snapshot = get_lock!(self.user_connection_lookup, write).get_key_updates_since();
+
+        // Send the full connected users to interested brokers first in the queue (so that it is the correct order)
+        // TODO: clean up this function
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            UsersConnected,
+            key_snapshot.snapshot,
+            &full,
+            Front
+        );
+
+        // Send the full topics list to interested brokers first in the queue (so that it is the correct order)
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            Subscribe,
+            topic_snapshot.snapshot,
+            &full,
+            Front
+        );
+
+        // Send the insertion updates for keys, if any
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            UsersConnected,
+            key_snapshot.insertions,
+            &partial,
+            Back
+        );
+
+        // Send the removal updates for keys, if any
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            UsersDisconnected,
+            key_snapshot.removals,
+            &partial,
+            Back
+        );
+
+        // Send the insertion updates for topics, if any
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            Subscribe,
+            topic_snapshot.insertions,
+            &partial,
+            Back
+        );
+
+        // Send the removal updates for topics, if any
+        send_update_to_brokers!(
+            self.broker_connection_lookup,
+            Unsubscribe,
+            topic_snapshot.removals,
+            &partial,
+            Back
+        );
+
+        Ok(())
     }
 }

@@ -4,9 +4,8 @@
 //!
 //! TODO: dynamic batch size and time
 
-use std::{collections::VecDeque, hash::Hash, marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 
-use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::{
     select, spawn,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -33,7 +32,7 @@ enum QueueMessage {
 /// This is coupled with a data message, where we denote the position in the queue we want
 /// our message to go to. This can be useful for implemtning monotonic writes or write-ahead
 /// logging.
-enum Position {
+pub enum Position {
     /// Add our message to the front of the batch
     Front,
     /// Add our message to the back of the batch
@@ -57,27 +56,8 @@ enum Control {
 pub struct BatchedSender<ProtocolType: Protocol> {
     /// The underlying channel that we receive messages over.
     channel: UnboundedSender<QueueMessage>,
-    /// A unique, randomly generated ID that we use to compare and hash against.
-    stable_id: u64,
     /// The `PhantomData` we need to use a generic protocol type.
     pd: PhantomData<ProtocolType>,
-}
-
-/// `PartialEq` here uses the randomly generated `stable_id`
-impl<ProtocolType: Protocol> PartialEq for BatchedSender<ProtocolType> {
-    fn eq(&self, other: &Self) -> bool {
-        self.stable_id == other.stable_id
-    }
-}
-
-/// Asserts that `PartialEq` == `Eq`
-impl<ProtocolType: Protocol> Eq for BatchedSender<ProtocolType> {}
-
-/// `Hash` here uses the randomly generated `stable_id`
-impl<ProtocolType: Protocol> Hash for BatchedSender<ProtocolType> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.stable_id.hash(state);
-    }
 }
 
 /// The underlying queue object that a `BatchedSender`'s task operates over.
@@ -145,32 +125,14 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
         Ok(())
     }
 
-    /// Queue a serialized message to the front of the queue. Can be useful in conjunction with
-    /// `.freeze()` or if we have an important message.
+    /// Queue a serialized message to the queue at the specified position.
     ///
     /// # Errors
     /// - If the send-side is closed.
-    pub fn queue_message_front(&self, message: Arc<Vec<u8>>) -> Result<()> {
+    pub fn queue_message(&self, message: Arc<Vec<u8>>, position: Position) -> Result<()> {
         // Send a data message
         bail!(
-            self.channel
-                .send(QueueMessage::Data(message, Position::Front)),
-            Connection,
-            "connection closed"
-        );
-
-        Ok(())
-    }
-
-    /// Queue a serialized message to the front of the queue.
-    ///
-    /// # Errors
-    /// - If the send-side is closed.
-    pub fn queue_message_back(&self, message: Arc<Vec<u8>>) -> Result<()> {
-        // Send a data message
-        bail!(
-            self.channel
-                .send(QueueMessage::Data(message, Position::Back)),
+            self.channel.send(QueueMessage::Data(message, position)),
             Connection,
             "connection closed"
         );
@@ -201,9 +163,8 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
         // but we don't have that luxury with the `async_compatibility_layer`
         spawn(Self::batch_loop(sender, receive_side, batch_params));
 
-        // Return a sender with a unique `stable_id`.
+        // Return the sender
         Self {
-            stable_id: StdRng::from_entropy().next_u64(),
             channel: send_side,
             pd: PhantomData,
         }
