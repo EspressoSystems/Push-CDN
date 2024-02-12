@@ -7,15 +7,13 @@
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-
 use proto::{
     connection::{
         auth::user::UserAuth,
         batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
     },
-    crypto::{KeyPair, Serializable},
+    crypto::{KeyPair, Scheme, Serializable},
     error::{Error, Result},
     message::{Message, Topic},
 };
@@ -27,24 +25,18 @@ use tracing::error;
 
 use crate::bail;
 
-/// `Retry` is a wrapper around a `Fallible` connection.
+/// `Retry` is a wrapper around a fallible connection.
 ///
-/// It employs synchronization around a `Fallible`, as well as retry logic.
+/// It employs synchronization as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Retry<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct Retry<SignatureScheme: Scheme, ProtocolType: Protocol> {
     pub inner: Arc<Inner<SignatureScheme, ProtocolType>>,
 }
 
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct Inner<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct Inner<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     endpoint: String,
@@ -73,10 +65,7 @@ pub struct Inner<
 }
 
 /// The configuration needed to construct a `Retry` connection.
-pub struct Config<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct Config<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
@@ -153,14 +142,10 @@ macro_rules! try_with_reconnect {
     }};
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > Retry<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> Retry<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
@@ -260,18 +245,14 @@ where
     }
 }
 
-async fn connect_and_authenticate<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
->(
+async fn connect_and_authenticate<SignatureScheme: Scheme, ProtocolType: Protocol>(
     marshal_endpoint: &str,
     keypair: &KeyPair<SignatureScheme>,
     subscribed_topics: HashSet<Topic>,
 ) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     // Make the connection to the marshal
     let mut connection = bail!(

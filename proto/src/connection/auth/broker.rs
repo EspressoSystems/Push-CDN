@@ -5,13 +5,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
 
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
-    crypto::{self, DeterministicRng, KeyPair, Serializable},
+    crypto::{self, DeterministicRng, KeyPair, Scheme, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
@@ -19,10 +18,7 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct BrokerAuth<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct BrokerAuth<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
     pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
@@ -67,14 +63,10 @@ macro_rules! verify_broker {
     };
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > BrokerAuth<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> BrokerAuth<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
@@ -151,10 +143,7 @@ where
         };
 
         // Return the verification key
-        Ok((
-            serialized_verification_key,
-            subscribed_topics_message,
-        ))
+        Ok((serialized_verification_key, subscribed_topics_message))
     }
 
     /// Authenticate with a broker (as a broker).

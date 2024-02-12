@@ -5,13 +5,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use tracing::error;
 
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
-    crypto::{self, Serializable},
+    crypto::{self, Scheme, Serializable},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
@@ -19,24 +18,18 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct MarshalAuth<SignatureScheme: Scheme, ProtocolType: Protocol>
+{
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
     pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > MarshalAuth<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> MarshalAuth<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
-{
+    SignatureScheme::Signature: Serializable,
+ {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message

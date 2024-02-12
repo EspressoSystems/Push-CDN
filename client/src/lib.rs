@@ -3,13 +3,11 @@
 
 mod retry;
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::protocols::Protocol,
-    crypto::{self, Serializable},
-    error::Error,
-    error::Result,
+    crypto::{self, Scheme, Serializable},
+    error::{Error, Result},
     message::{Broadcast, Direct, Message, Topic},
 };
 use retry::Retry;
@@ -17,25 +15,16 @@ use retry::Retry;
 /// `Client` is a light wrapper around a `Retry` connection that provides functions
 /// for common operations to and from a server. Mostly just used to make the API
 /// more ergonomic. Also keeps track of subscriptions.
-pub struct Client<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
->(Retry<SignatureScheme, ProtocolType>)
-where
-    SignatureScheme::Signature: Serializable,
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable;
+pub struct Client<SignatureScheme: Scheme, ProtocolType: Protocol>(
+    Retry<SignatureScheme, ProtocolType>,
+);
 
 pub type Config<SignatureScheme, ProtocolType> = retry::Config<SignatureScheme, ProtocolType>;
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > Client<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> Client<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     /// Creates a new `Retry` from a configuration.
     ///
