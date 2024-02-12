@@ -3,6 +3,7 @@
 use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
+use mockall::automock;
 
 use crate::{error::Result, message::Message};
 pub mod quic;
@@ -13,6 +14,7 @@ pub mod tcp;
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
+#[automock(type Sender=MockSender; type Receiver=MockReceiver; type Listener=MockListener<MockSender, MockReceiver>;)]
 #[async_trait]
 pub trait Protocol: Send + Sync + 'static {
     // TODO: make these generic over reader/writer
@@ -39,6 +41,7 @@ pub trait Protocol: Send + Sync + 'static {
     ) -> Result<Self::Listener>;
 }
 
+#[automock]
 #[async_trait]
 pub trait Sender {
     /// Send a message over the connection.
@@ -61,6 +64,7 @@ pub trait Sender {
     async fn finish(&mut self) -> Result<()>;
 }
 
+#[automock]
 #[async_trait]
 pub trait Receiver {
     /// Receives a single message over the stream and deserializes
@@ -79,8 +83,9 @@ pub trait Receiver {
     async fn recv_message_raw(&mut self) -> Result<Vec<u8>>;
 }
 
+#[automock]
 #[async_trait]
-pub trait Listener<Sender, Receiver> {
+pub trait Listener<Sender: Sync, Receiver: Sync> {
     /// Accept a connection from the local, bound socket.
     /// Returns a connection or an error if we encountered one.
     ///
