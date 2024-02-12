@@ -2,7 +2,7 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{marker::PhantomData, sync::Arc};
 
 use client::{Client, Config};
 use proto::{
@@ -14,7 +14,7 @@ use proto::{
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::{join, spawn, time::sleep};
+use tokio::{join, spawn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
