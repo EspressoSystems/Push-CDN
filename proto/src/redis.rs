@@ -32,7 +32,7 @@ impl Client {
     ///
     /// # Errors
     /// - If we couldn't parse the `Redis` endpoint
-    pub async fn new(endpoint: String, identifier: Option<BrokerIdentifier>) -> Result<Self> {
+    pub async fn new(endpoint: String, identity: Option<BrokerIdentifier>) -> Result<Self> {
         // Parse the `Redis` URL, creating a `redis-rs` client from it.
         let client = bail!(
             redis::Client::open(endpoint),
@@ -42,7 +42,7 @@ impl Client {
 
         // Use the supplied identifier or a blank one, if we don't need/want one.
         // We only "need" the identifier if we want to register with Redis
-        let identifier = identifier.map_or_else(
+        let identifier = identity.map_or_else(
             || BrokerIdentifier {
                 user_advertise_address: String::new(),
                 broker_advertise_address: String::new(),

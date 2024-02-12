@@ -45,7 +45,7 @@ where
         let Ok((verification_key, topics)) =
             BrokerAuth::<UserSignatureScheme, UserProtocolType>::verify_user(
                 &mut connection,
-                &self.identifier,
+                &self.identity,
                 &mut self.redis_client.clone(),
             )
             .await

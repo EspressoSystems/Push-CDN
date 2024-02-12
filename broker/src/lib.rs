@@ -57,7 +57,7 @@ struct Inner<
     UserProtocolType: Protocol,
 > {
     /// A broker identifier that we can use to establish uniqueness among brokers.
-    identifier: BrokerIdentifier,
+    identity: BrokerIdentifier,
 
     /// The (clonable) `Redis` client that we will use to maintain consistency between brokers and marshals
     redis_client: redis::Client,
@@ -66,6 +66,8 @@ struct Inner<
     /// against the stake table.
     keypair: KeyPair<BrokerSignatureScheme>,
 
+    /// The set of all broker identities we see. Mapped against the brokers we see in `Redis`
+    /// so that we don't connect multiple times.
     connected_broker_identities: RwLock<HashSet<BrokerIdentifier>>,
 
     /// A map of interests to their possible broker connections. We use this to facilitate
@@ -137,14 +139,14 @@ where
         } = config;
 
         // Create a unique broker identifier
-        let identifier = BrokerIdentifier {
+        let identity = BrokerIdentifier {
             user_advertise_address,
             broker_advertise_address,
         };
 
         // Create the `Redis` client we will use to maintain consistency
         let redis_client = bail!(
-            redis::Client::new(redis_endpoint, Some(identifier.clone()),).await,
+            redis::Client::new(redis_endpoint, Some(identity.clone()),).await,
             Parse,
             "failed to create Redis client"
         );
@@ -181,7 +183,7 @@ where
         Ok(Self {
             inner: Arc::from(Inner {
                 redis_client,
-                identifier,
+                identity,
                 keypair,
                 connected_broker_identities: RwLock::default(),
                 broker_connection_lookup: RwLock::default(),

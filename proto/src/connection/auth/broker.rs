@@ -52,7 +52,7 @@ macro_rules! verify_broker {
         // Verify the other broker's authentication
         if let Err(err) = BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::verify_broker(
             &mut $connection,
-            &$inner.identifier,
+            &$inner.identity,
             &$inner.keypair.verification_key,
         )
         .await
