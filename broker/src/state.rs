@@ -99,6 +99,7 @@ impl<ProtocolType: Protocol> Default for ConnectionLookup<ProtocolType> {
 
 impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     /// Returns an empty `ConnectionLookup`
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
