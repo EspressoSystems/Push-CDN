@@ -4,19 +4,18 @@
 // TODO: split out this file into multiple files.
 // TODO: logging
 
+mod handlers;
 mod map;
 mod state;
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-use slotmap::Key;
 // TODO: figure out if we should use Tokio's here
 use proto::{
-    authenticate_with_broker, bail,
+    bail,
     connection::{
-        auth::broker::BrokerAuth,
-        batch::{BatchedSender, Position},
+        batch::Position,
         protocols::{Listener, Protocol, Receiver},
     },
     crypto::{KeyPair, Serializable},
@@ -24,11 +23,10 @@ use proto::{
     message::Message,
     parse_socket_address,
     redis::{self, BrokerIdentifier},
-    verify_broker,
 };
 use state::{ConnectionId, ConnectionLookup, Sender};
 use tokio::{select, spawn, sync::RwLock, time::sleep};
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 /// The broker's configuration. We need this when we create a new one.
 /// TODO: clean up these generics. could be a generic type that implements both
@@ -138,6 +136,7 @@ macro_rules! send_broadcast {
 }
 
 /// This is a macro to acquire an async lock, which helps readability.
+#[macro_export]
 macro_rules! get_lock {
     ($lock :expr, $type: expr) => {
         paste::item! {
@@ -274,145 +273,6 @@ where
         })
     }
 
-    /// This function is the callback for handling a broker (private) connection.
-    async fn handle_broker_connection(
-        inner: Arc<
-            Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
-        >,
-        mut connection: (BrokerProtocolType::Sender, BrokerProtocolType::Receiver),
-        is_outbound: bool,
-    ) {
-        // Depending on which way the direction came in, we will want to authenticate with a different
-        // flow.
-        let broker_address = if is_outbound {
-            // If we reached out to the other broker first, authenticate first.
-            let broker_address = authenticate_with_broker!(connection, inner);
-            verify_broker!(connection, inner);
-            broker_address
-        } else {
-            // If the other broker reached out to us first, authenticate second.
-            verify_broker!(connection, inner);
-            authenticate_with_broker!(connection, inner)
-        };
-
-        // Create new batch sender
-        let (sender, receiver) = connection;
-        // TODO: parameterize max interval and max size
-        let sender = Arc::from(BatchedSender::<BrokerProtocolType>::from(
-            sender,
-            Duration::from_millis(50),
-            1500,
-        ));
-
-        // Add to our connected broker identities so we don't try to reconnect
-        get_lock!(inner.connected_broker_identities, write).insert(broker_address.clone());
-
-        // Freeze the sender before adding it to our connections so we don't receive messages out of order.
-        // This is to enforce message ordering
-        let _ = sender.freeze();
-
-        // Add our connection to the list of connections
-        let connection_id = inner
-            .broker_connection_lookup
-            .write()
-            .await
-            .add_connection(sender.clone());
-
-        // Get all brokers (excluding ourselves)
-        let all_brokers = get_lock!(inner.broker_connection_lookup, read).get_all_connections();
-
-        // Send all relevant updates to brokers, flushing our updates. Send the partial updates
-        // to everyone, and the full to the new broker.
-        let _ = inner
-            .send_updates_to_brokers(all_brokers, vec![(connection_id, sender.clone())])
-            .await;
-
-        // Unfreeze the sender, flushing the updates
-        let _ = sender.unfreeze();
-
-        info!("connected to broker {}", broker_address);
-
-        // If we error, come back to the callback so we can remove the connection from the list.
-        if let Err(err) = inner.broker_recv_loop(connection_id, receiver).await {
-            error!("broker disconnected with error: {err}");
-        };
-
-        info!("disconnected from broker {}", broker_address);
-
-        // Remove from the connected broker identities so that we may
-        // try to reconnect inthe future.
-        get_lock!(inner.connected_broker_identities, write).remove(&broker_address);
-
-        // Remove from our connections so that we don't send any more data
-        // their way.
-        get_lock!(inner.broker_connection_lookup, write).remove_connection(connection_id);
-    }
-
-    /// This function handles a user (public) connection.
-    async fn handle_user_connection(
-        inner: Arc<
-            Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
-        >,
-        mut connection: (UserProtocolType::Sender, UserProtocolType::Receiver),
-    ) {
-        // Verify (authenticate) the connection
-        let Ok((verification_key, topics)) =
-            BrokerAuth::<UserSignatureScheme, UserProtocolType>::verify_user(
-                &mut connection,
-                &inner.identifier,
-                &mut inner.redis_client.clone(),
-            )
-            .await
-        else {
-            return;
-        };
-
-        // Create new batch sender
-        let (sender, receiver) = connection;
-        let sender = Arc::new(BatchedSender::<UserProtocolType>::from(
-            sender,
-            Duration::from_millis(50),
-            1500,
-        ));
-
-        // Add the connection to the list of connections
-        let connection_id = get_lock!(inner.user_connection_lookup, write).add_connection(sender);
-
-        // Add the user for their topics
-        get_lock!(inner.user_connection_lookup, write)
-            .subscribe_connection_id_to_topics(connection_id, topics);
-
-        // Add the user for their key
-        get_lock!(inner.user_connection_lookup, write)
-            .subscribe_connection_id_to_keys(connection_id, vec![verification_key]);
-
-        info!("received connection from user {:?}", connection_id.data());
-
-        // If we have a small amount of users, send the updates immediately
-        if get_lock!(inner.user_connection_lookup, read).get_connection_count() < 50 {
-            // TODO NEXT: Move this into just asking the task nicely to do it
-            let _ = inner
-                .send_updates_to_brokers(
-                    vec![],
-                    get_lock!(inner.broker_connection_lookup, read)
-                        .get_all_connections()
-                        .clone(),
-                )
-                .await;
-        }
-
-        // This runs the main loop for receiving information from the user
-        let () = inner.user_recv_loop(connection_id, receiver).await;
-
-        info!("user {:?} disconnected", connection_id.data());
-        // Once the main loop ends, we remove the connection
-        inner
-            .user_connection_lookup
-            .write()
-            .await
-            .remove_connection(connection_id);
-    }
-
     /// The main loop for a broker.
     /// Consumes self.
     ///
@@ -453,7 +313,7 @@ where
 
                 // Spawn a task to handle the [user/public] connection
                 let inner = inner.clone();
-                spawn(Self::handle_user_connection(inner, connection));
+                spawn(handlers::user::handle_connection(inner, connection));
             }
         });
 
@@ -477,7 +337,9 @@ where
 
                 // Spawn a task to handle the [broker/private] connection
                 let inner = inner.clone();
-                spawn(Self::handle_broker_connection(inner, connection, false));
+                spawn(handlers::broker::handle_connection(
+                    inner, connection, false,
+                ));
             }
         });
 
@@ -576,7 +438,7 @@ where
                                 };
 
                             // Handle the broker connection
-                            Self::handle_broker_connection(inner, connection, true).await;
+                            handlers::broker::handle_connection(inner, connection, true).await;
                         });
                     }
                 }
@@ -730,7 +592,7 @@ where
 
     /// This function lets us send updates to brokers on demand. We need this to ensure consistency between brokers
     /// (e.g. which brokers have which users connected). We send these updates out periodically, but also
-    /// on every user join if the number of connected users is sufficiently small. 
+    /// on every user join if the number of connected users is sufficiently small.
     pub async fn send_updates_to_brokers(
         self: &Arc<Self>,
         full: Vec<(ConnectionId, Sender<BrokerProtocolType>)>,
