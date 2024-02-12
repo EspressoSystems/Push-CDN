@@ -2,143 +2,73 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, time::Duration};
 
+use clap::Parser;
 use client::{Client, Config};
 use proto::{
     connection::protocols::quic::Quic,
-    crypto::{self, KeyPair},
+    crypto::{self, DeterministicRng, KeyPair},
     error::Result,
-    message::{Message, Topic},
 };
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
-use rand::{rngs::StdRng, SeedableRng};
-use tokio::{join, spawn};
+use tokio::time::sleep;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+/// The main component of the push CDN.
+struct Args {
+    /// The node's identifier (for deterministically creating keys)
+    #[arg(short, long)]
+    id: u64,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Get command-line args
+    let args = Args::parse();
+
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
     // Generate two random keypairs, one for each client
-    let (signing_key_1, verification_key_1) =
-        crypto::generate_random_keypair::<BLS, StdRng>(StdRng::from_entropy())?;
+    let (signing_key, verification_key) =
+        crypto::generate_random_keypair::<BLS, DeterministicRng>(DeterministicRng(args.id))?;
 
-    let (signing_key_2, verification_key_2) =
-        crypto::generate_random_keypair::<BLS, StdRng>(StdRng::from_entropy())?;
+    let client = Client::<BLS, Quic>::new(Config {
+        endpoint: "127.0.0.1:8082".to_string(),
+        keypair: KeyPair {
+            verification_key,
+            signing_key,
+        },
+        subscribed_topics: vec![],
+        pd: PhantomData,
+    })
+    .await?;
 
-    // Create our first client
-    // TODO: constructors for config
-    let client1 = Arc::new(
-        // We are running with the `BLS` key signing algorithm
-        // and `Quic` as a networking protocol.
-        Client::<BLS, Quic>::new(Config {
-            // Our marshal address, locally running on port 8082
-            endpoint: "127.0.0.1:8082".to_string(),
-            keypair: KeyPair {
-                signing_key: signing_key_1,
-                verification_key: verification_key_1,
-            },
+    // We want the first node to send to the second
+    if args.id != 0 {
+        // Generate two random keypairs, one for each client
+        let (_, other_verification_key) =
+            crypto::generate_random_keypair::<BLS, DeterministicRng>(DeterministicRng(0))?;
 
-            // The topics we want to subscribe to initially
-            subscribed_topics: vec![Topic::DA, Topic::Global],
+        loop {
+            // Create a big 512MB message
+            let m = vec![0u8; 256000000];
 
-            // TODO: remove this via means of constructor
-            pd: PhantomData,
-        })
-        .await?,
-    );
+            if let Err(err) = client.send_direct_message(&other_verification_key, m) {
+                tracing::error!("failed to send message: {}", err);
+            };
 
-    // Create our second client
-    let client2 = Arc::new(
-        Client::<BLS, Quic>::new(Config {
-            // This is the same marshal, but a possibly different broker.
-            endpoint: "127.0.0.1:8082".to_string(),
-            keypair: KeyPair {
-                signing_key: signing_key_2,
-                verification_key: verification_key_2,
-            },
-            subscribed_topics: vec![Topic::DA, Topic::Global],
-            pd: PhantomData,
-        })
-        .await?,
-    );
-    
-    // Run our first client, which sends a message to our second.
-    let client1 = spawn(async move {
-        // Clone our client
-        let client1_ = client1.clone();
-
-        // The sending side
-        let jh1 = spawn(async move {
-            // Send a message to client 2
-            let message = "hello client2";
-            client1_
-                .send_direct_message(&verification_key_2, b"hello client2".to_vec())
-                .expect("failed to send message");
-
-            println!("client 1 sent \"{message}\"");
-        });
-
-        // The receiving side
-        let jh2 = spawn(async move {
-            let message = client1
-                .receive_message()
-                .await
-                .expect("failed to receive message");
-
-            if let Message::Direct(direct) = message {
-                println!(
-                    "client 1 received {}",
-                    String::from_utf8(direct.message).expect("failed to deserialize message")
-                );
-            } else {
-                panic!("received wrong message type");
-            }
-        });
-
-        let _ = tokio::join!(jh1, jh2);
-    });
-
-    // Run our second client, which sends a message to our first.
-    let client2 = spawn(async move {
-        // Clone our client
-        let client2_ = client2.clone();
-
-        // The sending side
-        let jh1 = spawn(async move {
-            // Send a message to client 2
-            let message = "hello client1";
-            client2_
-                .send_direct_message(&verification_key_1, b"hello client1".to_vec())
-                .expect("failed to send message");
-
-            println!("client 2 sent \"{message}\"");
-        });
-
-        // The receiving side
-        let jh2 = spawn(async move {
-            let message = client2
-                .receive_message()
-                .await
-                .expect("failed to receive message");
-
-            if let Message::Direct(direct) = message {
-                println!(
-                    "client 2 received {}",
-                    String::from_utf8(direct.message).expect("failed to deserialize message")
-                );
-            } else {
-                panic!("received wrong message type")
-            }
-        });
-
-        let _ = tokio::join!(jh1, jh2);
-    });
-
-    // Wait for both to finish
-    let _ = join!(client1, client2);
-
-    Ok(())
+            sleep(Duration::from_secs(1)).await;
+        }
+    } else {
+        loop {
+            if let Err(err) = client.receive_message().await {
+                tracing::error!("failed to receive message: {}", err);
+                continue;
+            };
+        }
+    }
 }

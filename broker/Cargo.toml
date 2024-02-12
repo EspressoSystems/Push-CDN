@@ -5,6 +5,9 @@ edition = "2021"
 
 description = "Defines the broker server, which is responsible for routing messages from clients"
 
+[profile.release]
+debug = true
+
 [dependencies]
 jf-primitives.workspace = true
 proto.path = "../proto"
@@ -17,4 +20,4 @@ local-ip-address = "0.5.7"
 slotmap = "1.0.7"
 delegate = "0.12.0"
 async-trait.workspace = true
-paste.workspace = true
+paste = "1.0.14"

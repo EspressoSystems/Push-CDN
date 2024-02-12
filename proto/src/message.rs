@@ -14,6 +14,7 @@ use crate::{
         self, authenticate_response, authenticate_with_key, authenticate_with_permit, broadcast,
         direct,
     },
+    MAX_MESSAGE_SIZE,
 };
 
 /// This is a helper macro for serializing `CapnProto` values.
@@ -236,7 +237,10 @@ impl Message {
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
         // Create reader
         let reader = bail!(
-            serialize::read_message(bytes, ReaderOptions::new()),
+            serialize::read_message(
+                bytes,
+                *ReaderOptions::new().traversal_limit_in_words(Some(MAX_MESSAGE_SIZE as usize))
+            ),
             Deserialize,
             "failed to create reader"
         );
