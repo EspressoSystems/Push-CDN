@@ -377,6 +377,19 @@ where
 
         info!("received connection from user {:?}", connection_id.data());
 
+        // If we have a small amount of users, send the updates immediately
+        if get_lock!(inner.user_connection_lookup, read).get_connection_count() < 50 {
+            // TODO NEXT: Move this into just asking the task nicely to do it
+            let _ = inner
+                .send_updates_to_brokers(
+                    vec![],
+                    get_lock!(inner.broker_connection_lookup, read)
+                        .get_all_connections()
+                        .clone(),
+                )
+                .await;
+        }
+
         // This runs the main loop for receiving information from the user
         let () = inner.user_recv_loop(connection_id, receiver).await;
 

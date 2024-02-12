@@ -64,10 +64,7 @@ async fn main() -> Result<()> {
         })
         .await?,
     );
-
-    // Wait 5 seconds so broker has time to propagate info about us
-    sleep(Duration::from_secs(5)).await;
-
+    
     // Run our first client, which sends a message to our second.
     let client1 = spawn(async move {
         // Clone our client
