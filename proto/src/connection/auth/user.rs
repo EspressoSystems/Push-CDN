@@ -6,34 +6,25 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
-
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
-    crypto::{self, DeterministicRng, KeyPair, Serializable},
+    crypto::{self, DeterministicRng, KeyPair, Scheme, Serializable},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> {
+pub struct UserAuth<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
     pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > UserAuth<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> UserAuth<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key

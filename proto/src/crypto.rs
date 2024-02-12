@@ -7,14 +7,16 @@ use crate::{
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
+use jf_primitives::signatures::{
+    bls_over_bn254::BLSOverBN254CurveSignatureScheme, SignatureScheme as JfSignatureScheme,
+};
 use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
 use rustls::ClientConfig;
 use std::{hash::Hash, sync::Arc};
 
 /// We encapsulate keys here to help readability.
-pub struct KeyPair<SignatureScheme: JfSignatureScheme> {
+pub struct KeyPair<SignatureScheme: Scheme> {
     /// The underlying (public) verification key, used to authenticate with the server.
     pub verification_key: SignatureScheme::VerificationKey,
 
@@ -23,9 +25,12 @@ pub struct KeyPair<SignatureScheme: JfSignatureScheme> {
     pub signing_key: SignatureScheme::SigningKey,
 }
 
-/// Helps clean up some trait boundaries
+/// Helps clean up some trait bounds
 pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash {}
 impl<T: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash> Serializable for T {}
+
+pub trait Scheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8> {}
+impl Scheme for BLSOverBN254CurveSignatureScheme {}
 
 /// The oxymoron function. Used mostly with crypto key generation to generate
 /// "random" values that are actually deterministic based on the input.
@@ -101,15 +106,15 @@ where
 ///
 /// # Errors
 /// Errors only if the transitive key generation fails.
-pub fn generate_random_keypair<
-    Scheme: JfSignatureScheme<PublicParameter = ()>,
-    Rng: CryptoRng + RngCore,
->(
+pub fn generate_random_keypair<SignatureScheme: Scheme, Rng: CryptoRng + RngCore>(
     mut prng: Rng,
-) -> Result<(Scheme::SigningKey, Scheme::VerificationKey)> {
+) -> Result<(
+    SignatureScheme::SigningKey,
+    SignatureScheme::VerificationKey,
+)> {
     // Generate a key and return it
     Ok(bail!(
-        Scheme::key_gen(&(), &mut prng),
+        SignatureScheme::key_gen(&(), &mut prng),
         Crypto,
         "failed to generate keypair"
     ))
@@ -123,15 +128,11 @@ pub struct SkipServerVerification;
 /// Here we implement some helper functions that let us create
 /// a client configuration from the verification configuration.
 impl SkipServerVerification {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self)
-    }
-
     pub fn new_config() -> Arc<ClientConfig> {
         Arc::new(
             rustls::ClientConfig::builder()
                 .with_safe_defaults()
-                .with_custom_certificate_verifier(Self::new())
+                .with_custom_certificate_verifier(Arc::new(Self {}))
                 .with_no_client_auth(),
         )
     }

@@ -432,6 +432,7 @@ name = "broker"
 version = "0.1.0"
 dependencies = [
  "ark-serialize",
+ "async-trait",
  "clap",
  "delegate",
  "jf-primitives",

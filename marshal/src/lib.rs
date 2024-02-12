@@ -5,14 +5,13 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use jf_primitives::signatures::SignatureScheme as JfSignatureScheme;
 use proto::{
     bail,
     connection::{
         auth::marshal::MarshalAuth,
         protocols::{Listener, Protocol, Sender},
     },
-    crypto::Serializable,
+    crypto::{Scheme, Serializable},
     error::{Error, Result},
     redis,
 };
@@ -22,14 +21,7 @@ use tracing::warn;
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<
-    SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-    ProtocolType: Protocol,
-> where
-    SignatureScheme::Signature: Serializable,
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
-{
+pub struct Marshal<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// The underlying connection listener. Used to accept new connections.
     listener: Arc<ProtocolType::Listener>,
 
@@ -41,14 +33,10 @@ pub struct Marshal<
     pd: PhantomData<SignatureScheme>,
 }
 
-impl<
-        SignatureScheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8>,
-        ProtocolType: Protocol,
-    > Marshal<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme, ProtocolType: Protocol> Marshal<SignatureScheme, ProtocolType>
 where
-    SignatureScheme::Signature: Serializable,
     SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::SigningKey: Serializable,
+    SignatureScheme::Signature: Serializable,
 {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
