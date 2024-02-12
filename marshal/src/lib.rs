@@ -5,12 +5,11 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
+mod handlers;
+
 use proto::{
     bail,
-    connection::{
-        auth::marshal::MarshalAuth,
-        protocols::{Listener, Protocol, Sender},
-    },
+    connection::protocols::{Listener, Protocol},
     crypto::{Scheme, Serializable},
     error::{Error, Result},
     redis,
@@ -72,22 +71,6 @@ where
             redis_client,
             pd: PhantomData,
         })
-    }
-
-    /// Handles a user's connection, including authentication.
-    pub async fn handle_connection(
-        mut connection: (ProtocolType::Sender, ProtocolType::Receiver),
-        mut redis_client: redis::Client,
-    ) {
-        // Verify (authenticate) the connection
-        let _ = MarshalAuth::<SignatureScheme, ProtocolType>::verify_user(
-            &mut connection,
-            &mut redis_client,
-        )
-        .await;
-
-        // We don't care about this, just drop the connection immediately.
-        let _ = connection.0.finish().await;
     }
 
     /// The main loop for a marshal.
