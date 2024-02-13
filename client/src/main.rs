@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
         loop {
             // Create a big 512MB message
-            let m = vec![0u8; 256000000];
+            let m = vec![0u8; 256_000_000];
 
             if let Err(err) = client.send_direct_message(&other_verification_key, m) {
                 tracing::error!("failed to send message: {}", err);

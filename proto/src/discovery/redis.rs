@@ -7,35 +7,38 @@
 
 use std::{collections::HashSet, time::Duration};
 
+use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use redis::aio::ConnectionManager;
-use std::result::Result as StdResult;
 
 use crate::{
     bail,
     error::{Error, Result},
 };
 
+use super::{BrokerIdentifier, DiscoveryClient};
+
 /// This struct is a light wrapper around a managed `Redis` connection which encpasulates
 /// an operator identifier for common operations
 #[derive(Clone)]
-pub struct Client {
+pub struct Redis {
     /// The underlying `Redis` connection. Is managed, so we don't have to worry about reconnections
     underlying_connection: ConnectionManager,
     /// Our operator identifier (in practice, will be something like a concat of advertise addresses)
     identifier: BrokerIdentifier,
 }
 
-impl Client {
+#[async_trait]
+impl DiscoveryClient for Redis {
     /// Create a new `Client` from the `Redis` endpoint and optional identifier. This is clonable, and
     /// we don't have to worry about reconnections anywhere.
     ///
     /// # Errors
     /// - If we couldn't parse the `Redis` endpoint
-    pub async fn new(endpoint: String, identity: Option<BrokerIdentifier>) -> Result<Self> {
+    async fn new(path: String, identity: Option<BrokerIdentifier>) -> Result<Self> {
         // Parse the `Redis` URL, creating a `redis-rs` client from it.
         let client = bail!(
-            redis::Client::open(endpoint),
+            redis::Client::open(path),
             Connection,
             "failed to parse `Redis` URL"
         );
@@ -69,7 +72,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn perform_heartbeat(
+    async fn perform_heartbeat(
         &mut self,
         num_connections: u64,
         heartbeat_expiry: Duration,
@@ -144,7 +147,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
+    async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
         // Get all registered brokers
         let brokers: HashSet<String> = bail!(
             redis::cmd("SMEMBERS")
@@ -201,7 +204,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
+    async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
         // Get all registered brokers
         let mut brokers: HashSet<String> = bail!(
             redis::cmd("SMEMBERS")
@@ -230,7 +233,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn issue_permit(
+    async fn issue_permit(
         &mut self,
         for_broker: &BrokerIdentifier,
         expiry: Duration,
@@ -261,7 +264,7 @@ impl Client {
     ///
     /// # Errors
     /// - If the `Redis` connection fails
-    pub async fn validate_permit(
+    async fn validate_permit(
         &mut self,
         broker: &BrokerIdentifier,
         permit: u64,
@@ -275,53 +278,5 @@ impl Client {
             Connection,
             "failed to connect to Redis"
         ))
-    }
-}
-
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
-pub struct BrokerIdentifier {
-    /// The address that a broker advertises to publicly (to users)
-    pub user_advertise_address: String,
-    /// The address that a broker advertises to privately (to other brokers)
-    pub broker_advertise_address: String,
-}
-
-/// We need this to be able to convert a `String` to a broker identifier.
-/// Allows us to be consistent about what we store in Redis.
-impl TryFrom<String> for BrokerIdentifier {
-    type Error = Error;
-    fn try_from(value: String) -> StdResult<Self, Self::Error> {
-        // Split the string
-        let mut split = value.split('/');
-
-        // Create a new `Self` from the split string
-        Ok(Self {
-            user_advertise_address: split
-                .next()
-                .ok_or_else(|| {
-                    Error::Parse("failed to parse public advertise address from string".to_string())
-                })?
-                .to_string(),
-            broker_advertise_address: split
-                .next()
-                .ok_or_else(|| {
-                    Error::Parse(
-                        "failed to parse private advertise address from string".to_string(),
-                    )
-                })?
-                .to_string(),
-        })
-    }
-}
-
-/// We need this to convert in the opposite direction: to create a `String`
-/// from a `BrokerIdentifier` for `Redis` purposes.
-impl std::fmt::Display for BrokerIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}/{}",
-            self.user_advertise_address, self.broker_advertise_address
-        )
     }
 }

@@ -37,7 +37,7 @@ impl Protocol for Tcp {
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: String) -> Result<(Self::Sender, Self::Receiver)>
+    async fn connect(remote_endpoint: &str) -> Result<(Self::Sender, Self::Receiver)>
     where
         Self: Sized,
     {

@@ -12,8 +12,13 @@ use jf_primitives::signatures::{
 };
 use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
+use std::hash::Hash;
+
+// TODO: have `SkipServerVerify` as a separate module
+#[cfg(feature = "insecure")]
 use rustls::ClientConfig;
-use std::{hash::Hash, sync::Arc};
+#[cfg(feature = "insecure")]
+use std::sync::Arc;
 
 /// We encapsulate keys here to help readability.
 pub struct KeyPair<SignatureScheme: Scheme> {
@@ -123,10 +128,12 @@ pub fn generate_random_keypair<SignatureScheme: Scheme, Rng: CryptoRng + RngCore
 /// This lets us, while using `rustls` skip server verification
 /// for when we test locally. This way we don't require a self-signed
 /// certificate.
+#[cfg(feature = "insecure")]
 pub struct SkipServerVerification;
 
 /// Here we implement some helper functions that let us create
 /// a client configuration from the verification configuration.
+#[cfg(feature = "insecure")]
 impl SkipServerVerification {
     pub fn new_config() -> Arc<ClientConfig> {
         Arc::new(
@@ -140,6 +147,7 @@ impl SkipServerVerification {
 
 /// This is the implementation for `ServerCertVerifier` that `rustls` requires us
 /// to implement for server cert verification purposes.
+#[cfg(feature = "insecure")]
 impl rustls::client::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,

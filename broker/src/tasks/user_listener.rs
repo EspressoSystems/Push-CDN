@@ -5,18 +5,15 @@ use std::sync::Arc;
 use proto::{
     connection::protocols::{Listener, Protocol},
     crypto::{Scheme, Serializable},
+    UserProtocol,
 };
 use tokio::spawn;
 use tracing::warn;
 
 use crate::Inner;
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -24,7 +21,10 @@ where
     UserSignatureScheme::Signature: Serializable,
 {
     // We run the user listener task in a loop, accepting and handling new connections as needed.
-    pub async fn run_user_listener_task(self: Arc<Self>, listener: UserProtocolType::Listener) {
+    pub async fn run_user_listener_task(
+        self: Arc<Self>,
+        listener: <UserProtocol as Protocol>::Listener,
+    ) {
         loop {
             // Accept a connection. If we fail, print the error and keep going.
             //

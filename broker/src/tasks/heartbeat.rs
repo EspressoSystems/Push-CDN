@@ -1,38 +1,36 @@
-//! The heartbeat task periodically posts our state to Redis.
+//! The heartbeat task periodically posts our state to either Redis or an embeddable file DB.
 
 use std::{sync::Arc, time::Duration};
 
 use proto::{
     connection::protocols::Protocol,
     crypto::{Scheme, Serializable},
+    discovery::DiscoveryClient,
+    BrokerProtocol,
 };
 use tokio::{spawn, time::sleep};
 use tracing::error;
 
 use crate::{get_lock, Inner};
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
     UserSignatureScheme::VerificationKey: Serializable,
     UserSignatureScheme::Signature: Serializable,
 {
-    /// This task deals with setting the number of our connected users in `Redis`. It allows
+    /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
     /// the marshal to correctly choose the broker with the least amount of connections.
     pub async fn run_heartbeat_task(self: Arc<Self>) {
-        // Clone the `Redis` client, which needs to be mutable
-        let mut redis_client = self.redis_client.clone();
+        // Clone the `discovery` client, which needs to be mutable
+        let mut discovery_client = self.discovery_client.clone();
 
         // Run this forever, unless we run into a panic (e.g. the "as" conversion.)
         loop {
-            // Register with `Redis` every n seconds, updating our number of connected users
-            if let Err(err) = redis_client
+            // Register with the discovery service every n seconds, updating our number of connected users
+            if let Err(err) = discovery_client
                 .perform_heartbeat(
                     get_lock!(self.user_connection_lookup, read).get_connection_count() as u64,
                     Duration::from_secs(60),
@@ -44,7 +42,7 @@ where
             }
 
             // Check for new brokers, spawning tasks to connect to them if necessary
-            match redis_client.get_other_brokers().await {
+            match discovery_client.get_other_brokers().await {
                 Ok(brokers) => {
                     // Calculate the difference, spawn tasks to connect to them
                     for broker in brokers
@@ -61,7 +59,9 @@ where
                         spawn(async move {
                             // Connect to the broker
                             let connection =
-                                match BrokerProtocolType::connect(to_connect_address).await {
+                                match <BrokerProtocol as Protocol>::connect(&to_connect_address)
+                                    .await
+                                {
                                     Ok(connection) => connection,
                                     Err(err) => {
                                         error!("failed to connect to broker: {err}");

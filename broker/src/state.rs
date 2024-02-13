@@ -105,7 +105,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     }
 
     /// Get the number of connections currently in the map. We use this to
-    /// report to `Redis`, so the marshal knows who has the least connections.
+    /// report to our discovery client, so the marshal knows who has the least connections.
     pub fn get_connection_count(&self) -> usize {
         self.connections.len()
     }

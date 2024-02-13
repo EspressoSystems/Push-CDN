@@ -21,7 +21,7 @@ use tokio::{
     sync::{Mutex, RwLock, Semaphore},
     time::sleep,
 };
-use tracing::error;
+use tracing::{error, info};
 
 use crate::bail;
 
@@ -256,7 +256,7 @@ where
 {
     // Make the connection to the marshal
     let mut connection = bail!(
-        ProtocolType::connect(marshal_endpoint.to_owned()).await,
+        ProtocolType::connect(marshal_endpoint).await,
         Connection,
         "failed to connect to endpoint"
     );
@@ -274,7 +274,7 @@ where
 
     // Make the connection to the broker
     let mut connection = bail!(
-        ProtocolType::connect(broker_address).await,
+        ProtocolType::connect(&broker_address).await,
         Connection,
         "failed to connect to broker"
     );
@@ -290,6 +290,8 @@ where
         Authentication,
         "failed to authenticate to broker"
     );
+
+    info!("connected to broker {}", broker_address);
 
     Ok(connection)
 }

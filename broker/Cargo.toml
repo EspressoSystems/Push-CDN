@@ -8,9 +8,14 @@ description = "Defines the broker server, which is responsible for routing messa
 [profile.release]
 debug = true
 
+[features]
+local_discovery = ["proto/local_discovery"]
+insecure = ["proto/insecure"]
+default = ["local_discovery", "insecure"]
+
 [dependencies]
 jf-primitives.workspace = true
-proto.path = "../proto"
+proto = { path = "../proto", default-features = false }
 tokio.workspace = true
 tracing.workspace = true
 ark-serialize.workspace = true

@@ -239,7 +239,12 @@ impl Message {
         let reader = bail!(
             serialize::read_message(
                 bytes,
-                *ReaderOptions::new().traversal_limit_in_words(Some(MAX_MESSAGE_SIZE as usize))
+                // TODO IMP: move this reader
+                *ReaderOptions::new().traversal_limit_in_words(Some(bail!(
+                    usize::try_from(MAX_MESSAGE_SIZE),
+                    Parse,
+                    "maximum message size too high"
+                )))
             ),
             Deserialize,
             "failed to create reader"

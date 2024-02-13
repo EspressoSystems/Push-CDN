@@ -11,17 +11,18 @@ use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, DeterministicRng, KeyPair, Scheme, Serializable},
+    discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
-    redis::{self, BrokerIdentifier},
+    BrokerProtocol, DiscoveryClientType, UserProtocol,
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct BrokerAuth<SignatureScheme: Scheme, ProtocolType: Protocol> {
+pub struct BrokerAuth<SignatureScheme: Scheme> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
-    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+    pub pd: PhantomData<SignatureScheme>,
 }
 
 /// We  use this macro upstream to conditionally order broker authentication flows
@@ -30,7 +31,7 @@ pub struct BrokerAuth<SignatureScheme: Scheme, ProtocolType: Protocol> {
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
         // Authenticate with the other broker, returning their reconnect address
-        match BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::authenticate_with_broker(
+        match BrokerAuth::<BrokerSignatureScheme>::authenticate_with_broker(
             &mut $connection,
             &$inner.keypair,
         )
@@ -50,7 +51,7 @@ macro_rules! authenticate_with_broker {
 macro_rules! verify_broker {
     ($connection: expr, $inner: expr) => {
         // Verify the other broker's authentication
-        if let Err(err) = BrokerAuth::<BrokerSignatureScheme, BrokerProtocolType>::verify_broker(
+        if let Err(err) = BrokerAuth::<BrokerSignatureScheme>::verify_broker(
             &mut $connection,
             &$inner.identity,
             &$inner.keypair.verification_key,
@@ -63,7 +64,7 @@ macro_rules! verify_broker {
     };
 }
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> BrokerAuth<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme> BrokerAuth<SignatureScheme>
 where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::Signature: Serializable,
@@ -77,9 +78,12 @@ where
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &mut (
+            <UserProtocol as Protocol>::Sender,
+            <UserProtocol as Protocol>::Receiver,
+        ),
         broker_identifier: &BrokerIdentifier,
-        redis_client: &mut redis::Client,
+        discovery_client: &mut DiscoveryClientType,
     ) -> Result<(Vec<u8>, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
@@ -93,8 +97,8 @@ where
             fail_verification_with_message!(connection, "wrong message type");
         };
 
-        // Check the permit with `Redis`
-        let serialized_verification_key = match redis_client
+        // Check the permit
+        let serialized_verification_key = match discovery_client
             .validate_permit(broker_identifier, auth_message.permit)
             .await
         {
@@ -154,7 +158,10 @@ where
     /// - If we fail to authenticate
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &mut (
+            <BrokerProtocol as Protocol>::Sender,
+            <BrokerProtocol as Protocol>::Receiver,
+        ),
         keypair: &KeyPair<SignatureScheme>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -245,7 +252,10 @@ where
     /// # Errors
     /// - If verification has failed
     pub async fn verify_broker(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &mut (
+            <BrokerProtocol as Protocol>::Sender,
+            <BrokerProtocol as Protocol>::Receiver,
+        ),
         our_identifier: &BrokerIdentifier,
         our_verification_key: &SignatureScheme::VerificationKey,
     ) -> Result<()> {

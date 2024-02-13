@@ -8,8 +8,9 @@ description = "Contains the common protocol definition and common code for the b
 capnpc = "0.19.0"
 
 [features]
-local-testing = ["rustls/dangerous_configuration"]
-default = ["local-testing"]
+local_discovery = ["dep:sqlx"]
+insecure = ["rustls/dangerous_configuration"]
+default = ["local_discovery", "insecure"]
 
 [dependencies]
 capnp = "0.19.1"
@@ -24,6 +25,15 @@ tracing.workspace = true
 rustls = "0.21.10"
 rcgen = "0.12.0"
 pem = "3.0.3"
-redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 mockall = "0.12.1"
 async-trait.workspace = true
+
+# TODO: make this optional if local not specified
+redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
+
+sqlx = { version = "0.7.3", features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+    "time",
+], optional = true }

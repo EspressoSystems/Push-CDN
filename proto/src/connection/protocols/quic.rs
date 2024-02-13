@@ -6,9 +6,11 @@ use async_trait::async_trait;
 use quinn::{ClientConfig, Endpoint, ServerConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[cfg(feature = "insecure")]
+use crate::crypto::SkipServerVerification;
 use crate::{
     bail, bail_option,
-    crypto::{self, SkipServerVerification},
+    crypto::{self},
     error::{Error, Result},
     message::Message,
     read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
@@ -28,7 +30,7 @@ impl Protocol for Quic {
     type Receiver = QuicReceiver;
     type Listener = QuicListener;
 
-    async fn connect(remote_endpoint: String) -> Result<(QuicSender, QuicReceiver)> {
+    async fn connect(remote_endpoint: &str) -> Result<(QuicSender, QuicReceiver)> {
         // Parse the socket address
         let remote_address = bail_option!(
             bail!(
@@ -61,12 +63,12 @@ impl Protocol for Quic {
         );
 
         // Set up TLS configuration
-        #[cfg(not(feature = "local-testing"))]
+        #[cfg(not(feature = "insecure"))]
         // Production mode: native certs
         let config = ClientConfig::with_native_roots();
 
         // Local testing mode: skip server verification, insecure
-        #[cfg(feature = "local-testing")]
+        #[cfg(feature = "insecure")]
         let config = ClientConfig::new(SkipServerVerification::new_config());
 
         // Set default client config

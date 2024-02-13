@@ -12,7 +12,7 @@ use proto::{
     crypto::{Scheme, Serializable},
     error::{Error, Result},
     message::Message,
-    verify_broker,
+    verify_broker, BrokerProtocol,
 };
 use tracing::{error, info};
 
@@ -20,12 +20,8 @@ use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -35,7 +31,10 @@ where
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (BrokerProtocolType::Sender, BrokerProtocolType::Receiver),
+        mut connection: (
+            <BrokerProtocol as Protocol>::Sender,
+            <BrokerProtocol as Protocol>::Receiver,
+        ),
         is_outbound: bool,
     ) {
         // Depending on which way the direction came in, we will want to authenticate with a different
@@ -54,14 +53,23 @@ where
         // Create new batch sender
         let (sender, receiver) = connection;
         // TODO: parameterize max interval and max size
-        let sender = Arc::from(BatchedSender::<BrokerProtocolType>::from(
+        let sender = Arc::from(BatchedSender::<BrokerProtocol>::from(
             sender,
             Duration::from_millis(50),
             1500,
         ));
 
         // Add to our connected broker identities so we don't try to reconnect
-        get_lock!(self.connected_broker_identities, write).insert(broker_address.clone());
+        let mut connected_broker_guard = get_lock!(self.connected_broker_identities, write);
+        if connected_broker_guard.contains(&broker_address) {
+            // If the address is already there (we're already connected), drop this one
+            return;
+        }
+        
+        // If we aren't already connected, add it
+        connected_broker_guard.insert(broker_address.clone());
+
+        drop(connected_broker_guard);
 
         // Freeze the sender before adding it to our connections so we don't receive messages out of order.
         // This is to enforce message ordering
@@ -107,7 +115,7 @@ where
     pub async fn broker_receive_loop(
         &self,
         connection_id: ConnectionId,
-        mut receiver: BrokerProtocolType::Receiver,
+        mut receiver: <BrokerProtocol as Protocol>::Receiver,
     ) -> Result<()> {
         while let Ok(message) = receiver.recv_message().await {
             match message {

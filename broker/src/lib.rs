@@ -16,9 +16,9 @@ use proto::{
     bail,
     connection::protocols::Protocol,
     crypto::{KeyPair, Scheme, Serializable},
+    discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
-    parse_socket_address,
-    redis::{self, BrokerIdentifier},
+    parse_socket_address, BrokerProtocol, DiscoveryClientType, UserProtocol,
 };
 use state::ConnectionLookup;
 use tokio::{select, spawn, sync::RwLock};
@@ -37,8 +37,8 @@ pub struct Config<BrokerSignatureScheme: Scheme> {
     /// The broker (private) bind address: the private-facing address we bind to.
     pub broker_bind_address: String,
 
-    /// The redis endpoint. We use this to maintain consistency between brokers and marshals.
-    pub redis_endpoint: String,
+    /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
+    pub discovery_endpoint: String,
 
     pub keypair: KeyPair<BrokerSignatureScheme>,
 
@@ -52,64 +52,51 @@ pub struct Config<BrokerSignatureScheme: Scheme> {
 struct Inner<
     // TODO: clean these up with some sort of generic trick or something
     BrokerSignatureScheme: Scheme,
-    BrokerProtocolType: Protocol,
     UserSignatureScheme: Scheme,
-    UserProtocolType: Protocol,
 > {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
-    /// The (clonable) `Redis` client that we will use to maintain consistency between brokers and marshals
-    redis_client: redis::Client,
+    /// The (clonable) `Discovery` client that we will use to maintain consistency between brokers and marshals
+    discovery_client: DiscoveryClientType,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
     keypair: KeyPair<BrokerSignatureScheme>,
 
-    /// The set of all broker identities we see. Mapped against the brokers we see in `Redis`
+    /// The set of all broker identities we see. Mapped against the brokers we see in `Discovery`
     /// so that we don't connect multiple times.
     connected_broker_identities: RwLock<HashSet<BrokerIdentifier>>,
 
     /// A map of interests to their possible broker connections. We use this to facilitate
     /// where messages go. They need to be separate because of possibly different protocol
     /// types.
-    broker_connection_lookup: RwLock<ConnectionLookup<BrokerProtocolType>>,
+    broker_connection_lookup: RwLock<ConnectionLookup<BrokerProtocol>>,
 
     /// A map of interests to their possible user connections. We use this to facilitate
     /// where messages go. They need to be separate because of possibly different protocol
     /// types.
-    user_connection_lookup: RwLock<ConnectionLookup<UserProtocolType>>,
+    user_connection_lookup: RwLock<ConnectionLookup<UserProtocol>>,
 
     // connected_keys: LoggedSet<UserSignatureScheme::VerificationKey>,
     /// The `PhantomData` that we need to be generic over protocol types.
-    pd: PhantomData<(UserProtocolType, BrokerProtocolType, UserSignatureScheme)>,
+    pd: PhantomData<UserSignatureScheme>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<
-    BrokerSignatureScheme: Scheme,
-    BrokerProtocolType: Protocol,
-    UserSignatureScheme: Scheme,
-    UserProtocolType: Protocol,
-> {
+pub struct Broker<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<
-        Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>,
-    >,
+    inner: Arc<Inner<BrokerSignatureScheme, UserSignatureScheme>>,
 
     /// The public (user -> broker) listener
-    user_listener: UserProtocolType::Listener,
+    user_listener: <UserProtocol as Protocol>::Listener,
 
     /// The private (broker <-> broker) listener
-    broker_listener: BrokerProtocolType::Listener,
+    broker_listener: <BrokerProtocol as Protocol>::Listener,
 }
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Broker<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Broker<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -119,7 +106,7 @@ where
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
-    /// - If we fail to create the `Redis` client
+    /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
     pub async fn new(config: Config<BrokerSignatureScheme>) -> Result<Self> {
@@ -133,7 +120,7 @@ where
 
             keypair,
 
-            redis_endpoint,
+            discovery_endpoint,
             maybe_tls_cert_path,
             maybe_tls_key_path,
         } = config;
@@ -144,17 +131,17 @@ where
             broker_advertise_address,
         };
 
-        // Create the `Redis` client we will use to maintain consistency
-        let redis_client = bail!(
-            redis::Client::new(redis_endpoint, Some(identity.clone()),).await,
+        // Create the `Discovery` client we will use to maintain consistency
+        let discovery_client = bail!(
+            DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
             Parse,
-            "failed to create Redis client"
+            "failed to create discovery client"
         );
 
         // Create the user (public) listener
         let user_bind_address = parse_socket_address!(user_bind_address);
         let user_listener = bail!(
-            UserProtocolType::bind(
+            <UserProtocol as Protocol>::bind(
                 user_bind_address,
                 maybe_tls_cert_path.clone(),
                 maybe_tls_key_path.clone(),
@@ -170,8 +157,12 @@ where
         // Create the broker (private) listener
         let broker_bind_address = parse_socket_address!(broker_bind_address);
         let broker_listener = bail!(
-            BrokerProtocolType::bind(broker_bind_address, maybe_tls_cert_path, maybe_tls_key_path,)
-                .await,
+            <BrokerProtocol as Protocol>::bind(
+                broker_bind_address,
+                maybe_tls_cert_path,
+                maybe_tls_key_path,
+            )
+            .await,
             Connection,
             format!(
                 "failed to bind to public (user) bind address {}",
@@ -182,7 +173,7 @@ where
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
-                redis_client,
+                discovery_client,
                 identity,
                 keypair,
                 connected_broker_identities: RwLock::default(),
@@ -200,11 +191,11 @@ where
     ///
     /// # Errors
     /// If any of the following tasks exit:
-    /// - The heartbeat (Redis) task
+    /// - The heartbeat (Discovery) task
     /// - The user connection handler
     /// - The broker connection handler
     pub async fn start(self) -> Result<()> {
-        // Spawn the heartbeat task, which we use to register with `Redis` every so often.
+        // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
         // let heartbeat_task = ;
         let heartbeat_task = spawn(self.inner.clone().run_heartbeat_task());

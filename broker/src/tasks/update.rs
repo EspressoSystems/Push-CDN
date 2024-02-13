@@ -10,10 +10,11 @@ use crate::{
 use crate::{new_serialized_message, send_or_remove_many};
 use proto::{
     bail,
-    connection::{batch::Position, protocols::Protocol},
+    connection::batch::Position,
     crypto::{Scheme, Serializable},
     error::{Error, Result},
     message::Message,
+    BrokerProtocol,
 };
 use tokio::time::sleep;
 use tracing::error;
@@ -40,12 +41,8 @@ macro_rules! send_update_to_brokers {
     }};
 }
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -79,8 +76,8 @@ where
     /// on every user join if the number of connected users is sufficiently small.
     pub async fn send_updates_to_brokers(
         self: &Arc<Self>,
-        full: Vec<(ConnectionId, Sender<BrokerProtocolType>)>,
-        partial: Vec<(ConnectionId, Sender<BrokerProtocolType>)>,
+        full: Vec<(ConnectionId, Sender<BrokerProtocol>)>,
+        partial: Vec<(ConnectionId, Sender<BrokerProtocol>)>,
     ) -> Result<()> {
         // When a broker connects, we have to send:
         // 1. Our snapshot to the new broker (of what topics/users we're subscribed for)

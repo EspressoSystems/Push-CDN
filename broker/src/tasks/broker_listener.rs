@@ -5,18 +5,16 @@ use std::sync::Arc;
 use proto::{
     connection::protocols::{Listener, Protocol},
     crypto::{Scheme, Serializable},
+    BrokerProtocol,
 };
 use tokio::spawn;
 use tracing::warn;
+// TODO: change connection to be named struct instead of tuple for readability purposes
 
 use crate::Inner;
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -24,7 +22,10 @@ where
     UserSignatureScheme::Signature: Serializable,
 {
     /// Runs the broker listener task in a loop.
-    pub async fn run_broker_listener_task(self: Arc<Self>, listener: BrokerProtocolType::Listener) {
+    pub async fn run_broker_listener_task(
+        self: Arc<Self>,
+        listener: <BrokerProtocol as Protocol>::Listener,
+    ) {
         loop {
             // Accept a connection. If we fail, print the error and keep going.
             //

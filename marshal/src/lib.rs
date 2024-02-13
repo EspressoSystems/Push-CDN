@@ -11,8 +11,9 @@ use proto::{
     bail,
     connection::protocols::{Listener, Protocol},
     crypto::{Scheme, Serializable},
+    discovery::DiscoveryClient,
     error::{Error, Result},
-    redis,
+    DiscoveryClientType, UserProtocol,
 };
 use tokio::spawn;
 use tracing::warn;
@@ -20,19 +21,19 @@ use tracing::warn;
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<SignatureScheme: Scheme, ProtocolType: Protocol> {
+pub struct Marshal<SignatureScheme: Scheme> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<ProtocolType::Listener>,
+    listener: Arc<<UserProtocol as Protocol>::Listener>,
 
-    /// The redis client we use to issue permits and check for brokers that are up
-    redis_client: redis::Client,
+    /// The client we use to issue permits and check for brokers that are up
+    discovery_client: DiscoveryClientType,
 
     /// We need this `PhantomData` to allow us to specify the signature scheme,
     /// protocol type, and authentication flow.
     pd: PhantomData<SignatureScheme>,
 }
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> Marshal<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme> Marshal<SignatureScheme>
 where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::Signature: Serializable,
@@ -44,7 +45,7 @@ where
     /// - If we fail to bind to the local address
     pub async fn new(
         bind_address: String,
-        redis_endpoint: String,
+        discovery_endpoint: String,
         maybe_tls_cert_path: Option<String>,
         maybe_tls_key_path: Option<String>,
     ) -> Result<Self> {
@@ -53,22 +54,23 @@ where
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            ProtocolType::bind(bind_address, maybe_tls_cert_path, maybe_tls_key_path).await,
+            <UserProtocol as Protocol>::bind(bind_address, maybe_tls_cert_path, maybe_tls_key_path)
+                .await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );
 
-        // Create the Redis client
-        let redis_client = bail!(
-            redis::Client::new(redis_endpoint.clone(), None).await,
+        // Create the discovery client
+        let discovery_client = bail!(
+            DiscoveryClientType::new(discovery_endpoint.clone(), None).await,
             Connection,
-            "failed to create Redis client"
+            "failed to create discovery client"
         );
 
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
-            redis_client,
+            discovery_client,
             pd: PhantomData,
         })
     }
@@ -94,8 +96,8 @@ where
             };
 
             // Create a task to handle the connection
-            let redis_client = self.redis_client.clone();
-            spawn(Self::handle_connection(connection, redis_client));
+            let discovery_client = self.discovery_client.clone();
+            spawn(Self::handle_connection(connection, discovery_client));
         }
     }
 }

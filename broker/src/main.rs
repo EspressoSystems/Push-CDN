@@ -5,7 +5,6 @@ use broker::{Broker, Config};
 use clap::Parser;
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use proto::{
-    connection::protocols::{quic::Quic, tcp::Tcp},
     crypto::{generate_random_keypair, DeterministicRng},
     error::Result,
 };
@@ -14,9 +13,9 @@ use proto::{
 #[command(author, version, about, long_about = None)]
 /// The main component of the push CDN.
 struct Args {
-    /// The redis endpoint (including password and scheme) to connect to
-    #[arg(short, long, default_value = "redis://:changeme!@127.0.0.1:6379")]
-    redis_endpoint: String,
+    /// The discovery client endpoint (including scheme) to connect to
+    #[arg(short, long)]
+    discovery_endpoint: String,
 
     /// The port to bind to for connections from users
     #[arg(short, long, default_value_t = 1738)]
@@ -51,7 +50,7 @@ async fn main() -> Result<()> {
         broker_advertise_address: format!("127.0.0.1:{}", args.broker_bind_port),
         broker_bind_address: format!("127.0.0.1:{}", args.broker_bind_port),
 
-        redis_endpoint: args.redis_endpoint,
+        discovery_endpoint: args.discovery_endpoint,
 
         keypair: proto::crypto::KeyPair {
             verification_key,
@@ -65,7 +64,7 @@ async fn main() -> Result<()> {
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::<BLS, Tcp, BLS, Quic>::new(broker_config).await?;
+    let broker = Broker::<BLS, BLS>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     broker.start().await?;

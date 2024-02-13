@@ -5,10 +5,16 @@ edition = "2021"
 
 description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
 
+[features]
+local_discovery = ["proto/local_discovery"]
+insecure = ["proto/insecure"]
+default = ["local_discovery", "insecure"]
+
 [dependencies]
 jf-primitives.workspace = true
-proto.path = "../proto"
+proto = { path = "../proto", default-features = false }
 tokio.workspace = true
 tracing.workspace = true
 ark-serialize.workspace = true
 tracing-subscriber.workspace = true
+clap.workspace = true

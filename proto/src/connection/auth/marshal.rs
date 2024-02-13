@@ -11,25 +11,24 @@ use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
     crypto::{self, Scheme, Serializable},
+    discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
-    redis,
+    DiscoveryClientType, UserProtocol,
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<SignatureScheme: Scheme, ProtocolType: Protocol>
-{
+pub struct MarshalAuth<SignatureScheme: Scheme> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
-    /// and protocol type
-    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+    pub pd: PhantomData<SignatureScheme>,
 }
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> MarshalAuth<SignatureScheme, ProtocolType>
+impl<SignatureScheme: Scheme> MarshalAuth<SignatureScheme>
 where
     SignatureScheme::VerificationKey: Serializable,
     SignatureScheme::Signature: Serializable,
- {
+{
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message
@@ -40,8 +39,11 @@ where
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
-        redis_client: &mut redis::Client,
+        connection: &mut (
+            <UserProtocol as Protocol>::Sender,
+            <UserProtocol as Protocol>::Receiver,
+        ),
+        discovery_client: &mut DiscoveryClientType,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -90,10 +92,13 @@ where
 
         // Get the broker with the least amount of connections
         // TODO: do a macro for this
-        let broker_with_least_connections = match redis_client.get_with_least_connections().await {
+        let broker_with_least_connections = match discovery_client
+            .get_with_least_connections()
+            .await
+        {
             Ok(broker) => broker,
             Err(err) => {
-                error!("failed to get the broker with the least connections from Redis: {err}");
+                error!("failed to get the broker with the least connections from discovery client: {err}");
                 fail_verification_with_message!(connection, "internal server error");
             }
         };
@@ -101,7 +106,7 @@ where
         // Generate and issue a permit for said broker
         // TODO: add bounds check for verification key. There's the possibility it could be too big, if
         // verify does not check that.
-        let permit = match redis_client
+        let permit = match discovery_client
             .issue_permit(
                 &broker_with_least_connections,
                 Duration::from_secs(5),
@@ -111,7 +116,7 @@ where
         {
             Ok(broker) => broker,
             Err(err) => {
-                error!("failed to issue a permit to Redis: {err}");
+                error!("failed to issue a permit: {err}");
                 fail_verification_with_message!(connection, "internal server error");
             }
         };

@@ -11,20 +11,20 @@ use proto::{
     },
     crypto::{Scheme, Serializable},
     message::Message,
+    UserProtocol,
 };
 use slotmap::Key;
 use tracing::info;
+
+#[cfg(feature = "local_discovery")]
+use proto::discovery::DiscoveryClient;
 
 use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
 
-impl<
-        BrokerSignatureScheme: Scheme,
-        BrokerProtocolType: Protocol,
-        UserSignatureScheme: Scheme,
-        UserProtocolType: Protocol,
-    > Inner<BrokerSignatureScheme, BrokerProtocolType, UserSignatureScheme, UserProtocolType>
+impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
+    Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
     BrokerSignatureScheme::VerificationKey: Serializable,
     BrokerSignatureScheme::Signature: Serializable,
@@ -34,7 +34,10 @@ where
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        mut connection: (UserProtocolType::Sender, UserProtocolType::Receiver),
+        mut connection: (
+            <UserProtocol as Protocol>::Sender,
+            <UserProtocol as Protocol>::Receiver,
+        ),
     ) where
         BrokerSignatureScheme::VerificationKey: Serializable,
         BrokerSignatureScheme::Signature: Serializable,
@@ -42,20 +45,19 @@ where
         UserSignatureScheme::Signature: Serializable,
     {
         // Verify (authenticate) the connection
-        let Ok((verification_key, topics)) =
-            BrokerAuth::<UserSignatureScheme, UserProtocolType>::verify_user(
-                &mut connection,
-                &self.identity,
-                &mut self.redis_client.clone(),
-            )
-            .await
+        let Ok((verification_key, topics)) = BrokerAuth::<UserSignatureScheme>::verify_user(
+            &mut connection,
+            &self.identity,
+            &mut self.discovery_client.clone(),
+        )
+        .await
         else {
             return;
         };
 
         // Create new batch sender
         let (sender, receiver) = connection;
-        let sender = Arc::new(BatchedSender::<UserProtocolType>::from(
+        let sender = Arc::new(BatchedSender::<UserProtocol>::from(
             sender,
             Duration::from_millis(50),
             1500,
@@ -74,23 +76,35 @@ where
 
         info!("received connection from user {:?}", connection_id.data());
 
-        // If we have a small amount of users, send the updates immediately
-        if get_lock!(self.user_connection_lookup, read).get_connection_count() < 50 {
-            // TODO NEXT: Move this into just asking the task nicely to do it
-            let _ = self
-                .send_updates_to_brokers(
-                    vec![],
-                    get_lock!(self.broker_connection_lookup, read)
-                        .get_all_connections()
-                        .clone(),
-                )
-                .await;
-        }
+        // If we are in local mode, send updates to brokers immediately. This makes
+        // it more strongly consistent with the tradeoff of being a bit more intensive.
+        #[cfg(feature = "local_discovery")]
+        let _ = self
+            .send_updates_to_brokers(
+                vec![],
+                get_lock!(self.broker_connection_lookup, read)
+                    .get_all_connections()
+                    .clone(),
+            )
+            .await;
+
+        // We want to perform a heartbeat for every user connection so that the number
+        // of users connected to brokers is always evenly distributed.
+        #[cfg(feature = "local_discovery")]
+        let _ = self
+            .discovery_client
+            .clone()
+            .perform_heartbeat(
+                get_lock!(self.user_connection_lookup, read).get_connection_count() as u64,
+                Duration::from_secs(60),
+            )
+            .await;
 
         // This runs the main loop for receiving information from the user
         let () = self.user_receive_loop(connection_id, receiver).await;
 
         info!("user {:?} disconnected", connection_id.data());
+
         // Once the main loop ends, we remove the connection
         self.user_connection_lookup
             .write()
@@ -103,7 +117,7 @@ where
     pub async fn user_receive_loop(
         &self,
         connection_id: ConnectionId,
-        mut receiver: UserProtocolType::Receiver,
+        mut receiver: <UserProtocol as Protocol>::Receiver,
     ) {
         while let Ok(message) = receiver.recv_message().await {
             match message {
