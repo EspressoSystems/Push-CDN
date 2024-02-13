@@ -28,14 +28,14 @@ use tokio::{select, spawn, sync::RwLock};
 pub struct Config<BrokerSignatureScheme: Scheme> {
     /// The user (public) advertise address: what the marshals send to users upon authentication.
     /// Users connect to us with this address.
-    pub user_advertise_address: String,
-    /// The uaser (public) bind address: the public-facing address we bind to.
-    pub user_bind_address: String,
+    pub public_advertise_address: String,
+    /// The user (public) bind address: the public-facing address we bind to.
+    pub public_bind_address: String,
 
     /// The broker (private) advertise address: what other brokers use to connect to us.
-    pub broker_advertise_address: String,
+    pub private_advertise_address: String,
     /// The broker (private) bind address: the private-facing address we bind to.
-    pub broker_bind_address: String,
+    pub private_bind_address: String,
 
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
@@ -112,11 +112,11 @@ where
     pub async fn new(config: Config<BrokerSignatureScheme>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
-            user_advertise_address,
-            user_bind_address,
+            public_advertise_address,
+            public_bind_address,
 
-            broker_advertise_address,
-            broker_bind_address,
+            private_advertise_address,
+            private_bind_address,
 
             keypair,
 
@@ -127,8 +127,8 @@ where
 
         // Create a unique broker identifier
         let identity = BrokerIdentifier {
-            user_advertise_address,
-            broker_advertise_address,
+            public_advertise_address,
+            private_advertise_address,
         };
 
         // Create the `Discovery` client we will use to maintain consistency
@@ -139,10 +139,10 @@ where
         );
 
         // Create the user (public) listener
-        let user_bind_address = parse_socket_address!(user_bind_address);
+        let public_bind_address = parse_socket_address!(public_bind_address);
         let user_listener = bail!(
             <UserProtocol as Protocol>::bind(
-                user_bind_address,
+                public_bind_address,
                 maybe_tls_cert_path.clone(),
                 maybe_tls_key_path.clone(),
             )
@@ -150,15 +150,15 @@ where
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",
-                broker_bind_address
+                private_bind_address
             )
         );
 
         // Create the broker (private) listener
-        let broker_bind_address = parse_socket_address!(broker_bind_address);
+        let private_bind_address = parse_socket_address!(private_bind_address);
         let broker_listener = bail!(
             <BrokerProtocol as Protocol>::bind(
-                broker_bind_address,
+                private_bind_address,
                 maybe_tls_cert_path,
                 maybe_tls_key_path,
             )
@@ -166,7 +166,7 @@ where
             Connection,
             format!(
                 "failed to bind to public (user) bind address {}",
-                user_bind_address
+                public_bind_address
             )
         );
 

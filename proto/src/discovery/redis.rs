@@ -47,8 +47,8 @@ impl DiscoveryClient for Redis {
         // We only "need" the identifier if we want to register with Redis
         let identifier = identity.map_or_else(
             || BrokerIdentifier {
-                user_advertise_address: String::new(),
-                broker_advertise_address: String::new(),
+                public_advertise_address: String::new(),
+                private_advertise_address: String::new(),
             },
             |identifier| identifier,
         );

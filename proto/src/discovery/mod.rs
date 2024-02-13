@@ -61,9 +61,9 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct BrokerIdentifier {
     /// The address that a broker advertises to publicly (to users)
-    pub user_advertise_address: String,
+    pub public_advertise_address: String,
     /// The address that a broker advertises to privately (to other brokers)
-    pub broker_advertise_address: String,
+    pub private_advertise_address: String,
 }
 
 /// We need this to convert in the opposite direction: to create a `String`
@@ -73,7 +73,7 @@ impl std::fmt::Display for BrokerIdentifier {
         write!(
             f,
             "{}/{}",
-            self.user_advertise_address, self.broker_advertise_address
+            self.public_advertise_address, self.private_advertise_address
         )
     }
 }
@@ -88,13 +88,13 @@ impl TryFrom<String> for BrokerIdentifier {
 
         // Create a new `Self` from the split string
         Ok(Self {
-            user_advertise_address: split
+            public_advertise_address: split
                 .next()
                 .ok_or_else(|| {
                     Error::Parse("failed to parse public advertise address from string".to_string())
                 })?
                 .to_string(),
-            broker_advertise_address: split
+            private_advertise_address: split
                 .next()
                 .ok_or_else(|| {
                     Error::Parse(

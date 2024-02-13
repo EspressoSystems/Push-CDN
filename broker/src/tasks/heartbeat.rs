@@ -50,7 +50,7 @@ where
                     {
                         // TODO: make this into a separate function
                         // Extrapolate the address to connect to
-                        let to_connect_address = broker.broker_advertise_address.clone();
+                        let to_connect_address = broker.private_advertise_address.clone();
 
                         // Clone the inner because we need it for the possible new broker task
                         let inner = self.clone();

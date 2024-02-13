@@ -4,9 +4,11 @@
 use broker::{Broker, Config};
 use clap::Parser;
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use local_ip_address::local_ip;
 use proto::{
+    bail,
     crypto::{generate_random_keypair, DeterministicRng},
-    error::Result,
+    error::{Error, Result},
 };
 
 #[derive(Parser, Debug)]
@@ -18,12 +20,16 @@ struct Args {
     discovery_endpoint: String,
 
     /// The port to bind to for connections from users
-    #[arg(short, long, default_value_t = 1738)]
-    user_bind_port: u16,
+    #[arg(long, default_value = "127.0.0.1:1738")]
+    public_advertise_address: String,
 
-    /// The port to bind to for connections from other brokers
-    #[arg(short, long, default_value_t = 1739)]
-    broker_bind_port: u16,
+    /// The (public) port to bind to for connections from users
+    #[arg(long, default_value_t = 1738)]
+    public_bind_port: u16,
+
+    /// The (private) port to bind to for connections from other brokers
+    #[arg(long, default_value_t = 1739)]
+    private_bind_port: u16,
 }
 
 #[tokio::main]
@@ -34,21 +40,29 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // TODO: local IP address depending on whether or not we specified
+    // Get our local IP address
+    let private_ip_address = bail!(local_ip(), Connection, "failed to get local IP address");
 
     // Create deterministic keys for brokers (for now, obviously)
     let (signing_key, verification_key) = generate_random_keypair::<BLS, _>(DeterministicRng(0))?;
 
-    // Create our config (TODO stubbed out for now, do clap)
     let broker_config = Config {
-        // These are the same because we are testing locally
-        // TODO: if possible make this better. Make it so that we can just specify
-        // a port or something.
-        user_advertise_address: format!("127.0.0.1:{}", args.user_bind_port),
-        user_bind_address: format!("127.0.0.1:{}", args.user_bind_port),
+        // Public addresses: explicitly defined advertise address, bind address is on every interface
+        // but with the specified port.
+        public_advertise_address: args.public_advertise_address,
+        public_bind_address: format!("0.0.0.0:{}", args.public_bind_port),
 
-        broker_advertise_address: format!("127.0.0.1:{}", args.broker_bind_port),
-        broker_bind_address: format!("127.0.0.1:{}", args.broker_bind_port),
+        // Private addresses: bind to the local interface with the specified port
+        private_advertise_address: format!(
+            "{}:{}",
+            private_ip_address,
+            args.private_bind_port
+        ),
+        private_bind_address: format!(
+            "{}:{}",
+            private_ip_address,
+            args.private_bind_port
+        ),
 
         discovery_endpoint: args.discovery_endpoint,
 

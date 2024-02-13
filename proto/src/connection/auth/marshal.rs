@@ -124,7 +124,7 @@ where
         // Form a response message
         let response_message = Message::AuthenticateResponse(AuthenticateResponse {
             permit,
-            context: broker_with_least_connections.user_advertise_address,
+            context: broker_with_least_connections.public_advertise_address,
         });
 
         // Send the permit to the user, along with the public broker advertise address
