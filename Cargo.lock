@@ -466,7 +466,6 @@ dependencies = [
 name = "broker"
 version = "0.1.0"
 dependencies = [
- "ark-serialize",
  "async-trait",
  "clap",
  "delegate",
@@ -612,7 +611,6 @@ checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 name = "client"
 version = "0.1.0"
 dependencies = [
- "ark-serialize",
  "clap",
  "jf-primitives",
  "proto",
@@ -1530,7 +1528,6 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 name = "marshal"
 version = "0.1.0"
 dependencies = [
- "ark-serialize",
  "clap",
  "jf-primitives",
  "proto",

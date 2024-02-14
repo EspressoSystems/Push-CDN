@@ -15,7 +15,6 @@ jf-primitives.workspace = true
 proto = { path = "../proto", default-features = false, features = ["metrics"] }
 tokio.workspace = true
 tracing.workspace = true
-ark-serialize.workspace = true
 tracing-subscriber.workspace = true
 clap.workspace = true
 local-ip-address = "0.5.7"
