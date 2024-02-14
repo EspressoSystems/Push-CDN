@@ -205,7 +205,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
     /// If the message sending fails. For example:
     /// - If we are reconnecting
     /// - If we are disconnected
-    pub fn send_message(&self, message: &Message) -> Result<()> {
+    pub async fn send_message(&self, message: &Message) -> Result<()> {
         // Serialize the message
         let message = bail!(
             message.serialize(),
@@ -216,7 +216,9 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
         // Try to acquire the read lock. If we can't, we are reconnecting.
         if let Ok(send_lock) = self.inner.sender.try_read() {
             // Continue if we were able to acquire the lock
-            let out = send_lock.queue_message(Arc::from(message), Position::Back);
+            let out = send_lock
+                .queue_message(Arc::from(message), Position::Back)
+                .await;
             Ok(try_with_reconnect!(self, send_lock, out))
         } else {
             // Return an error if we're reconnecting
@@ -245,6 +247,13 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
     }
 }
 
+/// Connect and authenticate to the marshal  and then broker at the given endpoint
+/// and with the given keypair.
+///
+/// Subscribe to the topics laid out herein.
+///
+/// # Errors
+/// If we failed to connect or authenticate to the marshal or broker.
 async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol>(
     marshal_endpoint: &str,
     keypair: &KeyPair<Scheme>,

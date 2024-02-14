@@ -1,4 +1,6 @@
-//! This crate defines a batching system for sending messages, wherein
+
+
+    //! This crate defines a batching system for sending messages, wherein
 //! we spawn a task that owns the sender and have a handle to a channel it's
 //! listening on.
 //!
@@ -7,8 +9,9 @@
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 
 use tokio::{
-    select, spawn,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    spawn,
+    sync::mpsc::{channel, Receiver as BoundedReceiver, Sender as BoundedSender},
+    time::timeout,
 };
 use tracing::error;
 
@@ -55,7 +58,7 @@ enum Control {
 /// to queue messages for sending with a minimum time or size. Is clonable through an `Arc`.
 pub struct BatchedSender<ProtocolType: Protocol> {
     /// The underlying channel that we receive messages over.
-    channel: UnboundedSender<QueueMessage>,
+    channel: BoundedSender<QueueMessage>,
     /// The `PhantomData` we need to use a generic protocol type.
     pd: PhantomData<ProtocolType>,
 }
@@ -99,10 +102,10 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     ///
     /// # Errors
     /// - If the send-side is closed.
-    pub fn freeze(&self) -> Result<()> {
+    pub async fn freeze(&self) -> Result<()> {
         // Send a control message to freeze the queue
         bail!(
-            self.channel.send(QueueMessage::Control(Control::Freeze)),
+            self.channel.send(QueueMessage::Control(Control::Freeze)).await,
             Connection,
             "connection closed"
         );
@@ -114,10 +117,10 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     ///
     /// # Errors
     /// - If the send-side is closed.
-    pub fn unfreeze(&self) -> Result<()> {
+    pub async fn unfreeze(&self) -> Result<()> {
         // Send a control message to unfreeze the queue
         bail!(
-            self.channel.send(QueueMessage::Control(Control::Unfreeze)),
+            self.channel.send(QueueMessage::Control(Control::Unfreeze)).await,
             Connection,
             "connection closed"
         );
@@ -129,10 +132,10 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     ///
     /// # Errors
     /// - If the send-side is closed.
-    pub fn queue_message(&self, message: Arc<Vec<u8>>, position: Position) -> Result<()> {
+    pub async fn queue_message(&self, message: Arc<Vec<u8>>, position: Position) -> Result<()> {
         // Send a data message
         bail!(
-            self.channel.send(QueueMessage::Data(message, position)),
+            self.channel.send(QueueMessage::Data(message, position)).await,
             Connection,
             "connection closed"
         );
@@ -148,7 +151,7 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
         max_size_in_bytes: u64,
     ) -> Self {
         // Create the send and receive sides of a channel.
-        let (send_side, receive_side) = unbounded_channel();
+        let (send_side, receive_side) = channel(50);
 
         // Create a new queue from our parameters and defaults
         let batch_params = Queue {
@@ -174,24 +177,21 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     /// data and control messages.
     async fn batch_loop(
         mut sender: ProtocolType::Sender,
-        mut receiver: UnboundedReceiver<QueueMessage>,
+        mut receiver: BoundedReceiver<QueueMessage>,
         mut queue: Queue,
     ) {
-        // Create a timer that ticks every max interval. We reset it if we actually send a message.
-        let mut timer = tokio::time::interval(queue.max_duration);
-
         loop {
-            // Select on either a new message or a timer event
-            select! {
-               // Receive a message. Will return `None` if the send side is closed.
-            possible_message = receiver.recv() => {
-                let Some(message) = possible_message else {
+            let possible_message = timeout(queue.max_duration, receiver.recv()).await;
+
+            if let Ok(message) = possible_message {
+                // We didn't time out
+                let Some(message) = message else {
                     // If the send-side is closed, drop everything and stop.
-                    return
+                    return;
                 };
 
                 // See what type of message we have
-                match message{
+                match message {
                     // A data message. This is a message that we actually want to add
                     // to the queue.
                     QueueMessage::Data(data, position) => {
@@ -199,7 +199,7 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
                         let data_len = data.len();
 
                         // See in which position we wanted to add to the queue
-                        match position{
+                        match position {
                             Position::Front => {
                                 queue.inner.push_front(data);
                             }
@@ -212,12 +212,12 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
                         queue.current_size += data_len as u64;
 
                         // If we're frozen, don't continue to any sending logic
-                        if queue.frozen{
-                            continue
+                        if queue.frozen {
+                            continue;
                         }
 
                         // Bounds check to see if we should send
-                        if queue.current_size >= queue.max_size_in_bytes{
+                        if queue.current_size >= queue.max_size_in_bytes {
                             // Flush the queue, sending all in-flight messages.
                             flush_queue!(queue, sender);
                         }
@@ -226,30 +226,28 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
                     // We got a control message; a message we don't actually want to send.
                     QueueMessage::Control(control) => {
                         match control {
-                            Control::Freeze => {queue.frozen = true}
-                            Control::Unfreeze => {queue.frozen = false}
+                            Control::Freeze => queue.frozen = true,
+                            Control::Unfreeze => queue.frozen = false,
                             // Return if we see a shutdown message
-                            Control::Shutdown => return
+                            Control::Shutdown => return,
                         }
                     }
                 }
-            }
-            // We hit this when the timer expires without having sent a message.
-            _ = timer.tick() => {
-                // Don't do anything if the queue is currently frozen
-                if queue.frozen{
-                    continue
+            } else {
+                // We timed out
+                if queue.frozen {
+                    continue;
                 }
 
                 // Flush the queue, sending all in-flight messages.
                 flush_queue!(queue, sender);
             }
-            }
-
-            // Reset the timer when we are done sending the message.
-            timer.reset();
         }
     }
+
+
+
+
 }
 
 // When we drop, we want to send the shutdown message to the sender.

@@ -58,9 +58,9 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
+    pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // Form and send the single message
-        self.send_message(&Message::Broadcast(Broadcast { topics, message }))
+        self.send_message(&Message::Broadcast(Broadcast { topics, message })).await
     }
 
     /// Sends a pre-serialized message to the server, denoting interest in delivery
@@ -68,7 +68,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     ///
     /// # Errors
     /// If the connection or serialization has failed
-    pub fn send_direct_message(
+    pub async fn send_direct_message(
         &self,
         recipient: &Scheme::PublicKey,
         message: Vec<u8>,
@@ -85,7 +85,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
         self.send_message(&Message::Direct(Direct {
             recipient: recipient_bytes,
             message,
-        }))
+        })).await
     }
 
     /// Sends a message to the server that asserts that this client is interested in
@@ -105,7 +105,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Subscribe(topics_to_send.clone())),
+            self.send_message(&Message::Subscribe(topics_to_send.clone())).await,
             Connection,
             "failed to send subscription message"
         );
@@ -138,7 +138,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Unsubscribe(topics_to_send.clone())),
+            self.send_message(&Message::Unsubscribe(topics_to_send.clone())).await,
             Connection,
             "failed to send unsubscription message"
         );
@@ -159,7 +159,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     ///
     /// # Errors
     /// - if the downstream message sending fails.
-    pub fn send_message(&self, message: &Message) -> Result<()> {
-        self.0.send_message(message)
+    pub async fn send_message(&self, message: &Message) -> Result<()> {
+        self.0.send_message(message).await
     }
 }

@@ -15,6 +15,7 @@ macro_rules! send_or_remove_many {
             if connection
                 .1
                 .queue_message($message.clone(), $position)
+                .await
                 .is_err()
             {
                 // If it fails, remove the connection.

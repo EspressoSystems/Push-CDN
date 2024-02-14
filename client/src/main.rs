@@ -2,7 +2,7 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use clap::Parser;
 use client::{Client, ConfigBuilder, KeyPair};
@@ -16,8 +16,6 @@ use proto::{
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
-use tokio::time::sleep;
-use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -58,28 +56,26 @@ async fn main() -> Result<()> {
     // We want the first node to send to the second
     if args.id != 0 {
         // Generate two random keypairs, one for each client
-        let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
+        let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
-        loop {
+        let now = Instant::now();
+        for _ in 0..250000 {
             // Create a big 512MB message
-            let m = vec![0u8; 256_000_000];
+            let m = vec![0u8; 1000];
 
-            let now = Instant::now();
-
-            if let Err(err) = client.send_direct_message(&other_public_key, m) {
+            if let Err(err) = client.send_direct_message(&other_public_key, m).await {
                 tracing::error!("failed to send message: {}", err);
             };
-
-            info!("in {:?}", now.elapsed());
-
-            sleep(Duration::from_secs(1)).await;
         }
+        println!("{:?}", now.elapsed());
     } else {
-        loop {
+        for _ in 0..250000 {
             if let Err(err) = client.receive_message().await {
                 tracing::error!("failed to receive message: {}", err);
                 continue;
             };
         }
     }
+
+    Ok(())
 }
