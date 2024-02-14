@@ -18,13 +18,13 @@ pub trait SignatureScheme: Send + Sync + Clone + 'static {
     type PublicKey: Serializable + Eq + Send + Sync;
 
     /// Sign a message using a private key
-    /// 
+    ///
     /// # Errors
     /// If signing fails
     fn sign(private_key: &Self::PrivateKey, message: &[u8]) -> Result<Vec<u8>>;
 
     /// Verify a message with the public key, the message itself, and the signature.
-    /// 
+    ///
     /// # Returns
     /// - false if verification failed
     /// - true if verification succeeded
@@ -34,13 +34,13 @@ pub trait SignatureScheme: Send + Sync + Clone + 'static {
 /// Allows for us to be generic over a serializable [signature | public key].
 pub trait Serializable: Sized {
     /// Serialize `Self` to a `Vec<u8>`.
-    /// 
+    ///
     /// # Errors
     /// - If serialization fails
     fn serialize(&self) -> Result<Vec<u8>>;
 
     /// Deserialize `Self` from a `Vec<u8>`.
-    /// 
+    ///
     /// # Errors
     /// - If deserialization fails
     fn deserialize(serialized: &[u8]) -> Result<Self>;
@@ -56,11 +56,10 @@ pub struct KeyPair<Scheme: SignatureScheme> {
     pub private_key: Scheme::PrivateKey,
 }
 
-
 /// An example implementation of `Serializable` for Jellyfish's `bls_over_bn254`.
 impl Serializable for jf_primitives::signatures::bls_over_bn254::VerKey {
     /// Serialize `Self` using `ark-serialize` (uncompressed)
-    /// 
+    ///
     /// # Errors
     /// - If serialization fails
     fn serialize(&self) -> Result<Vec<u8>> {
@@ -70,7 +69,7 @@ impl Serializable for jf_primitives::signatures::bls_over_bn254::VerKey {
     }
 
     /// Deserialize `Self` using `ark-serialize` (uncompressed)
-    /// 
+    ///
     /// # Errors
     /// - If deserialization fails
     fn deserialize(serialized: &[u8]) -> Result<Self> {
@@ -86,14 +85,14 @@ impl SignatureScheme for BLS {
 
     /// Sign using the private key and the message. We have to serialize the signature
     /// so we can return it as a `Vec<u8>`.
-    /// 
+    ///
     /// # Errors
     /// - If serialization fails
     /// - If signing fails
     fn sign(private_key: &Self::PrivateKey, message: &[u8]) -> Result<Vec<u8>> {
         // Sign the message
         let serialized_signature =
-            <BLS as JfSignatureScheme>::sign(&(), private_key, message, &mut DeterministicRng(0))?;
+            <Self as JfSignatureScheme>::sign(&(), private_key, message, &mut DeterministicRng(0))?;
 
         // Serialize the signature
         let mut buf = vec![];
@@ -105,25 +104,19 @@ impl SignatureScheme for BLS {
 
     /// Verify the signature using the public key and the message. We have to deserialize the signature
     /// so we can return it as a `Vec<u8>`.
-    /// 
+    ///
     /// # Errors
     /// - If signature deserialization fails
     /// - If signing fails
     fn verify(public_key: &Self::PublicKey, message: &[u8], signature: &[u8]) -> bool {
         // Deserialize the signature
-        let signature =
-            match <BLS as JfSignatureScheme>::Signature::deserialize_uncompressed(signature) {
-                Ok(signature) => signature,
-                Err(_) => {
-                    return false;
-                }
-            };
+        let Ok(signature) =
+            <Self as JfSignatureScheme>::Signature::deserialize_uncompressed(signature)
+        else {
+            return false;
+        };
 
         // Verify the signature
-        match <BLS as JfSignatureScheme>::verify(&(), public_key, message, &signature) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        <Self as JfSignatureScheme>::verify(&(), public_key, message, &signature).is_ok()
     }
 }
-

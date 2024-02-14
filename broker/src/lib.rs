@@ -220,6 +220,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
     /// - The heartbeat (Discovery) task
     /// - The user connection handler
     /// - The broker connection handler
+    /// - If time went backwards :(
     pub async fn start(self) -> Result<()> {
         // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
@@ -248,10 +249,12 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         if let Some(metrics_bind_address) = self.metrics_bind_address {
             // Set that we are running for timekeeping purposes
             RUNNING_SINCE.set(
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("time went backwards")
-                    .as_secs() as i64,
+                bail!(
+                    SystemTime::now().duration_since(UNIX_EPOCH),
+                    Time,
+                    "time went backwards"
+                )
+                .as_secs() as i64,
             );
 
             // Spawn the serving task

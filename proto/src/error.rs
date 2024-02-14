@@ -30,6 +30,8 @@ pub enum Error {
     Parse(String),
     /// A file-related (either read or write) error. An example is a failed read of a certificate file.
     File(String),
+    /// A time-related error. An example is if time went backwards.
+    Time(String),
     /// An error that is used to specify that a required task has exited.
     Exited(String),
 }

@@ -2,6 +2,7 @@
 
 use std::net::SocketAddr;
 
+use tracing::error;
 use warp::Filter;
 
 /// Start the metrics server that should run forever on a particular port
@@ -12,7 +13,13 @@ pub async fn serve_metrics(bind_address: SocketAddr) {
         let encoder = prometheus::TextEncoder::new();
         let metric_families = prometheus::gather();
 
-        encoder.encode_to_string(&metric_families).unwrap()
+        match encoder.encode_to_string(&metric_families) {
+            Ok(metrics) => metrics,
+            Err(err) => {
+                error!("failed to encode metrics: {err}");
+                "failed to encode metrics".to_string()
+            }
+        }
     });
 
     // Serve the route on the specified port
