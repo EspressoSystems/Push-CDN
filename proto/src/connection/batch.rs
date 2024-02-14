@@ -1,6 +1,4 @@
-
-
-    //! This crate defines a batching system for sending messages, wherein
+//! This crate defines a batching system for sending messages, wherein
 //! we spawn a task that owns the sender and have a handle to a channel it's
 //! listening on.
 //!
@@ -105,7 +103,9 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     pub async fn freeze(&self) -> Result<()> {
         // Send a control message to freeze the queue
         bail!(
-            self.channel.send(QueueMessage::Control(Control::Freeze)).await,
+            self.channel
+                .send(QueueMessage::Control(Control::Freeze))
+                .await,
             Connection,
             "connection closed"
         );
@@ -120,7 +120,9 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     pub async fn unfreeze(&self) -> Result<()> {
         // Send a control message to unfreeze the queue
         bail!(
-            self.channel.send(QueueMessage::Control(Control::Unfreeze)).await,
+            self.channel
+                .send(QueueMessage::Control(Control::Unfreeze))
+                .await,
             Connection,
             "connection closed"
         );
@@ -135,7 +137,9 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     pub async fn queue_message(&self, message: Arc<Vec<u8>>, position: Position) -> Result<()> {
         // Send a data message
         bail!(
-            self.channel.send(QueueMessage::Data(message, position)).await,
+            self.channel
+                .send(QueueMessage::Data(message, position))
+                .await,
             Connection,
             "connection closed"
         );
@@ -244,16 +248,18 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
             }
         }
     }
-
-
-
-
 }
 
 // When we drop, we want to send the shutdown message to the sender.
 impl<ProtocolType: Protocol> Drop for BatchedSender<ProtocolType> {
     fn drop(&mut self) {
-        // Shut down the channel
-        let _ = self.channel.send(QueueMessage::Control(Control::Shutdown));
+        // Spawn a task to shut down the channel
+        let channel = self.channel.clone();
+        spawn(async move {
+            let channel_clone = channel.clone();
+            channel_clone
+                .send(QueueMessage::Control(Control::Shutdown))
+                .await
+        });
     }
 }

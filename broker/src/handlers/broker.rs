@@ -68,7 +68,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // Freeze the sender before adding it to our connections so we don't receive messages out of order.
         // This is to enforce message ordering
-        let _ = sender.freeze();
+        let _ = sender.freeze().await;
 
         // Add our connection to the list of connections
         let connection_id = self
@@ -87,7 +87,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             .await;
 
         // Unfreeze the sender, flushing the updates
-        let _ = sender.unfreeze();
+        let _ = sender.unfreeze().await;
 
         info!("connected to broker {}", broker_address);
 
