@@ -6,6 +6,7 @@ package.description = "The PushCDN is a distributed, scalable, and fault-toleran
 
 [workspace.dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
+async-std = { verison = "1.12.0", features = ["tokio1", "attributes"] }
 jf-primitives.git = "https://github.com/EspressoSystems/jellyfish.git"
 rand = "0.8.5"
 tracing = "0.1.40"

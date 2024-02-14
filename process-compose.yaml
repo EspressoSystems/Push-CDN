@@ -23,13 +23,13 @@ processes:
         condition: process_started
 
   client_0:
-    command: cargo run --bin client --features insecure --no-default-features -- --id 0
+    command: cargo run --bin client --features insecure --features runtime-tokio --no-default-features -- --id 0
     depends_on:
       marshal_0:
         condition: process_started
   
   client_1:
-    command: cargo run --bin client --features insecure --no-default-features -- --id 1
+    command: cargo run --bin client --features insecure --features runtime-tokio --no-default-features -- --id 1
     depends_on:
       marshal_0:
         condition: process_started

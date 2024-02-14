@@ -8,14 +8,17 @@ description = "Contains the common protocol definition and common code for the b
 capnpc = "0.19.0"
 
 [features]
+default = ["local_discovery", "insecure", "runtime-async-std"]
+
 metrics = ["dep:prometheus", "dep:lazy_static"]
 local_discovery = ["dep:sqlx"]
 insecure = ["rustls/dangerous_configuration"]
-default = ["local_discovery", "insecure"]
+
+runtime-tokio = []
+runtime-async-std = ["dep:async-std"]
+
 
 [dependencies]
-
-
 # TODO: make this optional if local not specified
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 
@@ -29,10 +32,12 @@ sqlx = { version = "0.7.3", features = [
 prometheus = { workspace = true, optional = true }
 lazy_static = { workspace = true, optional = true }
 
+tokio = { workspace = true }
+async-std = { workspace = true, optional = true }
+
 capnp = "0.19.1"
 thiserror = "1.0.56"
 quinn = "0.10.2"
-tokio.workspace = true
 jf-primitives.workspace = true
 ark-serialize = "0.4.2"
 rand.workspace = true

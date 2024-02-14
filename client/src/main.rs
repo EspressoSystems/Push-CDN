@@ -2,7 +2,7 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use client::{Client, ConfigBuilder, KeyPair};
@@ -17,6 +17,7 @@ use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use tokio::time::sleep;
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -27,7 +28,8 @@ struct Args {
     id: u64,
 }
 
-#[tokio::main]
+#[cfg_attr(feature = "runtime-tokio", tokio::main)]
+#[cfg_attr(feature = "runtime-async-std", async_std::main)]
 async fn main() -> Result<()> {
     // Get command-line args
     let args = Args::parse();
@@ -62,9 +64,13 @@ async fn main() -> Result<()> {
             // Create a big 512MB message
             let m = vec![0u8; 256_000_000];
 
+            let now = Instant::now();
+
             if let Err(err) = client.send_direct_message(&other_public_key, m) {
                 tracing::error!("failed to send message: {}", err);
             };
+
+            info!("in {:?}", now.elapsed());
 
             sleep(Duration::from_secs(1)).await;
         }
