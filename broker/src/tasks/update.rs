@@ -9,7 +9,12 @@ use crate::{
 };
 use crate::{new_serialized_message, send_or_remove_many};
 use proto::{
-    bail, connection::batch::Position, crypto::signature::SignatureScheme, error::{Error, Result}, message::Message, BrokerProtocol
+    bail,
+    connection::batch::Position,
+    crypto::signature::SignatureScheme,
+    error::{Error, Result},
+    message::Message,
+    BrokerProtocol,
 };
 use tokio::time::sleep;
 use tracing::error;

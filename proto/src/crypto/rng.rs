@@ -1,4 +1,4 @@
-//! In this module we define rng-related items. 
+//! In this module we define rng-related items.
 
 use core::result::Result as StdResult;
 use rand::{CryptoRng, RngCore};

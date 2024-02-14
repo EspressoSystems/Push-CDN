@@ -3,11 +3,16 @@
 use std::{sync::Arc, time::Duration};
 
 use proto::{
-    authenticate_with_broker, connection::{
+    authenticate_with_broker,
+    connection::{
         auth::broker::BrokerAuth,
         batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
-    }, crypto::signature::SignatureScheme, error::{Error, Result}, message::Message, verify_broker, BrokerProtocol
+    },
+    crypto::signature::SignatureScheme,
+    error::{Error, Result},
+    message::Message,
+    verify_broker, BrokerProtocol,
 };
 use tracing::{error, info};
 

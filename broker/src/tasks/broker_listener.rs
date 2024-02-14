@@ -13,9 +13,7 @@ use tracing::warn;
 
 use crate::Inner;
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme>
-    Inner<BrokerScheme, UserScheme>
-{
+impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// Runs the broker listener task in a loop.
     pub async fn run_broker_listener_task(
         self: Arc<Self>,

@@ -8,7 +8,10 @@ use proto::{
         auth::broker::BrokerAuth,
         batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
-    }, crypto::signature::SignatureScheme, message::Message, UserProtocol
+    },
+    crypto::signature::SignatureScheme,
+    message::Message,
+    UserProtocol,
 };
 use slotmap::Key;
 use tracing::info;
@@ -22,9 +25,7 @@ use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme>
-    Inner<BrokerScheme, UserScheme>
-{
+impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
@@ -32,7 +33,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme>
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),
-    )     {
+    ) {
         // Verify (authenticate) the connection
         let Ok((public_key, topics)) = BrokerAuth::<UserScheme>::verify_user(
             &mut connection,
