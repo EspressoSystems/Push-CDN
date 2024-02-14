@@ -1,8 +1,10 @@
-use std::{collections::HashSet, ops::Add, time::Duration};
+use std::{collections::HashSet, ops::Add, str::FromStr, time::Duration};
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use sqlx::{query, query_as, types::time::OffsetDateTime, Row, SqlitePool};
+use sqlx::{
+    query, query_as, sqlite::SqliteConnectOptions, types::time::OffsetDateTime, Row, SqlitePool,
+};
 
 use crate::{
     bail,
@@ -43,11 +45,26 @@ impl DiscoveryClient for Embedded {
             |identifier| identifier,
         );
 
+        // Create the SQLite connection options (create DB if it doesn't exist)
+        let options = bail!(
+            SqliteConnectOptions::from_str(&path),
+            Parse,
+            "failed to parse SQLite options"
+        )
+        .create_if_missing(true);
+
         // Open a test connection to the DB
         let pool = bail!(
-            SqlitePool::connect(&path).await,
+            SqlitePool::connect_with(options).await,
             File,
-            "failed to open sqlite db"
+            "failed to open SQLite DB"
+        );
+
+        // Perform migrations on the DB
+        bail!(
+            sqlx::migrate!("../local_db/migrations").run(&pool).await,
+            File,
+            "failed to perform DB migrations"
         );
 
         // Return the thinly wrapped `Self`.
@@ -89,7 +106,7 @@ impl DiscoveryClient for Embedded {
 
         Ok(())
     }
-    
+
     /// Get the broker with the least number of connections (and permits).
     /// We use this to figure out which broker gets our permit issued
     ///
@@ -180,7 +197,6 @@ impl DiscoveryClient for Embedded {
         Ok(brokers_parsed)
     }
 
-
     /// Issue a permit for a particular broker. This is separate from `get_with_least_connections`
     /// because it allows for more modularity; and it isn't atomic anyway.
     ///
@@ -190,7 +206,7 @@ impl DiscoveryClient for Embedded {
         &mut self,
         for_broker: &BrokerIdentifier,
         expiry: Duration,
-        verification_key: Vec<u8>,
+        public_key: Vec<u8>,
     ) -> Result<u64> {
         // Create random permit number
         // TODO: figure out if it makes sense to initialize this somewhere else
@@ -205,7 +221,7 @@ impl DiscoveryClient for Embedded {
         bail!(
             query(
                 "INSERT INTO permits (identifier, permit, user_pubkey, expiry) VALUES (?1, ?2, ?3, ?4)",
-            ).bind(&broker).bind(permit).bind(verification_key).bind(expiry)
+            ).bind(&broker).bind(permit).bind(public_key).bind(expiry)
             .execute(&self.pool)
             .await,
             File,

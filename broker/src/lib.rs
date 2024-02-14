@@ -18,13 +18,15 @@ use std::{
 };
 
 mod metrics;
-use proto::metrics as proto_metrics;
+use proto::{
+    crypto::signature::{KeyPair, SignatureScheme},
+    metrics as proto_metrics,
+};
 
 // TODO: figure out if we should use Tokio's here
 use proto::{
     bail,
     connection::protocols::Protocol,
-    crypto::{KeyPair, Scheme, Serializable},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     parse_socket_address, BrokerProtocol, DiscoveryClientType, UserProtocol,
@@ -36,7 +38,7 @@ use crate::metrics::RUNNING_SINCE;
 
 /// The broker's configuration. We need this when we create a new one.
 /// TODO: clean up these generics. could be a generic type that implements both
-pub struct Config<BrokerSignatureScheme: Scheme> {
+pub struct Config<BrokerScheme: SignatureScheme> {
     /// The user (public) advertise address: what the marshals send to users upon authentication.
     /// Users connect to us with this address.
     pub public_advertise_address: String,
@@ -60,7 +62,7 @@ pub struct Config<BrokerSignatureScheme: Scheme> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
-    pub keypair: KeyPair<BrokerSignatureScheme>,
+    pub keypair: KeyPair<BrokerScheme>,
 
     /// An optional TLS cert path
     pub maybe_tls_cert_path: Option<String>,
@@ -69,11 +71,7 @@ pub struct Config<BrokerSignatureScheme: Scheme> {
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
-struct Inner<
-    // TODO: clean these up with some sort of generic trick or something
-    BrokerSignatureScheme: Scheme,
-    UserSignatureScheme: Scheme,
-> {
+struct Inner<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
@@ -82,7 +80,7 @@ struct Inner<
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    keypair: KeyPair<BrokerSignatureScheme>,
+    keypair: KeyPair<BrokerScheme>,
 
     /// The set of all broker identities we see. Mapped against the brokers we see in `Discovery`
     /// so that we don't connect multiple times.
@@ -98,15 +96,14 @@ struct Inner<
     /// types.
     user_connection_lookup: RwLock<ConnectionLookup<UserProtocol>>,
 
-    // connected_keys: LoggedSet<UserSignatureScheme::VerificationKey>,
     /// The `PhantomData` that we need to be generic over protocol types.
-    pd: PhantomData<UserSignatureScheme>,
+    pd: PhantomData<UserScheme>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme> {
+pub struct Broker<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<BrokerSignatureScheme, UserSignatureScheme>>,
+    inner: Arc<Inner<BrokerScheme, UserScheme>>,
 
     /// The public (user -> broker) listener
     user_listener: <UserProtocol as Protocol>::Listener,
@@ -118,21 +115,14 @@ pub struct Broker<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme> {
     metrics_bind_address: Option<SocketAddr>,
 }
 
-impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
-    Broker<BrokerSignatureScheme, UserSignatureScheme>
-where
-    BrokerSignatureScheme::VerificationKey: Serializable,
-    BrokerSignatureScheme::Signature: Serializable,
-    UserSignatureScheme::VerificationKey: Serializable,
-    UserSignatureScheme::Signature: Serializable,
-{
+impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerScheme, UserScheme> {
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
     /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
-    pub async fn new(config: Config<BrokerSignatureScheme>) -> Result<Self> {
+    pub async fn new(config: Config<BrokerScheme>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             public_advertise_address,

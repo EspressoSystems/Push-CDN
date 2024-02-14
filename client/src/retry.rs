@@ -13,7 +13,7 @@ use proto::{
         batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
     },
-    crypto::{KeyPair, Scheme, Serializable},
+    crypto::signature::{KeyPair, SignatureScheme},
     error::{Error, Result},
     message::{Message, Topic},
 };
@@ -30,13 +30,13 @@ use crate::bail;
 /// It employs synchronization as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Retry<SignatureScheme: Scheme, ProtocolType: Protocol> {
-    pub inner: Arc<Inner<SignatureScheme, ProtocolType>>,
+pub struct Retry<Scheme: SignatureScheme, ProtocolType: Protocol> {
+    pub inner: Arc<Inner<Scheme, ProtocolType>>,
 }
 
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct Inner<SignatureScheme: Scheme, ProtocolType: Protocol> {
+pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     endpoint: String,
@@ -53,7 +53,7 @@ pub struct Inner<SignatureScheme: Scheme, ProtocolType: Protocol> {
     /// to be. This is so we don't spawn multiple tasks at once
     reconnect_semaphore: Semaphore,
 
-    pub keypair: KeyPair<SignatureScheme>,
+    pub keypair: KeyPair<Scheme>,
 
     /// The topics we're currently subscribed to. We need this so we can send our subscriptions
     /// when we connect to a new server.
@@ -61,18 +61,18 @@ pub struct Inner<SignatureScheme: Scheme, ProtocolType: Protocol> {
 
     /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
     /// `SignatureScheme` downstream.
-    pd: PhantomData<(SignatureScheme, ProtocolType)>,
+    pd: PhantomData<(Scheme, ProtocolType)>,
 }
 
 /// The configuration needed to construct a `Retry` connection.
-pub struct Config<SignatureScheme: Scheme, ProtocolType: Protocol> {
+pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    pub keypair: KeyPair<SignatureScheme>,
+    pub keypair: KeyPair<Scheme>,
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
@@ -106,7 +106,7 @@ macro_rules! try_with_reconnect {
                         // Loop to connect and authenticate
                         let connection = loop {
                             // Create a connection
-                            match connect_and_authenticate::<SignatureScheme, ProtocolType>(
+                            match connect_and_authenticate::<Scheme, ProtocolType>(
                                 &inner.endpoint,
                                 &inner.keypair,
                                 inner.subscribed_topics.read().await.clone(),
@@ -142,11 +142,7 @@ macro_rules! try_with_reconnect {
     }};
 }
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> Retry<SignatureScheme, ProtocolType>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
-{
+impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType> {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
     /// This allows us to create elastic clients that always try to maintain a connection.
@@ -155,7 +151,7 @@ where
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
-    pub async fn from_config(config: Config<SignatureScheme, ProtocolType>) -> Result<Self> {
+    pub async fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
@@ -169,7 +165,7 @@ where
 
         // Perform the initial connection and authentication
         let connection = bail!(
-            connect_and_authenticate::<SignatureScheme, ProtocolType>(
+            connect_and_authenticate::<Scheme, ProtocolType>(
                 &endpoint,
                 &keypair,
                 subscribed_topics.read().await.clone()
@@ -245,15 +241,11 @@ where
     }
 }
 
-async fn connect_and_authenticate<SignatureScheme: Scheme, ProtocolType: Protocol>(
+async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol>(
     marshal_endpoint: &str,
-    keypair: &KeyPair<SignatureScheme>,
+    keypair: &KeyPair<Scheme>,
     subscribed_topics: HashSet<Topic>,
-) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
-{
+) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)> {
     // Make the connection to the marshal
     let mut connection = bail!(
         ProtocolType::connect(marshal_endpoint).await,
@@ -263,11 +255,7 @@ where
 
     // Authenticate the connection to the marshal (if not provided)
     let (broker_address, permit) = bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_marshal(
-            &mut connection,
-            keypair
-        )
-        .await,
+        UserAuth::<Scheme, ProtocolType>::authenticate_with_marshal(&mut connection, keypair).await,
         Authentication,
         "failed to authenticate to marshal"
     );
@@ -281,7 +269,7 @@ where
 
     // Authenticate the connection to the broker
     bail!(
-        UserAuth::<SignatureScheme, ProtocolType>::authenticate_with_broker(
+        UserAuth::<Scheme, ProtocolType>::authenticate_with_broker(
             &mut connection,
             permit,
             subscribed_topics

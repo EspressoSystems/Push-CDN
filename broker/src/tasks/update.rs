@@ -9,12 +9,7 @@ use crate::{
 };
 use crate::{new_serialized_message, send_or_remove_many};
 use proto::{
-    bail,
-    connection::batch::Position,
-    crypto::{Scheme, Serializable},
-    error::{Error, Result},
-    message::Message,
-    BrokerProtocol,
+    bail, connection::batch::Position, crypto::signature::SignatureScheme, error::{Error, Result}, message::Message, BrokerProtocol
 };
 use tokio::time::sleep;
 use tracing::error;
@@ -41,14 +36,7 @@ macro_rules! send_update_to_brokers {
     }};
 }
 
-impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
-    Inner<BrokerSignatureScheme, UserSignatureScheme>
-where
-    BrokerSignatureScheme::VerificationKey: Serializable,
-    BrokerSignatureScheme::Signature: Serializable,
-    UserSignatureScheme::VerificationKey: Serializable,
-    UserSignatureScheme::Signature: Serializable,
-{
+impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// This task deals with sending connected user and topic updates to other brokers. It takes advantage of
     /// `SnapshotMap`, so we can send partial or full updates to the other brokers as they need it.
     /// Right now, we do it every 5 seconds, or on every user connect if the number of connections is

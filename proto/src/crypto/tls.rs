@@ -1,129 +1,18 @@
-//! In this module we define cryptography primitives we may need, as
-//! well as any serialization/deserialization functions on those primitives.
+//! In this module we define TLS-related items, such as an optional
+//! way to skip server verification.
 
 use crate::{
     bail,
     error::{Error, Result},
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::result::Result as StdResult;
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme, SignatureScheme as JfSignatureScheme,
-};
-use rand::{CryptoRng, RngCore};
 use rcgen::generate_simple_self_signed;
-use std::hash::Hash;
 
 // TODO: have `SkipServerVerify` as a separate module
 #[cfg(feature = "insecure")]
 use rustls::ClientConfig;
 #[cfg(feature = "insecure")]
 use std::sync::Arc;
-
-/// We encapsulate keys here to help readability.
-pub struct KeyPair<SignatureScheme: Scheme> {
-    /// The underlying (public) verification key, used to authenticate with the server.
-    pub verification_key: SignatureScheme::VerificationKey,
-
-    /// The underlying (private) signing key, used to sign messages to send to the server during the
-    /// authentication phase.
-    pub signing_key: SignatureScheme::SigningKey,
-}
-
-/// Helps clean up some trait bounds
-pub trait Serializable: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash {}
-impl<T: CanonicalSerialize + CanonicalDeserialize + Eq + PartialEq + Hash> Serializable for T {}
-
-pub trait Scheme: JfSignatureScheme<PublicParameter = (), MessageUnit = u8> {}
-impl Scheme for BLSOverBN254CurveSignatureScheme {}
-
-/// The oxymoron function. Used mostly with crypto key generation to generate
-/// "random" values that are actually deterministic based on the input.
-pub struct DeterministicRng(pub u64);
-
-impl CryptoRng for DeterministicRng {}
-
-/// This implementation is to satisfy the `RngCore` trait and allow us to use it
-/// to generate "random" values.
-#[allow(clippy::cast_possible_truncation)]
-impl RngCore for DeterministicRng {
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        for item in dest {
-            *item = self.0 as u8;
-            self.0 >>= 8_i32;
-        }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.0 as u32
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> StdResult<(), rand::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-/// A wrapper function for serializing anything that implements `CanonicalSerialize`
-/// We need this to be generic over the key type.
-///
-/// # Errors
-/// Will error if the transitive serialization fails.
-pub fn serialize<K>(obj: &K) -> Result<Vec<u8>>
-where
-    K: CanonicalSerialize,
-{
-    // Create a new buffer and serialize the object to it
-    let mut bytes = Vec::new();
-    bail!(
-        obj.serialize_uncompressed(&mut bytes),
-        Crypto,
-        "failed to serialize key"
-    );
-
-    // Return the serialized bytes
-    Ok(bytes)
-}
-
-/// A wrapper function for deserializing anything that implements `CanonicalDeserialize`
-/// We need this to be generic over the key type.
-///
-/// # Errors
-/// Will error if the transitive deserialization fails.
-pub fn deserialize<K>(bytes: &[u8]) -> Result<K>
-where
-    K: CanonicalDeserialize,
-{
-    // Deserialize the object
-    Ok(bail!(
-        K::deserialize_uncompressed(bytes),
-        Crypto,
-        "failed to deserialize key"
-    ))
-}
-
-/// A generic function to create a random key with any signature scheme. Can be used for generation
-/// or testing.
-///
-/// # Errors
-/// Errors only if the transitive key generation fails.
-pub fn generate_random_keypair<SignatureScheme: Scheme, Rng: CryptoRng + RngCore>(
-    mut prng: Rng,
-) -> Result<(
-    SignatureScheme::SigningKey,
-    SignatureScheme::VerificationKey,
-)> {
-    // Generate a key and return it
-    Ok(bail!(
-        SignatureScheme::key_gen(&(), &mut prng),
-        Crypto,
-        "failed to generate keypair"
-    ))
-}
 
 /// This lets us, while using `rustls` skip server verification
 /// for when we test locally. This way we don't require a self-signed

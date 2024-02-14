@@ -5,14 +5,12 @@
 use std::{marker::PhantomData, time::Duration};
 
 use clap::Parser;
-use client::{Client, Config};
-use proto::{
-    connection::protocols::quic::Quic,
-    crypto::{self, DeterministicRng, KeyPair},
-    error::Result,
-};
+use client::{Client, Config, KeyPair};
+use proto::{connection::protocols::quic::Quic, crypto::rng::DeterministicRng, error::Result};
 
-use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use jf_primitives::signatures::{
+    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
+};
 use tokio::time::sleep;
 
 #[derive(Parser, Debug)]
@@ -33,14 +31,14 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Generate two random keypairs, one for each client
-    let (signing_key, verification_key) =
-        crypto::generate_random_keypair::<BLS, DeterministicRng>(DeterministicRng(args.id))?;
+
+    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
 
     let client = Client::<BLS, Quic>::new(Config {
         endpoint: "127.0.0.1:8082".to_string(),
         keypair: KeyPair {
-            verification_key,
-            signing_key,
+            public_key,
+            private_key,
         },
         subscribed_topics: vec![],
         pd: PhantomData,
@@ -50,14 +48,13 @@ async fn main() -> Result<()> {
     // We want the first node to send to the second
     if args.id != 0 {
         // Generate two random keypairs, one for each client
-        let (_, other_verification_key) =
-            crypto::generate_random_keypair::<BLS, DeterministicRng>(DeterministicRng(0))?;
+        let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
 
         loop {
             // Create a big 512MB message
             let m = vec![0u8; 256_000_000];
 
-            if let Err(err) = client.send_direct_message(&other_verification_key, m) {
+            if let Err(err) = client.send_direct_message(&other_public_key, m) {
                 tracing::error!("failed to send message: {}", err);
             };
 

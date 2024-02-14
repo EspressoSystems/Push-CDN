@@ -8,10 +8,7 @@ use proto::{
         auth::broker::BrokerAuth,
         batch::{BatchedSender, Position},
         protocols::{Protocol, Receiver},
-    },
-    crypto::{Scheme, Serializable},
-    message::Message,
-    UserProtocol,
+    }, crypto::signature::SignatureScheme, message::Message, UserProtocol
 };
 use slotmap::Key;
 use tracing::info;
@@ -25,13 +22,8 @@ use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
 
-impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
-    Inner<BrokerSignatureScheme, UserSignatureScheme>
-where
-    BrokerSignatureScheme::VerificationKey: Serializable,
-    BrokerSignatureScheme::Signature: Serializable,
-    UserSignatureScheme::VerificationKey: Serializable,
-    UserSignatureScheme::Signature: Serializable,
+impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme>
+    Inner<BrokerScheme, UserScheme>
 {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
@@ -40,14 +32,9 @@ where
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),
-    ) where
-        BrokerSignatureScheme::VerificationKey: Serializable,
-        BrokerSignatureScheme::Signature: Serializable,
-        UserSignatureScheme::VerificationKey: Serializable,
-        UserSignatureScheme::Signature: Serializable,
-    {
+    )     {
         // Verify (authenticate) the connection
-        let Ok((verification_key, topics)) = BrokerAuth::<UserSignatureScheme>::verify_user(
+        let Ok((public_key, topics)) = BrokerAuth::<UserScheme>::verify_user(
             &mut connection,
             &self.identity,
             &mut self.discovery_client.clone(),
@@ -74,7 +61,7 @@ where
 
         // Add the user for their key
         get_lock!(self.user_connection_lookup, write)
-            .subscribe_connection_id_to_keys(connection_id, vec![verification_key]);
+            .subscribe_connection_id_to_keys(connection_id, vec![public_key]);
 
         info!("received connection from user {:?}", connection_id.data());
 

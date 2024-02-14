@@ -45,7 +45,7 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
         &mut self,
         for_broker: &BrokerIdentifier,
         expiry: Duration,
-        verification_key: Vec<u8>,
+        public_key: Vec<u8>,
     ) -> Result<u64>;
 
     /// (As a broker) validate a permit as existing for a broker and remove it, returning

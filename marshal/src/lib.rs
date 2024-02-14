@@ -8,12 +8,7 @@ use std::{marker::PhantomData, sync::Arc};
 mod handlers;
 
 use proto::{
-    bail,
-    connection::protocols::{Listener, Protocol},
-    crypto::{Scheme, Serializable},
-    discovery::DiscoveryClient,
-    error::{Error, Result},
-    DiscoveryClientType, UserProtocol,
+    bail, connection::protocols::{Listener, Protocol}, crypto::signature::SignatureScheme, discovery::DiscoveryClient, error::{Error, Result}, DiscoveryClientType, UserProtocol
 };
 use tokio::spawn;
 use tracing::warn;
@@ -21,7 +16,7 @@ use tracing::warn;
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<SignatureScheme: Scheme> {
+pub struct Marshal<Scheme: SignatureScheme> {
     /// The underlying connection listener. Used to accept new connections.
     listener: Arc<<UserProtocol as Protocol>::Listener>,
 
@@ -30,13 +25,10 @@ pub struct Marshal<SignatureScheme: Scheme> {
 
     /// We need this `PhantomData` to allow us to specify the signature scheme,
     /// protocol type, and authentication flow.
-    pd: PhantomData<SignatureScheme>,
+    pd: PhantomData<Scheme>,
 }
 
-impl<SignatureScheme: Scheme> Marshal<SignatureScheme>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
+impl<Scheme: SignatureScheme> Marshal<Scheme>
 {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.

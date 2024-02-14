@@ -40,8 +40,8 @@ enum Topic {
 # This message is used to authenticate the client to a marshal or a broker
 # to a broker. It contains a way of proving identity of the sender.
 struct AuthenticateWithKey {
-    # The verification key, used downstream against the signed timestamp to verify the sender.
-    verificationKey @0: Data;
+    # The public key, used downstream against the signed timestamp to verify the sender.
+    publicKey @0: Data;
     # The timestamp, unsigned. This is signed by the client to prevent replay attacks.
     timestamp @1: UInt64;
     # The signature, which is the timestamp, but signed.

@@ -6,26 +6,23 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::crypto::signature::Serializable;
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
-    crypto::{self, DeterministicRng, KeyPair, Scheme, Serializable},
+    crypto::signature::{KeyPair, SignatureScheme},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<SignatureScheme: Scheme, ProtocolType: Protocol> {
+pub struct UserAuth<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
-    pub pd: PhantomData<(SignatureScheme, ProtocolType)>,
+    pub pd: PhantomData<(Scheme, ProtocolType)>,
 }
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> UserAuth<SignatureScheme, ProtocolType>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
-{
+impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolType> {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message
@@ -36,7 +33,7 @@ where
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
         connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
-        keypair: &KeyPair<SignatureScheme>,
+        keypair: &KeyPair<Scheme>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -48,35 +45,23 @@ where
 
         // Sign the timestamp from above
         let signature = bail!(
-            SignatureScheme::sign(
-                &(),
-                &keypair.signing_key,
-                timestamp.to_le_bytes(),
-                &mut DeterministicRng(0),
-            ),
+            Scheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
 
-        // Serialize the verify key
-        let verification_key_bytes = bail!(
-            crypto::serialize(&keypair.verification_key),
+        // Serialize the public key
+        let public_key_bytes = bail!(
+            keypair.public_key.serialize(),
             Serialize,
-            "failed to serialize verification key"
-        );
-
-        // Serialize the signature
-        let signature_bytes = bail!(
-            crypto::serialize(&signature),
-            Serialize,
-            "failed to serialize signature"
+            "failed to serialize public key"
         );
 
         // We authenticate to the marshal with a key
         let message = Message::AuthenticateWithKey(AuthenticateWithKey {
             timestamp,
-            verification_key: verification_key_bytes,
-            signature: signature_bytes,
+            public_key: public_key_bytes,
+            signature,
         });
 
         // Create and send the authentication message from the above operations

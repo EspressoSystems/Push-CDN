@@ -7,10 +7,11 @@ use std::{
 
 use tracing::error;
 
+use crate::crypto::signature::{KeyPair, Serializable};
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
-    crypto::{self, DeterministicRng, KeyPair, Scheme, Serializable},
+    crypto::signature::SignatureScheme,
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
@@ -19,10 +20,10 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct BrokerAuth<SignatureScheme: Scheme> {
+pub struct BrokerAuth<Scheme: SignatureScheme> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
-    pub pd: PhantomData<SignatureScheme>,
+    pub pd: PhantomData<Scheme>,
 }
 
 /// We  use this macro upstream to conditionally order broker authentication flows
@@ -31,7 +32,7 @@ pub struct BrokerAuth<SignatureScheme: Scheme> {
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
         // Authenticate with the other broker, returning their reconnect address
-        match BrokerAuth::<BrokerSignatureScheme>::authenticate_with_broker(
+        match BrokerAuth::<BrokerScheme>::authenticate_with_broker(
             &mut $connection,
             &$inner.keypair,
         )
@@ -51,10 +52,10 @@ macro_rules! authenticate_with_broker {
 macro_rules! verify_broker {
     ($connection: expr, $inner: expr) => {
         // Verify the other broker's authentication
-        if let Err(err) = BrokerAuth::<BrokerSignatureScheme>::verify_broker(
+        if let Err(err) = BrokerAuth::<BrokerScheme>::verify_broker(
             &mut $connection,
             &$inner.identity,
-            &$inner.keypair.verification_key,
+            &$inner.keypair.public_key,
         )
         .await
         {
@@ -64,11 +65,7 @@ macro_rules! verify_broker {
     };
 }
 
-impl<SignatureScheme: Scheme> BrokerAuth<SignatureScheme>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
-{
+impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
     /// 2. Validate and remove the permit from `Redis`
@@ -98,7 +95,7 @@ where
         };
 
         // Check the permit
-        let serialized_verification_key = match discovery_client
+        let serialized_public_key = match discovery_client
             .validate_permit(broker_identifier, auth_message.permit)
             .await
         {
@@ -113,8 +110,8 @@ where
                 fail_verification_with_message!(connection, "internal server error");
             }
 
-            // The permit existed, return the associated verification key
-            Ok(Some(serialized_verification_key)) => serialized_verification_key,
+            // The permit existed, return the associated public key
+            Ok(Some(serialized_public_key)) => serialized_public_key,
         };
 
         // Form the response message
@@ -126,11 +123,11 @@ where
         // Send the successful response to the user
         let _ = connection.0.send_message(response_message).await;
 
-        // Try to serialize the verification key
+        // Try to serialize the public key
         bail!(
-            crypto::deserialize(&serialized_verification_key),
+            Scheme::PublicKey::deserialize(&serialized_public_key),
             Crypto,
-            "failed to deserialize verification key"
+            "failed to deserialize public key"
         );
 
         // Receive the subscribed topics
@@ -146,8 +143,8 @@ where
             fail_verification_with_message!(connection, "wrong message type");
         };
 
-        // Return the verification key
-        Ok((serialized_verification_key, subscribed_topics_message))
+        // Return the public key
+        Ok((serialized_public_key, subscribed_topics_message))
     }
 
     /// Authenticate with a broker (as a broker).
@@ -162,7 +159,7 @@ where
             <BrokerProtocol as Protocol>::Sender,
             <BrokerProtocol as Protocol>::Receiver,
         ),
-        keypair: &KeyPair<SignatureScheme>,
+        keypair: &KeyPair<Scheme>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -174,35 +171,23 @@ where
 
         // Sign the timestamp from above
         let signature = bail!(
-            SignatureScheme::sign(
-                &(),
-                &keypair.signing_key,
-                timestamp.to_le_bytes(),
-                &mut DeterministicRng(0),
-            ),
+            Scheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
 
-        // Serialize the verify key
-        let verification_key_bytes = bail!(
-            crypto::serialize(&keypair.verification_key),
+        // Serialize the public key
+        let public_key_bytes = bail!(
+            keypair.public_key.serialize(),
             Serialize,
-            "failed to serialize verification key"
-        );
-
-        // Serialize the signature
-        let signature_bytes = bail!(
-            crypto::serialize(&signature),
-            Serialize,
-            "failed to serialize signature"
+            "failed to serialize publi key"
         );
 
         // We authenticate to the marshal with a key
         let message = Message::AuthenticateWithKey(AuthenticateWithKey {
             timestamp,
-            verification_key: verification_key_bytes,
-            signature: signature_bytes,
+            public_key: public_key_bytes,
+            signature,
         });
 
         // Create and send the authentication message from the above operations
@@ -247,7 +232,7 @@ where
     }
 
     /// Verify a broker as a broker.
-    /// Will fail verification if it does not match our verification key.
+    /// Will fail verification if it does not match our public key.
     ///
     /// # Errors
     /// - If verification has failed
@@ -257,7 +242,7 @@ where
             <BrokerProtocol as Protocol>::Receiver,
         ),
         our_identifier: &BrokerIdentifier,
-        our_verification_key: &SignatureScheme::VerificationKey,
+        our_public_key: &Scheme::PublicKey,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -272,25 +257,17 @@ where
             fail_verification_with_message!(connection, "wrong message type");
         };
 
-        // Deserialize the user's verification key
-        let Ok(verification_key) = crypto::deserialize(&auth_message.verification_key) else {
-            fail_verification_with_message!(connection, "malformed verification key");
-        };
-
-        // Deserialize the signature
-        let Ok(signature) = crypto::deserialize(&auth_message.signature) else {
-            fail_verification_with_message!(connection, "malformed signature");
+        // Deserialize the user's public key
+        let Ok(public_key) = Scheme::PublicKey::deserialize(&auth_message.public_key) else {
+            fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if SignatureScheme::verify(
-            &(),
-            &verification_key,
-            auth_message.timestamp.to_le_bytes(),
-            &signature,
-        )
-        .is_err()
-        {
+        if !Scheme::verify(
+            &public_key,
+            &auth_message.timestamp.to_le_bytes(),
+            &auth_message.signature,
+        ) {
             fail_verification_with_message!(connection, "failed to verify");
         }
 
@@ -304,8 +281,8 @@ where
             fail_verification_with_message!(connection, "timestamp is too old");
         }
 
-        // Check our verification key against theirs
-        if verification_key != *our_verification_key {
+        // Check our public key against theirs
+        if public_key != *our_public_key {
             fail_verification_with_message!(connection, "signature did not use broker key");
         }
 

@@ -7,7 +7,7 @@ use quinn::{ClientConfig, Endpoint, ServerConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(feature = "insecure")]
-use crate::crypto::SkipServerVerification;
+use crate::crypto::tls::SkipServerVerification;
 use crate::{
     bail, bail_option,
     crypto::{self},
@@ -112,7 +112,7 @@ impl Protocol for Quic {
     ) -> Result<Self::Listener> {
         // Conditionally load or generate a certificate and key
         let (certificates, key) = bail!(
-            crypto::load_or_self_sign_tls_certificate_and_key(
+            crypto::tls::load_or_self_sign_tls_certificate_and_key(
                 maybe_tls_cert_path,
                 maybe_tls_key_path,
             ),

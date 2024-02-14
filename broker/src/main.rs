@@ -3,11 +3,13 @@
 
 use broker::{Broker, Config};
 use clap::Parser;
-use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use jf_primitives::signatures::{
+    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
+};
 use local_ip_address::local_ip;
 use proto::{
     bail,
-    crypto::{generate_random_keypair, DeterministicRng},
+    crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
 };
 
@@ -56,7 +58,7 @@ async fn main() -> Result<()> {
     let private_ip_address = bail!(local_ip(), Connection, "failed to get local IP address");
 
     // Create deterministic keys for brokers (for now, obviously)
-    let (signing_key, verification_key) = generate_random_keypair::<BLS, _>(DeterministicRng(0))?;
+    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
     let broker_config = Config {
         // Public addresses: explicitly defined advertise address, bind address is on every interface
@@ -74,9 +76,9 @@ async fn main() -> Result<()> {
 
         discovery_endpoint: args.discovery_endpoint,
 
-        keypair: proto::crypto::KeyPair {
-            verification_key,
-            signing_key,
+        keypair: KeyPair {
+            public_key,
+            private_key,
         },
 
         // TODO: clap this

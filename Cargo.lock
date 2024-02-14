@@ -2014,6 +2014,7 @@ dependencies = [
 name = "proto"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ark-serialize",
  "async-trait",
  "capnp",

@@ -3,34 +3,35 @@
 
 mod retry;
 
+// TODO: figure out if re-exports make sense
+pub use proto::connection::protocols::quic::Quic;
+pub use proto::crypto::signature::KeyPair;
+pub use proto::crypto::signature::SignatureScheme;
+pub use proto::message::Topic;
+
 use proto::{
     bail,
     connection::protocols::Protocol,
-    crypto::{self, Scheme, Serializable},
+    crypto::signature::Serializable,
     error::{Error, Result},
-    message::{Broadcast, Direct, Message, Topic},
+    message::{Broadcast, Direct, Message},
 };
 use retry::Retry;
 
 /// `Client` is a light wrapper around a `Retry` connection that provides functions
 /// for common operations to and from a server. Mostly just used to make the API
 /// more ergonomic. Also keeps track of subscriptions.
-pub struct Client<SignatureScheme: Scheme, ProtocolType: Protocol>(
-    Retry<SignatureScheme, ProtocolType>,
-);
+#[derive(Clone)]
+pub struct Client<Scheme: SignatureScheme, ProtocolType: Protocol>(Retry<Scheme, ProtocolType>);
 
-pub type Config<SignatureScheme, ProtocolType> = retry::Config<SignatureScheme, ProtocolType>;
+pub type Config<Scheme, ProtocolType> = retry::Config<Scheme, ProtocolType>;
 
-impl<SignatureScheme: Scheme, ProtocolType: Protocol> Client<SignatureScheme, ProtocolType>
-where
-    SignatureScheme::VerificationKey: Serializable,
-    SignatureScheme::Signature: Serializable,
-{
+impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolType> {
     /// Creates a new `Retry` from a configuration.
     ///
     /// # Errors
     /// If the initial connection fails
-    pub async fn new(config: Config<SignatureScheme, ProtocolType>) -> Result<Self> {
+    pub async fn new(config: Config<Scheme, ProtocolType>) -> Result<Self> {
         Ok(Self(bail!(
             Retry::from_config(config).await,
             Connection,
@@ -68,13 +69,13 @@ where
     /// If the connection or serialization has failed
     pub fn send_direct_message(
         &self,
-        recipient: &SignatureScheme::VerificationKey,
+        recipient: &Scheme::PublicKey,
         message: Vec<u8>,
     ) -> Result<()> {
         // Serialize recipient to a byte array before sending the message
         // TODO: maybe we can cache this.
         let recipient_bytes = bail!(
-            crypto::serialize(recipient),
+            recipient.serialize(),
             Serialize,
             "failed to serialize recipient"
         );

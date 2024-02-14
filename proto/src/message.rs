@@ -139,7 +139,7 @@ impl Message {
                 let mut message: authenticate_with_key::Builder = root.init_authenticate_with_key();
 
                 // Set each field
-                message.set_verification_key(&to_serialize.verification_key);
+                message.set_public_key(&to_serialize.public_key);
                 message.set_timestamp(to_serialize.timestamp);
                 message.set_signature(&to_serialize.signature);
             }
@@ -265,7 +265,7 @@ impl Message {
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::AuthenticateWithKey(AuthenticateWithKey {
-                        verification_key: deserialize!(message.get_verification_key(), Vec<u8>),
+                        public_key: deserialize!(message.get_public_key(), Vec<u8>),
                         timestamp: deserialize!(message.get_timestamp()),
                         signature: deserialize!(message.get_signature(), Vec<u8>),
                     })
@@ -373,8 +373,8 @@ impl From<Topic> for messages_capnp::Topic {
 /// to a broker. It contains a way of proving identity of the sender.
 #[derive(Eq, PartialEq, Debug)]
 pub struct AuthenticateWithKey {
-    // The verification key, used downstream against the signed timestamp to verify the sender.
-    pub verification_key: Vec<u8>,
+    // The public verification key, used downstream against the signed timestamp to verify the sender.
+    pub public_key: Vec<u8>,
     // The timestamp, unsigned. This is signed by the client to prevent replay attacks.
     pub timestamp: u64,
     // The signature, which is the timestamp, but signed.
@@ -474,7 +474,7 @@ mod test {
     fn test_serialization_parity() {
         // `AuthenticateWithKey`  message
         assert_serialize_deserialize!(Message::AuthenticateWithKey(AuthenticateWithKey {
-            verification_key: vec![0, 1, 2],
+            public_key: vec![0, 1, 2],
             timestamp: 345,
             signature: vec![6, 7, 8],
         }));

@@ -237,7 +237,7 @@ impl DiscoveryClient for Redis {
         &mut self,
         for_broker: &BrokerIdentifier,
         expiry: Duration,
-        verification_key: Vec<u8>,
+        public_key: Vec<u8>,
     ) -> Result<u64> {
         // Create random permit number
         // TODO: figure out if it makes sense to initialize this somewhere else
@@ -247,7 +247,7 @@ impl DiscoveryClient for Redis {
         bail!(
             redis::cmd("SET")
                 .arg(&[format!("{for_broker}/permits/{permit}")])
-                .arg(verification_key)
+                .arg(public_key)
                 .arg(&["EX", &expiry.as_secs().to_string()])
                 .query_async(&mut self.underlying_connection)
                 .await,
