@@ -60,7 +60,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     /// If the connection or serialization has failed
     pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // Form and send the single message
-        self.send_message(&Message::Broadcast(Broadcast { topics, message })).await
+        self.send_message(&Message::Broadcast(Broadcast { topics, message }))
+            .await
     }
 
     /// Sends a pre-serialized message to the server, denoting interest in delivery
@@ -85,7 +86,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
         self.send_message(&Message::Direct(Direct {
             recipient: recipient_bytes,
             message,
-        })).await
+        }))
+        .await
     }
 
     /// Sends a message to the server that asserts that this client is interested in
@@ -105,7 +107,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Subscribe(topics_to_send.clone())).await,
+            self.send_message(&Message::Subscribe(topics_to_send.clone()))
+                .await,
             Connection,
             "failed to send subscription message"
         );
@@ -138,7 +141,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Unsubscribe(topics_to_send.clone())).await,
+            self.send_message(&Message::Unsubscribe(topics_to_send.clone()))
+                .await,
             Connection,
             "failed to send unsubscription message"
         );
