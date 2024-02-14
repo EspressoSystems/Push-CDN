@@ -11,6 +11,9 @@ use tokio::{
     },
 };
 
+#[cfg(feature = "metrics")]
+use crate::connection::metrics;
+
 use crate::{
     bail, bail_option,
     error::{Error, Result},

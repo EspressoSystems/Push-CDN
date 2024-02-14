@@ -98,9 +98,16 @@ pub trait Listener<Sender: Sync, Receiver: Sync> {
 #[macro_export]
 macro_rules! write_length_delimited {
     ($stream: expr, $message:expr) => {
+        // Get the length of the message
+        let message_len = $message.len() as u64;
+
+        // Increment the number of bytes we've sent by this amount
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_SENT.add(message_len as f64);
+
         // Write the message size to the stream
         bail!(
-            $stream.write_u64($message.len() as u64).await,
+            $stream.write_u64(message_len).await,
             Connection,
             "failed to send message size"
         );
@@ -142,6 +149,10 @@ macro_rules! read_length_delimited {
             Connection,
             "failed to receive message from connection"
         );
+
+        // Add to our metrics, if desired
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_RECV.add(message_size as f64);
 
         buffer
     }};

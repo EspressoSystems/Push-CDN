@@ -8,11 +8,27 @@ description = "Contains the common protocol definition and common code for the b
 capnpc = "0.19.0"
 
 [features]
+metrics = ["dep:prometheus", "dep:lazy_static"]
 local_discovery = ["dep:sqlx"]
 insecure = ["rustls/dangerous_configuration"]
 default = ["local_discovery", "insecure"]
 
 [dependencies]
+
+
+# TODO: make this optional if local not specified
+redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
+
+sqlx = { version = "0.7.3", features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+    "time",
+], optional = true }
+
+prometheus = { workspace = true, optional = true }
+lazy_static = { workspace = true, optional = true }
+
 capnp = "0.19.1"
 thiserror = "1.0.56"
 quinn = "0.10.2"
@@ -27,13 +43,4 @@ rcgen = "0.12.0"
 pem = "3.0.3"
 mockall = "0.12.1"
 async-trait.workspace = true
-
-# TODO: make this optional if local not specified
-redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
-
-sqlx = { version = "0.7.3", features = [
-    "runtime-tokio",
-    "sqlite",
-    "migrate",
-    "time",
-], optional = true }
+warp = "0.3.6"

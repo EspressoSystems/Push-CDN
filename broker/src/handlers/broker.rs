@@ -20,6 +20,8 @@ use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
 
+use crate::metrics;
+
 impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
     Inner<BrokerSignatureScheme, UserSignatureScheme>
 where
@@ -65,7 +67,7 @@ where
             // If the address is already there (we're already connected), drop this one
             return;
         }
-        
+
         // If we aren't already connected, add it
         connected_broker_guard.insert(broker_address.clone());
 
@@ -96,12 +98,18 @@ where
 
         info!("connected to broker {}", broker_address);
 
+        // Increment our metric
+        metrics::NUM_BROKERS_CONNECTED.inc();
+
         // If we error, come back to the callback so we can remove the connection from the list.
         if let Err(err) = self.broker_receive_loop(connection_id, receiver).await {
             error!("broker disconnected with error: {err}");
         };
 
         info!("disconnected from broker {}", broker_address);
+
+        // Decrement our metric
+        metrics::NUM_BROKERS_CONNECTED.dec();
 
         // Remove from the connected broker identities so that we may
         // try to reconnect inthe future.

@@ -5,9 +5,6 @@ edition = "2021"
 
 description = "Defines the broker server, which is responsible for routing messages from clients"
 
-[profile.release]
-debug = true
-
 [features]
 local_discovery = ["proto/local_discovery"]
 insecure = ["proto/insecure"]
@@ -15,7 +12,7 @@ default = ["local_discovery", "insecure"]
 
 [dependencies]
 jf-primitives.workspace = true
-proto = { path = "../proto", default-features = false }
+proto = { path = "../proto", default-features = false, features = ["metrics"] }
 tokio.workspace = true
 tracing.workspace = true
 ark-serialize.workspace = true
@@ -26,3 +23,5 @@ slotmap = "1.0.7"
 delegate = "0.12.0"
 async-trait.workspace = true
 paste = "1.0.14"
+prometheus = { workspace = true }
+lazy_static = { workspace = true }

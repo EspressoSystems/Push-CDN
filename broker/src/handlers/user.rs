@@ -19,6 +19,9 @@ use tracing::info;
 #[cfg(feature = "local_discovery")]
 use proto::discovery::DiscoveryClient;
 
+#[cfg(feature = "metrics")]
+use crate::metrics;
+
 use crate::{
     get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
 };
@@ -100,10 +103,18 @@ where
             )
             .await;
 
+        // Increment our metric, if desired
+        #[cfg(feature = "metrics")]
+        metrics::NUM_USERS_CONNECTED.inc();
+
         // This runs the main loop for receiving information from the user
         let () = self.user_receive_loop(connection_id, receiver).await;
 
         info!("user {:?} disconnected", connection_id.data());
+
+        // Decrement our metric, if desired
+        #[cfg(feature = "metrics")]
+        metrics::NUM_USERS_CONNECTED.dec();
 
         // Once the main loop ends, we remove the connection
         self.user_connection_lookup

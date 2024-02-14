@@ -19,6 +19,18 @@ struct Args {
     #[arg(short, long)]
     discovery_endpoint: String,
 
+    /// Whether or not metric collection and serving is enabled
+    #[arg(long, default_value_t = true)]
+    metrics_enabled: bool,
+
+    /// The port to bind to for externalizing metrics
+    #[arg(long, default_value = "127.0.0.1")]
+    metrics_ip: String,
+
+    /// The port to bind to for externalizing metrics
+    #[arg(long, default_value_t = 9090)]
+    metrics_port: u16,
+
     /// The port to bind to for connections from users
     #[arg(long, default_value = "127.0.0.1:1738")]
     public_advertise_address: String,
@@ -52,17 +64,13 @@ async fn main() -> Result<()> {
         public_advertise_address: args.public_advertise_address,
         public_bind_address: format!("0.0.0.0:{}", args.public_bind_port),
 
+        metrics_enabled: args.metrics_enabled,
+        metrics_port: args.metrics_port,
+        metrics_ip: args.metrics_ip,
+
         // Private addresses: bind to the local interface with the specified port
-        private_advertise_address: format!(
-            "{}:{}",
-            private_ip_address,
-            args.private_bind_port
-        ),
-        private_bind_address: format!(
-            "{}:{}",
-            private_ip_address,
-            args.private_bind_port
-        ),
+        private_advertise_address: format!("{}:{}", private_ip_address, args.private_bind_port),
+        private_bind_address: format!("{}:{}", private_ip_address, args.private_bind_port),
 
         discovery_endpoint: args.discovery_endpoint,
 

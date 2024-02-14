@@ -9,6 +9,9 @@ pub mod discovery;
 pub mod error;
 pub mod message;
 
+#[cfg(feature= "metrics")]
+pub mod metrics;
+
 // If local discovery mode is set, we want to use an embedded DB instead of Redis
 // for brokers to discover other brokers.
 #[cfg(feature = "local_discovery")]

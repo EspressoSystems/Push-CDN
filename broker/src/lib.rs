@@ -9,7 +9,16 @@ mod map;
 mod state;
 mod tasks;
 
-use std::{collections::HashSet, marker::PhantomData, sync::Arc};
+use std::{
+    collections::HashSet,
+    marker::PhantomData,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+mod metrics;
+use proto::metrics as proto_metrics;
 
 // TODO: figure out if we should use Tokio's here
 use proto::{
@@ -23,6 +32,8 @@ use proto::{
 use state::ConnectionLookup;
 use tokio::{select, spawn, sync::RwLock};
 
+use crate::metrics::RUNNING_SINCE;
+
 /// The broker's configuration. We need this when we create a new one.
 /// TODO: clean up these generics. could be a generic type that implements both
 pub struct Config<BrokerSignatureScheme: Scheme> {
@@ -31,6 +42,15 @@ pub struct Config<BrokerSignatureScheme: Scheme> {
     pub public_advertise_address: String,
     /// The user (public) bind address: the public-facing address we bind to.
     pub public_bind_address: String,
+
+    /// Whether or not we want to serve metrics
+    pub metrics_enabled: bool,
+
+    /// The port we want to serve metrics on
+    pub metrics_port: u16,
+
+    /// The IP/interface we want to serve the metrics on
+    pub metrics_ip: String,
 
     /// The broker (private) advertise address: what other brokers use to connect to us.
     pub private_advertise_address: String,
@@ -93,6 +113,9 @@ pub struct Broker<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme> {
 
     /// The private (broker <-> broker) listener
     broker_listener: <BrokerProtocol as Protocol>::Listener,
+
+    /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
+    metrics_bind_address: Option<SocketAddr>,
 }
 
 impl<BrokerSignatureScheme: Scheme, UserSignatureScheme: Scheme>
@@ -114,6 +137,10 @@ where
         let Config {
             public_advertise_address,
             public_bind_address,
+
+            metrics_enabled,
+            metrics_ip,
+            metrics_port,
 
             private_advertise_address,
             private_bind_address,
@@ -170,6 +197,14 @@ where
             )
         );
 
+        // Parse the metrics IP and port
+        let metrics_bind_address = if metrics_enabled {
+            let ip: Ipv4Addr = parse_socket_address!(metrics_ip);
+            Some(SocketAddr::from((ip, metrics_port)))
+        } else {
+            None
+        };
+
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
@@ -181,6 +216,7 @@ where
                 user_connection_lookup: RwLock::default(),
                 pd: PhantomData,
             }),
+            metrics_bind_address,
             user_listener,
             broker_listener,
         })
@@ -217,6 +253,20 @@ where
                 .clone()
                 .run_broker_listener_task(self.broker_listener),
         );
+
+        // Serve the (possible) metrics task
+        if let Some(metrics_bind_address) = self.metrics_bind_address {
+            // Set that we are running for timekeeping purposes
+            RUNNING_SINCE.set(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("time went backwards")
+                    .as_secs() as i64,
+            );
+
+            // Spawn the serving task
+            spawn(proto_metrics::serve_metrics(metrics_bind_address));
+        }
 
         // If one of the tasks exists, we want to return (stopping the program)
         select! {

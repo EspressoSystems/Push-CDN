@@ -17,7 +17,7 @@ processes:
         condition: process_started
 
   broker_1:
-    command: cargo run --package broker --features insecure --no-default-features -- --public-advertise-address 127.0.0.1:8085 --private-bind-port 8084 --public-bind-port 8085 -d "redis://:changeme!@127.0.0.1:6379"
+    command: cargo run --package broker --features insecure --no-default-features -- --metrics-port=9091 --public-advertise-address 127.0.0.1:8085 --private-bind-port 8084 --public-bind-port 8085 -d "redis://:changeme!@127.0.0.1:6379"
     depends_on:
       redis:
         condition: process_started

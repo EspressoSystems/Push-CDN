@@ -19,6 +19,9 @@ use std::{collections::VecDeque, net::ToSocketAddrs, sync::Arc};
 
 use super::{Listener, Protocol, Receiver, Sender};
 
+#[cfg(feature = "metrics")]
+use crate::connection::metrics;
+
 /// The `Quic` protocol. We use this to define commonalities between QUIC
 /// listeners, connections, etc.
 #[derive(Clone, PartialEq, Eq)]
