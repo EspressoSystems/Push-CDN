@@ -1,7 +1,7 @@
 //! The following is the main `Broker` binary, which just instantiates and runs
 //! a `Broker` object.
 
-use broker::{Broker, Config};
+use broker::{Broker, Config, ConfigBuilder};
 use clap::Parser;
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -56,35 +56,26 @@ async fn main() -> Result<()> {
 
     // Get our local IP address
     let private_ip_address = bail!(local_ip(), Connection, "failed to get local IP address");
+    let private_address = format!("{}:{}", private_ip_address, args.private_bind_port);
 
     // Create deterministic keys for brokers (for now, obviously)
     let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
-    let broker_config = Config {
-        // Public addresses: explicitly defined advertise address, bind address is on every interface
-        // but with the specified port.
-        public_advertise_address: args.public_advertise_address,
-        public_bind_address: format!("0.0.0.0:{}", args.public_bind_port),
-
-        metrics_enabled: args.metrics_enabled,
-        metrics_port: args.metrics_port,
-        metrics_ip: args.metrics_ip,
-
-        // Private addresses: bind to the local interface with the specified port
-        private_advertise_address: format!("{}:{}", private_ip_address, args.private_bind_port),
-        private_bind_address: format!("{}:{}", private_ip_address, args.private_bind_port),
-
-        discovery_endpoint: args.discovery_endpoint,
-
-        keypair: KeyPair {
-            public_key,
-            private_key,
-        },
-
-        // TODO: clap this
-        maybe_tls_cert_path: None,
-        maybe_tls_key_path: None,
-    };
+    let broker_config: Config<BLS> = bail!(
+        ConfigBuilder::default()
+            .public_advertise_address(args.public_advertise_address)
+            .public_bind_address(format!("0.0.0.0:{}", args.public_bind_port))
+            .private_advertise_address(private_address.clone())
+            .private_bind_address(private_address)
+            .discovery_endpoint(args.discovery_endpoint)
+            .keypair(KeyPair {
+                public_key,
+                private_key
+            })
+            .build(),
+        Parse,
+        "failed to build broker configuration"
+    );
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.

@@ -25,6 +25,7 @@ use retry::Retry;
 pub struct Client<Scheme: SignatureScheme, ProtocolType: Protocol>(Retry<Scheme, ProtocolType>);
 
 pub type Config<Scheme, ProtocolType> = retry::Config<Scheme, ProtocolType>;
+pub type ConfigBuilder<Scheme, ProtocolType> = retry::ConfigBuilder<Scheme, ProtocolType>;
 
 impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolType> {
     /// Creates a new `Retry` from a configuration.

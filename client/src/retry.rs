@@ -7,6 +7,7 @@
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
+use derive_builder::Builder;
 use proto::{
     connection::{
         auth::user::UserAuth,
@@ -65,6 +66,7 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
 }
 
 /// The configuration needed to construct a `Retry` connection.
+#[derive(Builder)]
 pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
@@ -76,9 +78,11 @@ pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
+    #[builder(default = "Vec::new()")]
     pub subscribed_topics: Vec<Topic>,
 
     /// The phantom data we need to be able to make use of these types
+    #[builder(default)]
     pub pd: PhantomData<ProtocolType>,
 }
 

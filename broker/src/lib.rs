@@ -18,6 +18,7 @@ use std::{
 };
 
 mod metrics;
+use derive_builder::Builder;
 use proto::{
     crypto::signature::{KeyPair, SignatureScheme},
     metrics as proto_metrics,
@@ -37,7 +38,7 @@ use tokio::{select, spawn, sync::RwLock};
 use crate::metrics::RUNNING_SINCE;
 
 /// The broker's configuration. We need this when we create a new one.
-/// TODO: clean up these generics. could be a generic type that implements both
+#[derive(Builder)]
 pub struct Config<BrokerScheme: SignatureScheme> {
     /// The user (public) advertise address: what the marshals send to users upon authentication.
     /// Users connect to us with this address.
@@ -46,12 +47,15 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     pub public_bind_address: String,
 
     /// Whether or not we want to serve metrics
+    #[builder(default = "true")]
     pub metrics_enabled: bool,
 
     /// The port we want to serve metrics on
+    #[builder(default = "9090")]
     pub metrics_port: u16,
 
     /// The IP/interface we want to serve the metrics on
+    #[builder(default = "String::from(\"127.0.0.1\")")]
     pub metrics_ip: String,
 
     /// The broker (private) advertise address: what other brokers use to connect to us.
@@ -65,9 +69,12 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     pub keypair: KeyPair<BrokerScheme>,
 
     /// An optional TLS cert path
-    pub maybe_tls_cert_path: Option<String>,
+    #[builder(default)]
+    pub tls_cert_path: Option<String>,
+
     /// An optional TLS key path
-    pub maybe_tls_key_path: Option<String>,
+    #[builder(default)]
+    pub tls_key_path: Option<String>,
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
@@ -138,8 +145,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
             keypair,
 
             discovery_endpoint,
-            maybe_tls_cert_path,
-            maybe_tls_key_path,
+            tls_cert_path,
+            tls_key_path,
         } = config;
 
         // Create a unique broker identifier
@@ -160,8 +167,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         let user_listener = bail!(
             <UserProtocol as Protocol>::bind(
                 public_bind_address,
-                maybe_tls_cert_path.clone(),
-                maybe_tls_key_path.clone(),
+                tls_cert_path.clone(),
+                tls_key_path.clone(),
             )
             .await,
             Connection,
@@ -174,12 +181,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         // Create the broker (private) listener
         let private_bind_address = parse_socket_address!(private_bind_address);
         let broker_listener = bail!(
-            <BrokerProtocol as Protocol>::bind(
-                private_bind_address,
-                maybe_tls_cert_path,
-                maybe_tls_key_path,
-            )
-            .await,
+            <BrokerProtocol as Protocol>::bind(private_bind_address, tls_cert_path, tls_key_path,)
+                .await,
             Connection,
             format!(
                 "failed to bind to public (user) bind address {}",

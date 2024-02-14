@@ -2,11 +2,16 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::{marker::PhantomData, time::Duration};
+use std::time::Duration;
 
 use clap::Parser;
-use client::{Client, Config, KeyPair};
-use proto::{connection::protocols::quic::Quic, crypto::rng::DeterministicRng, error::Result};
+use client::{Client, ConfigBuilder, KeyPair};
+use proto::{
+    bail,
+    connection::protocols::quic::Quic,
+    crypto::rng::DeterministicRng,
+    error::{Error, Result},
+};
 
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -31,19 +36,22 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Generate two random keypairs, one for each client
-
     let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
 
-    let client = Client::<BLS, Quic>::new(Config {
-        endpoint: "127.0.0.1:8082".to_string(),
-        keypair: KeyPair {
-            public_key,
-            private_key,
-        },
-        subscribed_topics: vec![],
-        pd: PhantomData,
-    })
-    .await?;
+    // Build the config, the endpoint being where we expect the marshal to be
+    let config = bail!(
+        ConfigBuilder::default()
+            .endpoint("127.0.0.1:8082".to_string())
+            .keypair(KeyPair {
+                public_key,
+                private_key,
+            })
+            .build(),
+        Parse,
+        "failed to build client config"
+    );
+
+    let client = Client::<BLS, Quic>::new(config).await?;
 
     // We want the first node to send to the second
     if args.id != 0 {

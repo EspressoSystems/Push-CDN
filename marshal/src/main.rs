@@ -3,8 +3,11 @@
 
 use clap::Parser;
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
-use marshal::Marshal;
-use proto::error::Result;
+use marshal::{ConfigBuilder, Marshal};
+use proto::{
+    bail,
+    error::{Error, Result},
+};
 
 //TODO: for both client and marshal, clean up and comment `main.rs`
 // TODO: forall, add logging where we need it
@@ -30,14 +33,18 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // Create new `Marshal`
-    let marshal = Marshal::<BLS>::new(
-        format!("0.0.0.0:{}", args.bind_port),
-        args.discovery_endpoint,
-        None,
-        None,
-    )
-    .await?;
+    // Create a new `Config`
+    let config = bail!(
+        ConfigBuilder::default()
+            .bind_address(format!("0.0.0.0:{}", args.bind_port))
+            .discovery_endpoint(args.discovery_endpoint)
+            .build(),
+        Parse,
+        "failed to build Marshal config"
+    );
+
+    // Create new `Marshal` from the config
+    let marshal = Marshal::<BLS>::new(config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;

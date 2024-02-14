@@ -7,11 +7,36 @@ use std::{marker::PhantomData, sync::Arc};
 
 mod handlers;
 
+use derive_builder::Builder;
 use proto::{
-    bail, connection::protocols::{Listener, Protocol}, crypto::signature::SignatureScheme, discovery::DiscoveryClient, error::{Error, Result}, DiscoveryClientType, UserProtocol
+    bail,
+    connection::protocols::{Listener, Protocol},
+    crypto::signature::SignatureScheme,
+    discovery::DiscoveryClient,
+    error::{Error, Result},
+    DiscoveryClientType, UserProtocol,
 };
 use tokio::spawn;
 use tracing::warn;
+
+/// The `Marshal's` configuration (with a Builder), to help with usability.
+/// We need this to construct a `Marshal`
+#[derive(Builder)]
+pub struct Config {
+    /// The bind address that users will reach. Example: `0.0.0.0:1738`
+    bind_address: String,
+
+    /// The discovery client endpoint (either Redis or local depending on feature)
+    discovery_endpoint: String,
+
+    /// The optional TLS cert path. If one is not specified, it will be self-signed
+    #[builder(default)]
+    tls_cert_path: Option<String>,
+
+    /// The optional TLS key path. If one is not specified, it will be self-signed
+    #[builder(default)]
+    tls_key_path: Option<String>,
+}
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
@@ -28,26 +53,27 @@ pub struct Marshal<Scheme: SignatureScheme> {
     pd: PhantomData<Scheme>,
 }
 
-impl<Scheme: SignatureScheme> Marshal<Scheme>
-{
+impl<Scheme: SignatureScheme> Marshal<Scheme> {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
     ///
     /// # Errors
     /// - If we fail to bind to the local address
-    pub async fn new(
-        bind_address: String,
-        discovery_endpoint: String,
-        maybe_tls_cert_path: Option<String>,
-        maybe_tls_key_path: Option<String>,
-    ) -> Result<Self> {
+    pub async fn new(config: Config) -> Result<Self> {
+        // Extrapolate values from the underlying marshal configuration
+        let Config {
+            bind_address,
+            discovery_endpoint,
+            tls_cert_path,
+            tls_key_path,
+        } = config;
+
         // Parse bind address
         let bind_address = bail!(bind_address.parse(), Parse, "failed to parse bind address");
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            <UserProtocol as Protocol>::bind(bind_address, maybe_tls_cert_path, maybe_tls_key_path)
-                .await,
+            <UserProtocol as Protocol>::bind(bind_address, tls_cert_path, tls_key_path).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );

@@ -13,9 +13,9 @@ use super::rng::DeterministicRng;
 /// with the associated public and private keys.
 pub trait SignatureScheme: Send + Sync + Clone + 'static {
     /// The signing key type
-    type PrivateKey: Send + Sync;
+    type PrivateKey: Clone + Send + Sync;
     /// The verification key type
-    type PublicKey: Serializable + Eq + Send + Sync;
+    type PublicKey: Serializable + Eq + Clone + Send + Sync;
 
     /// Sign a message using a private key
     ///
@@ -47,6 +47,7 @@ pub trait Serializable: Sized {
 }
 
 /// We encapsulate keys here to help readability.
+#[derive(Clone)]
 pub struct KeyPair<Scheme: SignatureScheme> {
     /// The underlying (public) verification key, used to authenticate with the server.
     pub public_key: Scheme::PublicKey,
