@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Add, str::FromStr, time::Duration};
+use std::{collections::HashSet, ops::Add, time::Duration};
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -46,12 +46,9 @@ impl DiscoveryClient for Embedded {
         );
 
         // Create the SQLite connection options (create DB if it doesn't exist)
-        let options = bail!(
-            SqliteConnectOptions::from_str(&path),
-            Parse,
-            "failed to parse SQLite options"
-        )
-        .create_if_missing(true);
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
 
         // Open a test connection to the DB
         let pool = bail!(

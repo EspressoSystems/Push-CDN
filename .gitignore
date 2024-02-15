@@ -1,2 +1,2 @@
 target/
-local_db/db.sqlite
+*.sqlite
