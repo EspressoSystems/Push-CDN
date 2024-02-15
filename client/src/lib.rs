@@ -1,20 +1,15 @@
 //! In here we define an API that is a little more higher-level and ergonomic
 //! for end users. It is a light wrapper on top of a `Retry` connection.
 
+pub mod reexports;
 mod retry;
-
-// TODO: figure out if re-exports make sense
-pub use proto::connection::protocols::quic::Quic;
-pub use proto::crypto::signature::KeyPair;
-pub use proto::crypto::signature::SignatureScheme;
-pub use proto::message::Topic;
 
 use proto::{
     bail,
     connection::protocols::Protocol,
-    crypto::signature::Serializable,
+    crypto::signature::{Serializable, SignatureScheme},
     error::{Error, Result},
-    message::{Broadcast, Direct, Message},
+    message::{Broadcast, Direct, Message, Topic},
 };
 use retry::Retry;
 

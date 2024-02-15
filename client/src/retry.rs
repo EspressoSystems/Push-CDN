@@ -235,15 +235,11 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
     pub async fn receive_message(&self) -> Result<Message> {
         // We can use `try_lock` here because only two tasks will be using it:
         // either we're receiving or somebody is reconnecting us.
-        if let Ok(mut receiver_guard) = self.inner.receiver.try_lock() {
-            // We were able to get the lock, we aren't reconnecting
-            let out = receiver_guard.recv_message().await;
-            Ok(try_with_reconnect!(self, send_lock, out))
-        } else {
-            // We couldn't get the lock, we are reconnecting
-            // Return an error
-            Err(Error::Connection("reconnection in progress".to_string()))
-        }
+        // TODO: temporary with significant drop here
+        let mut receiver_guard = self.inner.receiver.lock().await;
+
+        let out = receiver_guard.recv_message().await;
+        Ok(try_with_reconnect!(self, send_lock, out))
     }
 }
 

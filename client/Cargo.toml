@@ -16,10 +16,7 @@ runtime-async-std = ["dep:async-std", "proto/runtime-async-std"]
 
 [dependencies]
 tokio = { workspace = true }
-async-std = { version = "1.12.0", features = [
-    "tokio1",
-    "attributes",
-], optional = true }
+async-std = { workspace = true, optional = true }
 jf-primitives.workspace = true
 proto = { path = "../proto", default-features = false }
 tracing-subscriber.workspace = true

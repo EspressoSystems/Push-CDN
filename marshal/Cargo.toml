@@ -6,13 +6,18 @@ edition = "2021"
 description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
 
 [features]
+default = ["local_discovery", "insecure", "runtime-tokio"]
+
 local_discovery = ["proto/local_discovery"]
 insecure = ["proto/insecure"]
-default = ["local_discovery", "insecure"]
+
+runtime-tokio = ["proto/runtime-tokio"]
+runtime-async-std = ["dep:async-std", "proto/runtime-async-std"]
 
 [dependencies]
 jf-primitives.workspace = true
 proto = { path = "../proto", default-features = false }
+async-std = { workspace = true, optional = true }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

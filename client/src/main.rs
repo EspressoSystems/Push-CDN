@@ -5,11 +5,11 @@
 use std::time::Instant;
 
 use clap::Parser;
-use client::{Client, ConfigBuilder, KeyPair};
+use client::{Client, ConfigBuilder};
 use proto::{
     bail,
     connection::protocols::quic::Quic,
-    crypto::rng::DeterministicRng,
+    crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
 };
 

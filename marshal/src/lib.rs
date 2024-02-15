@@ -80,7 +80,7 @@ impl<Scheme: SignatureScheme> Marshal<Scheme> {
 
         // Create the discovery client
         let discovery_client = bail!(
-            DiscoveryClientType::new(discovery_endpoint.clone(), None).await,
+            DiscoveryClientType::new(discovery_endpoint, None).await,
             Connection,
             "failed to create discovery client"
         );
