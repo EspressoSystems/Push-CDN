@@ -110,6 +110,15 @@ impl DiscoveryClient for Embedded {
     /// # Errors
     /// - If the `SQLite` connection fails
     async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
+        // Delete old brokers
+        bail!(
+            query("DELETE FROM brokers WHERE expiry < datetime()")
+                .execute(&self.pool)
+                .await,
+            File,
+            "failed to delete old brokers"
+        );
+
         // Get all brokers
         let brokers: Vec<BrokerRow> = bail!(
             query_as("SELECT * from brokers")

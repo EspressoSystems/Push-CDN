@@ -645,7 +645,7 @@ name = "broker"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "async-trait",
+ "base64",
  "clap",
  "delegate",
  "derive_builder",

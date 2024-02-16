@@ -82,11 +82,11 @@ impl Protocol for Quic {
             bail!(
                 endpoint.connect(remote_address, domain_name),
                 Connection,
-                "failed to connect to remote address"
+                "failed quic connect to remote address"
             )
             .await,
             Connection,
-            "failed to connect to remote address"
+            "failed quic connect to remote address"
         );
 
         // Open a bidirectional stream over the connection

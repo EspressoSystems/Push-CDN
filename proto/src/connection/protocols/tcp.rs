@@ -68,7 +68,7 @@ impl Protocol for Tcp {
         let stream = bail!(
             socket.connect(remote_address).await,
             Connection,
-            "failed to connect to remote address"
+            "failed tcp connect to remote address"
         );
 
         // Split the connection into a `ReadHalf` and `WriteHalf` so we can operate

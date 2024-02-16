@@ -233,7 +233,12 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
                             Control::Freeze => queue.frozen = true,
                             Control::Unfreeze => queue.frozen = false,
                             // Return if we see a shutdown message
-                            Control::Shutdown => return,
+                            Control::Shutdown => {
+                                // Finish sending and then shutdown
+                                flush_queue!(queue, sender);
+                                let _ = sender.finish().await;
+                                return;
+                            }
                         }
                     }
                 }

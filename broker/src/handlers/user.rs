@@ -3,6 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use base64::{engine::general_purpose, Engine};
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -13,7 +14,6 @@ use proto::{
     message::Message,
     UserProtocol,
 };
-use slotmap::Key;
 use tracing::info;
 
 #[cfg(feature = "local_discovery")]
@@ -45,6 +45,10 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             return;
         };
 
+        // Create a base64-encoded user identifier (by public key)
+        let user_identifier = general_purpose::STANDARD.encode(&public_key);
+        info!("received connection from user {}", user_identifier,);
+
         // Create new batch sender
         let (sender, receiver) = connection;
         let sender = Arc::new(BatchedSender::<UserProtocol>::from(
@@ -63,8 +67,6 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         // Add the user for their key
         get_lock!(self.user_connection_lookup, write)
             .subscribe_connection_id_to_keys(connection_id, vec![public_key]);
-
-        info!("received connection from user {:?}", connection_id.data());
 
         // If we are in local mode, send updates to brokers immediately. This makes
         // it more strongly consistent with the tradeoff of being a bit more intensive.
@@ -96,7 +98,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         // This runs the main loop for receiving information from the user
         let () = self.user_receive_loop(connection_id, receiver).await;
 
-        info!("user {:?} disconnected", connection_id.data());
+        info!("user {} disconnected", user_identifier);
 
         // Decrement our metric
         metrics::NUM_USERS_CONNECTED.dec();

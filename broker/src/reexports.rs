@@ -3,9 +3,8 @@
 
 pub mod connection {
     pub mod protocols {
-        pub mod quic {
-            pub use proto::connection::protocols::quic::Quic;
-        }
+        pub use proto::connection::protocols::quic::Quic;
+        pub use proto::connection::protocols::tcp::Tcp;
     }
 }
 

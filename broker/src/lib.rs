@@ -35,6 +35,7 @@ use proto::{
 };
 use state::ConnectionLookup;
 use tokio::{select, spawn, sync::RwLock};
+use tracing::info;
 
 use crate::metrics::RUNNING_SINCE;
 
@@ -152,8 +153,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
 
         // Create a unique broker identifier
         let identity = BrokerIdentifier {
-            public_advertise_address,
-            private_advertise_address,
+            public_advertise_address: public_advertise_address.clone(),
+            private_advertise_address: private_advertise_address.clone(),
         };
 
         // Create the `Discovery` client we will use to maintain consistency
@@ -174,8 +175,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
             .await,
             Connection,
             format!(
-                "failed to bind to private (broker) bind address {}",
-                private_bind_address
+                "failed to bind to public (user) bind address {}",
+                public_bind_address
             )
         );
 
@@ -186,10 +187,13 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
                 .await,
             Connection,
             format!(
-                "failed to bind to public (user) bind address {}",
-                public_bind_address
+                "failed to bind to private (broker) bind address {}",
+                private_bind_address
             )
         );
+
+        info!("listening for users on {public_advertise_address} -> {public_bind_address}");
+        info!("listening for brokers on {private_advertise_address} -> {private_bind_address}");
 
         // Parse the metrics IP and port
         let metrics_bind_address = if metrics_enabled {
