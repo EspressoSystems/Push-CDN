@@ -3,7 +3,7 @@
 //! logic.
 
 use async_trait::async_trait;
-use quinn::{ClientConfig, Endpoint, ServerConfig};
+use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(feature = "insecure")]
@@ -17,7 +17,7 @@ use crate::{
 };
 use std::{collections::VecDeque, net::ToSocketAddrs, sync::Arc};
 
-use super::{Listener, Protocol, Receiver, Sender};
+use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
@@ -31,6 +31,8 @@ pub struct Quic;
 impl Protocol for Quic {
     type Sender = QuicSender;
     type Receiver = QuicReceiver;
+
+    type UnfinalizedConnection = UnfinalizedQuicConnection;
     type Listener = QuicListener;
 
     async fn connect(remote_endpoint: &str) -> Result<(QuicSender, QuicReceiver)> {
@@ -224,30 +226,20 @@ impl Receiver for QuicReceiver {
     }
 }
 
-/// The listener struct. Needed to receive messages over QUIC. Is a light
-/// wrapper around `quinn::Endpoint`.
-pub struct QuicListener(pub quinn::Endpoint);
+/// A connection that has yet to be finalized. Allows us to keep accepting
+/// connections while we process this one.
+pub struct UnfinalizedQuicConnection(Connecting);
 
 #[async_trait]
-impl Listener<QuicSender, QuicReceiver> for QuicListener {
-    /// Accept a connection from the listener.
-    ///
+impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection {
+    /// Finalize the connection by awaiting on `Connecting` and accepting a bidirectional
+    /// stream.
+    /// 
     /// # Errors
-    /// - If we fail to accept a connection from the listener.
-    /// TODO: be more descriptive with this
-    /// TODO: match on whether the endpoint is closed, return a different error
-    async fn accept(&self) -> Result<(QuicSender, QuicReceiver)> {
-        // Try to accept a connection from the QUIC endpoint
-        let connection = bail!(
-            bail_option!(
-                self.0.accept().await,
-                Connection,
-                "failed to accept connection"
-            )
-            .await,
-            Connection,
-            "failed to accept connection"
-        );
+    /// If we fail to accept a bidirectional stream or finish our connection.
+    async fn finalize(self) -> Result<(QuicSender, QuicReceiver)> {
+        // Await on the `Connecting` to obtain `Connection`
+        let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
         // Accept a bidirectional stream from the connection
         let (sender, receiver) = bail!(
@@ -256,6 +248,32 @@ impl Listener<QuicSender, QuicReceiver> for QuicListener {
             "failed to accept bidirectional stream"
         );
 
+        // Split and return the finalized connection
         Ok((QuicSender(sender), QuicReceiver(receiver)))
+    }
+}
+
+/// The listener struct. Needed to receive messages over QUIC. Is a light
+/// wrapper around `quinn::Endpoint`.
+pub struct QuicListener(pub quinn::Endpoint);
+
+#[async_trait]
+impl Listener<UnfinalizedQuicConnection> for QuicListener {
+    /// Accept an unfinalized connection from the listener.
+    ///
+    /// # Errors
+    /// - If we fail to accept a connection from the listener.
+    /// TODO: be more descriptive with this
+    /// TODO: match on whether the endpoint is closed, return a different error
+    /// TODO: I think we should exit the program here, it should be a failure.
+    async fn accept(&self) -> Result<UnfinalizedQuicConnection> {
+        // Try to accept a connection from the QUIC endpoint
+        let connection = bail_option!(
+            self.0.accept().await,
+            Connection,
+            "failed to accept connection"
+        );
+
+        Ok(UnfinalizedQuicConnection(connection))
     }
 }

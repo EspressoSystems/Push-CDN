@@ -10,7 +10,7 @@ mod handlers;
 use derive_builder::Builder;
 use proto::{
     bail,
-    connection::protocols::{Listener, Protocol},
+    connection::protocols::{Listener, Protocol, UnfinalizedConnection},
     crypto::signature::SignatureScheme,
     discovery::DiscoveryClient,
     error::{Error, Result},
@@ -101,11 +101,11 @@ impl<Scheme: SignatureScheme> Marshal<Scheme> {
     pub async fn start(self) -> Result<()> {
         // Listen for connections forever
         loop {
-            // Accept a connection. If we fail, print the error and keep going.
+            // Accept an unfinalized connection. If we fail, print the error and keep going.
             //
             // TODO: figure out when an endpoint closes, should I be looping on it? What are the criteria
             // for closing? It would error but what does that actually _mean_? Is it recoverable?
-            let connection = match self.listener.accept().await {
+            let unfinalized_connection = match self.listener.accept().await {
                 Ok(connection) => connection,
                 Err(err) => {
                     warn!("failed to accept connection: {}", err);
@@ -115,7 +115,15 @@ impl<Scheme: SignatureScheme> Marshal<Scheme> {
 
             // Create a task to handle the connection
             let discovery_client = self.discovery_client.clone();
-            spawn(Self::handle_connection(connection, discovery_client));
+            spawn(async move {
+                // Finalize the connection
+                let Ok(connection) = unfinalized_connection.finalize().await else {
+                    return;
+                };
+
+                // Handle the connection
+                Self::handle_connection(connection, discovery_client).await;
+            });
         }
     }
 }

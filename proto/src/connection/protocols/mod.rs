@@ -14,7 +14,7 @@ pub mod tcp;
 const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
-#[automock(type Sender=MockSender; type Receiver=MockReceiver; type Listener=MockListener<MockSender, MockReceiver>;)]
+#[automock(type Sender=MockSender; type Receiver=MockReceiver; type UnfinalizedConnection=MockUnfinalizedConnection<MockSender, MockReceiver>; type Listener=MockListener<MockUnfinalizedConnection<MockSender, MockReceiver>>;)]
 #[async_trait]
 pub trait Protocol: Send + Sync + 'static {
     // TODO: make these generic over reader/writer
@@ -22,7 +22,8 @@ pub trait Protocol: Send + Sync + 'static {
     type Sender: Sender + Send + Sync;
     type Receiver: Receiver + Send + Sync;
 
-    type Listener: Listener<Self::Sender, Self::Receiver> + Send + Sync;
+    type UnfinalizedConnection: UnfinalizedConnection<Self::Sender, Self::Receiver> + Send + Sync;
+    type Listener: Listener<Self::UnfinalizedConnection> + Send + Sync;
 
     /// Connect to a remote address, returning an instance of `Self`.
     ///
@@ -85,13 +86,22 @@ pub trait Receiver {
 
 #[automock]
 #[async_trait]
-pub trait Listener<Sender: Sync, Receiver: Sync> {
-    /// Accept a connection from the local, bound socket.
+pub trait Listener<UnfinalizedConnection: Send + Sync> {
+    /// Accept an unfinalized connection from the local, bound socket.
     /// Returns a connection or an error if we encountered one.
     ///
     /// # Errors
     /// If we fail to accept a connection
-    async fn accept(&self) -> Result<(Sender, Receiver)>;
+    async fn accept(&self) -> Result<UnfinalizedConnection>;
+}
+
+#[automock]
+#[async_trait]
+pub trait UnfinalizedConnection<Sender: Send + Sync, Receiver: Send + Sync> {
+    /// Finalize an incoming connection. This is separated so we can prevent
+    /// actors who are slow from clogging up the incoming connection by offloading
+    /// it to a separate task.
+    async fn finalize(self) -> Result<(Sender, Receiver)>;
 }
 
 /// A macro to write a length-delimited (serialized) message to a stream.

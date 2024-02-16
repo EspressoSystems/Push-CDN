@@ -8,7 +8,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpSocket,
+        TcpSocket, TcpStream,
     },
 };
 
@@ -23,7 +23,7 @@ use crate::{
 };
 use std::{collections::VecDeque, net::ToSocketAddrs, sync::Arc};
 
-use super::{Listener, Protocol, Receiver, Sender};
+use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
@@ -34,7 +34,9 @@ pub struct Tcp;
 impl Protocol for Tcp {
     type Sender = TcpSender;
     type Receiver = TcpReceiver;
+    
     type Listener = TcpListener;
+    type UnfinalizedConnection = UnfinalizedTcpConnection;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     /// With TCP, this requires just connecting to the remote endpoint.
@@ -185,30 +187,48 @@ impl Receiver for TcpReceiver {
     }
 }
 
+/// A connection that has yet to be finalized. Allows us to keep accepting
+/// connections while we process this one.
+pub struct UnfinalizedTcpConnection(TcpStream);
+
+#[async_trait]
+impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection {
+    /// Finalize the connection by splitting it into a sender and receiver side. 
+    /// Conssumes `Self`.
+    /// 
+    /// # Errors
+    /// Does not actually error, but satisfies trait bounds.
+    async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
+        // Split the connection
+        let (receiver, sender) = self.0.into_split();
+
+        // Wrap and return the finalized connection
+        Ok((TcpSender(sender), TcpReceiver(receiver)))
+    }
+}
+
 /// The listener struct. Needed to receive messages over TCP. Is a light
 /// wrapper around `tokio::net::TcpListener`.
 pub struct TcpListener(pub tokio::net::TcpListener);
 
 #[async_trait]
-impl Listener<TcpSender, TcpReceiver> for TcpListener {
-    /// Accept a connection from the listener.
+impl Listener<UnfinalizedTcpConnection> for TcpListener {
+    /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
     /// TODO: match on whether the endpoint is closed, return a different error
-    async fn accept(&self) -> Result<(TcpSender, TcpReceiver)> {
+    async fn accept(&self) -> Result<UnfinalizedTcpConnection> {
         // Try to accept a connection from the underlying endpoint
         // Split into reader and writer half
-        let (receiver, sender) = bail!(
+        let connection = bail!(
             self.0.accept().await,
             Connection,
             "failed to accept connection"
-        )
-        .0
-        .into_split();
+        );
 
-        // Wrap our halves so they can be used across threads
-        Ok((TcpSender(sender), TcpReceiver(receiver)))
+        // Return the unfinalized connection
+        Ok(UnfinalizedTcpConnection(connection.0))
     }
 }
