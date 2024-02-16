@@ -1,10 +1,11 @@
-use std::{collections::HashSet, ops::Add, time::Duration};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use sqlx::{
-    query, query_as, sqlite::SqliteConnectOptions, types::time::OffsetDateTime, Row, SqlitePool,
-};
+use sqlx::{query, query_as, sqlite::SqliteConnectOptions, Row, SqlitePool};
 
 use crate::{
     bail,
@@ -24,7 +25,7 @@ struct BrokerRow {
     identifier: String,
     num_connections: i64,
     #[allow(unused)]
-    expiry: OffsetDateTime,
+    expiry: f64,
 }
 
 #[async_trait]
@@ -81,8 +82,20 @@ impl DiscoveryClient for Embedded {
         num_connections: u64,
         heartbeat_expiry: Duration,
     ) -> Result<()> {
+        // Delete old brokers
+        bail!(
+            self.prune("brokers").await,
+            File,
+            "failed to prune old brokers"
+        );
+
         // Get the current time, add the expiry to it
-        let expiry = OffsetDateTime::now_utc().add(heartbeat_expiry);
+        let expire_time = (bail!(
+            SystemTime::now().duration_since(UNIX_EPOCH),
+            Parse,
+            "time went backwards"
+        ) + heartbeat_expiry)
+            .as_secs_f64();
 
         // Do some type conversions
         let identifier = self.identifier.to_string();
@@ -96,7 +109,7 @@ impl DiscoveryClient for Embedded {
         bail!(
             query(
                 "INSERT or REPLACE INTO brokers (identifier, num_connections, expiry) VALUES (?, ?, ?)",
-            ).bind(identifier).bind(num_connections).bind(expiry).execute(&self.pool).await,
+            ).bind(identifier).bind(num_connections).bind(expire_time).execute(&self.pool).await,
             File,
             "failed to insert self into brokers table"
         );
@@ -112,11 +125,9 @@ impl DiscoveryClient for Embedded {
     async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
         // Delete old brokers
         bail!(
-            query("DELETE FROM brokers WHERE expiry < datetime()")
-                .execute(&self.pool)
-                .await,
+            self.prune("brokers").await,
             File,
-            "failed to delete old brokers"
+            "failed to prune old brokers"
         );
 
         // Get all brokers
@@ -136,11 +147,9 @@ impl DiscoveryClient for Embedded {
         for broker in brokers {
             // Delete old permits
             bail!(
-                query("DELETE FROM permits WHERE expiry < datetime()")
-                    .execute(&self.pool)
-                    .await,
+                self.prune("permits").await,
                 File,
-                "failed to delete old permits"
+                "failed to prune old permits"
             );
 
             // Get the number of permits
@@ -174,11 +183,9 @@ impl DiscoveryClient for Embedded {
     async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
         // Delete old brokers
         bail!(
-            query("DELETE FROM brokers WHERE expiry < datetime()")
-                .execute(&self.pool)
-                .await,
+            self.prune("brokers").await,
             File,
-            "failed to delete old brokers"
+            "failed to prune old brokers"
         );
 
         // Get all other brokers
@@ -221,13 +228,18 @@ impl DiscoveryClient for Embedded {
         let broker = for_broker.to_string();
 
         // Calculate record expiry
-        let expiry = OffsetDateTime::now_utc().add(expiry);
+        let expire_time = (bail!(
+            SystemTime::now().duration_since(UNIX_EPOCH),
+            Parse,
+            "time went backwards"
+        ) + expiry)
+            .as_secs_f64();
 
         // Insert into permits
         bail!(
             query(
                 "INSERT INTO permits (identifier, permit, user_pubkey, expiry) VALUES (?1, ?2, ?3, ?4)",
-            ).bind(&broker).bind(permit).bind(public_key).bind(expiry)
+            ).bind(&broker).bind(permit).bind(public_key).bind(expire_time)
             .execute(&self.pool)
             .await,
             File,
@@ -249,11 +261,9 @@ impl DiscoveryClient for Embedded {
     ) -> Result<Option<Vec<u8>>> {
         // Delete old permits
         bail!(
-            query("DELETE FROM permits WHERE expiry < datetime()")
-                .execute(&self.pool)
-                .await,
+            self.prune("permits").await,
             File,
-            "failed to get old permits"
+            "failed to prune old permits"
         );
 
         // Do some type conversions
@@ -276,5 +286,29 @@ impl DiscoveryClient for Embedded {
         );
 
         Ok(res.map(|row| row.get("user_pubkey")))
+    }
+}
+
+impl Embedded {
+    /// A helper function to prune old entries from a particular table by timestamp.
+    /// Helps remain consistent when running locally.
+    async fn prune(&mut self, table: &'static str) -> Result<()> {
+        let current_time = (bail!(
+            SystemTime::now().duration_since(UNIX_EPOCH),
+            Parse,
+            "time went backwards"
+        ))
+        .as_secs_f64();
+
+        bail!(
+            query(format!("DELETE FROM {table} WHERE expiry < $1").as_str())
+                .bind(current_time)
+                .execute(&self.pool)
+                .await,
+            File,
+            "failed to get old permits"
+        );
+
+        Ok(())
     }
 }
