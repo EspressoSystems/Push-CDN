@@ -645,13 +645,13 @@ name = "broker"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "base64",
  "clap",
  "delegate",
  "derive_builder",
  "jf-primitives",
  "lazy_static",
  "local-ip-address",
+ "mnemonic",
  "paste",
  "prometheus",
  "proto",
@@ -1998,6 +1998,16 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "mnemonic"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29fae0e4c0b155d3b019a7cbc27abe4a90e15c06814d27889ce9f5f44e2faf77"
+dependencies = [
+ "byteorder",
+ "lazy_static",
 ]
 
 [[package]]

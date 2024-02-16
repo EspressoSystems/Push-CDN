@@ -3,7 +3,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use base64::{engine::general_purpose, Engine};
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -45,9 +44,9 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             return;
         };
 
-        // Create a base64-encoded user identifier (by public key)
-        let user_identifier = general_purpose::STANDARD.encode(&public_key);
-        info!("received connection from user {}", user_identifier,);
+        // Create a human-readable user identifier (by public key)
+        let user_identifier = mnemonic::to_string(&public_key[0..4]);
+        info!("received connection from user {}", user_identifier);
 
         // Create new batch sender
         let (sender, receiver) = connection;
