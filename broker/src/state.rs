@@ -242,7 +242,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
         }
     }
 
-    /// Unsubscribe a connection ID from all keys in the list./
+    /// Unsubscribe a connection ID from all keys in the list.
     pub fn unsubscribe_connection_id_from_keys(
         &mut self,
         connection_id: ConnectionId,

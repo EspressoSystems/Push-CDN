@@ -293,6 +293,7 @@ impl Embedded {
     /// A helper function to prune old entries from a particular table by timestamp.
     /// Helps remain consistent when running locally.
     async fn prune(&mut self, table: &'static str) -> Result<()> {
+        // Get the current time so we can compare it against the expiry
         let current_time = (bail!(
             SystemTime::now().duration_since(UNIX_EPOCH),
             Parse,
@@ -300,13 +301,14 @@ impl Embedded {
         ))
         .as_secs_f64();
 
+        // Delete all old values from the table where the expiry is before the current time
         bail!(
             query(format!("DELETE FROM {table} WHERE expiry < $1").as_str())
                 .bind(current_time)
                 .execute(&self.pool)
                 .await,
             File,
-            "failed to get old permits"
+            format!("failed to get old {table}")
         );
 
         Ok(())

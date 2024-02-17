@@ -46,7 +46,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // Create a human-readable user identifier (by public key)
         let user_identifier = mnemonic::to_string(&public_key[0..4]);
-        info!("received connection from user {}", user_identifier);
+        info!("{user_identifier} connected");
 
         // Create new batch sender
         let (sender, receiver) = connection;
@@ -97,7 +97,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         // This runs the main loop for receiving information from the user
         let () = self.user_receive_loop(connection_id, receiver).await;
 
-        info!("user {} disconnected", user_identifier);
+        info!("{user_identifier} disconnected");
 
         // Decrement our metric
         metrics::NUM_USERS_CONNECTED.dec();

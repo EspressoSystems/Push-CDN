@@ -7,7 +7,7 @@ use proto::{
     discovery::DiscoveryClient, BrokerProtocol,
 };
 use tokio::{spawn, time::sleep};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::{get_lock, Inner};
 
@@ -55,7 +55,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
                                 {
                                     Ok(connection) => connection,
                                     Err(err) => {
-                                        error!("failed to connect to broker: {err}");
+                                        warn!("failed to connect to broker: {err}");
                                         return;
                                     }
                                 };
