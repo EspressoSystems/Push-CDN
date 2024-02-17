@@ -645,6 +645,7 @@ name = "broker"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "bytes",
  "clap",
  "delegate",
  "derive_builder",
@@ -792,6 +793,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "bytes",
  "clap",
  "derive_builder",
  "jf-primitives",
@@ -2466,6 +2468,7 @@ dependencies = [
  "ark-serialize",
  "async-std",
  "async-trait",
+ "bytes",
  "capnp",
  "capnpc",
  "jf-primitives",

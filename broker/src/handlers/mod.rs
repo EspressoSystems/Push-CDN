@@ -63,7 +63,7 @@ macro_rules! get_lock {
 #[macro_export]
 macro_rules! new_serialized_message {
     ($type: ident, $data: expr) => {
-        Arc::<Vec<u8>>::from(bail!(
+        Bytes::from(bail!(
             Message::$type($data).serialize(),
             Connection,
             "broker disconnected"

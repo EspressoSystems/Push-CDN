@@ -50,3 +50,4 @@ mockall = "0.12.1"
 async-trait = "0.1.77"
 warp = "0.3.6"
 anyhow = "1.0.79"
+bytes.workspace = true

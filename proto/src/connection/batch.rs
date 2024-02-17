@@ -4,8 +4,9 @@
 //!
 //! TODO: dynamic batch size and time
 
-use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
+use bytes::Bytes;
 use tokio::{
     spawn,
     sync::mpsc::{channel, Receiver as BoundedReceiver, Sender as BoundedSender},
@@ -25,7 +26,7 @@ use super::protocols::Protocol;
 /// or a data message.
 enum QueueMessage {
     /// A data message is something we actually want to send.
-    Data(Arc<Vec<u8>>, Position),
+    Data(Bytes, Position),
     /// A control message is an enshrined message that is supposed to control the stream.
     Control(Control),
 }
@@ -65,7 +66,7 @@ pub struct BatchedSender<ProtocolType: Protocol> {
 /// Contains the queue as fields for data tracking purposes.
 pub struct Queue {
     /// The actual message queue
-    inner: VecDeque<Arc<Vec<u8>>>,
+    inner: VecDeque<Bytes>,
 
     /// The current size of the queue, in bytes
     current_size: u64,
@@ -134,7 +135,7 @@ impl<ProtocolType: Protocol> BatchedSender<ProtocolType> {
     ///
     /// # Errors
     /// - If the send-side is closed.
-    pub async fn queue_message(&self, message: Arc<Vec<u8>>, position: Position) -> Result<()> {
+    pub async fn queue_message(&self, message: Bytes, position: Position) -> Result<()> {
         // Send a data message
         bail!(
             self.channel

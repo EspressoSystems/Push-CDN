@@ -8,6 +8,7 @@ use crate::{
     Inner,
 };
 use crate::{new_serialized_message, send_or_remove_many};
+use bytes::Bytes;
 use proto::{
     bail,
     connection::batch::Position,

@@ -1,8 +1,9 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
+use std::{collections::VecDeque, net::SocketAddr};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use mockall::automock;
 
 use crate::{error::Result, message::Message};
@@ -55,7 +56,7 @@ pub trait Sender {
     ///
     /// # Errors
     /// - If we fail to deliver any of the messages. This usually means a connection problem.
-    async fn send_messages(&mut self, messages: VecDeque<Arc<Vec<u8>>>) -> Result<()>;
+    async fn send_messages(&mut self, messages: VecDeque<Bytes>) -> Result<()>;
 
     /// Gracefully shuts down the outgoing stream, ensuring all data
     /// has been written.

@@ -24,3 +24,4 @@ rand.workspace = true
 tracing.workspace = true
 clap.workspace = true
 derive_builder.workspace = true
+bytes.workspace = true

@@ -3,6 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use bytes::Bytes;
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -120,8 +121,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             match message {
                 // If we get a direct message from a user, send it to both users and brokers.
                 Message::Direct(ref direct) => {
-                    let message: Arc<Vec<u8>> =
-                        Arc::from(message.serialize().expect("serialization failed"));
+                    let message = Bytes::from(message.serialize().expect("serialization failed"));
 
                     send_direct!(self.broker_connection_lookup, direct.recipient, message);
                     send_direct!(self.user_connection_lookup, direct.recipient, message);
@@ -129,8 +129,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
-                    let message: Arc<Vec<u8>> =
-                        Arc::from(message.serialize().expect("serialization failed"));
+                    let message = Bytes::from(message.serialize().expect("serialization failed"));
 
                     send_broadcast!(self.broker_connection_lookup, broadcast.topics, message);
                     send_broadcast!(self.user_connection_lookup, broadcast.topics, message);

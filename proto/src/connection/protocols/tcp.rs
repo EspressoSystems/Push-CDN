@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 
+use bytes::Bytes;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -21,7 +22,7 @@ use crate::{
     message::Message,
     read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
-use std::{collections::VecDeque, net::ToSocketAddrs, sync::Arc};
+use std::{collections::VecDeque, net::ToSocketAddrs};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
@@ -125,7 +126,7 @@ impl Sender for TcpSender {
     ///
     /// # Errors
     /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_messages(&mut self, messages: VecDeque<Arc<Vec<u8>>>) -> Result<()> {
+    async fn send_messages(&mut self, messages: VecDeque<Bytes>) -> Result<()> {
         // Write each message (length-delimited)
         for message in messages {
             write_length_delimited!(self.0, message);

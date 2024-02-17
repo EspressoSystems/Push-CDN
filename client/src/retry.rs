@@ -7,6 +7,7 @@
 
 use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 
+use bytes::Bytes;
 use derive_builder::Builder;
 use proto::{
     connection::{
@@ -217,7 +218,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
         if let Ok(send_lock) = self.inner.sender.try_read() {
             // Continue if we were able to acquire the lock
             let out = send_lock
-                .queue_message(Arc::from(message), Position::Back)
+                .queue_message(Bytes::from(message), Position::Back)
                 .await;
             Ok(try_with_reconnect!(self, send_lock, out))
         } else {
