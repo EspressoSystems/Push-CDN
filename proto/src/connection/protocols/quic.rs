@@ -234,7 +234,7 @@ pub struct UnfinalizedQuicConnection(Connecting);
 impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection {
     /// Finalize the connection by awaiting on `Connecting` and accepting a bidirectional
     /// stream.
-    /// 
+    ///
     /// # Errors
     /// If we fail to accept a bidirectional stream or finish our connection.
     async fn finalize(self) -> Result<(QuicSender, QuicReceiver)> {

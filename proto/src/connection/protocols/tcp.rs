@@ -34,7 +34,7 @@ pub struct Tcp;
 impl Protocol for Tcp {
     type Sender = TcpSender;
     type Receiver = TcpReceiver;
-    
+
     type Listener = TcpListener;
     type UnfinalizedConnection = UnfinalizedTcpConnection;
 
@@ -193,9 +193,9 @@ pub struct UnfinalizedTcpConnection(TcpStream);
 
 #[async_trait]
 impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection {
-    /// Finalize the connection by splitting it into a sender and receiver side. 
+    /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
-    /// 
+    ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
