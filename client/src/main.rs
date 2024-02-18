@@ -59,9 +59,9 @@ async fn main() -> Result<()> {
         let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
         let now = Instant::now();
-        for _ in 0..250000 {
+        for _ in 0..2500 {
             // Create a big 512MB message
-            let m = vec![0u8; 1000];
+            let m = vec![0u8; 100000];
 
             if let Err(err) = client.send_direct_message(&other_public_key, m).await {
                 tracing::error!("failed to send message: {}", err);
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         }
         println!("{:?}", now.elapsed());
     } else {
-        for _ in 0..250000{
+        for _ in 0..2500 {
             if let Err(err) = client.receive_message().await {
                 tracing::error!("failed to receive message: {}", err);
             };
