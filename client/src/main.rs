@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         }
         println!("{:?}", now.elapsed());
     } else {
-        loop {
+        for _ in 0..250000{
             if let Err(err) = client.receive_message().await {
                 tracing::error!("failed to receive message: {}", err);
             };

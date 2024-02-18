@@ -102,7 +102,10 @@ impl Protocol for Tcp {
 }
 
 #[derive(Clone)]
-pub struct TcpSender(AsyncSender<Bytes>, Arc<AbortHandle>);
+pub struct TcpSender(Arc<TcpSenderRef>);
+
+#[derive(Clone)]
+struct TcpSenderRef(AsyncSender<Bytes>, Arc<AbortHandle>);
 
 fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task. 40 messages was chosen arbitrarily
@@ -145,8 +148,14 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     .abort_handle();
 
     (
-        TcpSender(send_to_task, Arc::from(receiving_task)),
-        TcpReceiver(receive_from_task, Arc::from(sending_task)),
+        TcpSender(Arc::from(TcpSenderRef(
+            send_to_task,
+            Arc::from(receiving_task),
+        ))),
+        TcpReceiver(Arc::from(TcpReceiverRef(
+            receive_from_task,
+            Arc::from(sending_task),
+        ))),
     )
 }
 
@@ -167,7 +176,7 @@ impl Sender for TcpSender {
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message over our channel
         bail!(
-            self.0.send(raw_message).await,
+            self.0.0.send(raw_message).await,
             Connection,
             "failed to send message: connection closed"
         );
@@ -177,14 +186,17 @@ impl Sender for TcpSender {
 }
 
 #[derive(Clone)]
-pub struct TcpReceiver(AsyncReceiver<Bytes>, Arc<AbortHandle>);
+pub struct TcpReceiver(Arc<TcpReceiverRef>);
+
+#[derive(Clone)]
+struct TcpReceiverRef(AsyncReceiver<Bytes>, Arc<AbortHandle>);
 
 #[async_trait]
 impl Receiver for TcpReceiver {
     async fn recv_message(&self) -> Result<Message> {
         // Receive the message
         let raw_message = bail!(
-            self.0.recv().await,
+            self.0.0.recv().await,
             Connection,
             "failed to receive message: connection closed"
         );
@@ -302,14 +314,14 @@ macro_rules! write_length_delimited {
 }
 
 /// If we drop the sender, we want to shut down the receiver.
-impl Drop for TcpSender {
+impl Drop for TcpSenderRef {
     fn drop(&mut self) {
         self.1.abort();
     }
 }
 
 /// If we drop the receiver, we want to shut down the sender.
-impl Drop for TcpReceiver {
+impl Drop for TcpReceiverRef {
     fn drop(&mut self) {
         self.1.abort();
     }

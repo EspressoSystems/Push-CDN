@@ -14,7 +14,7 @@ use crate::{
     message::Message,
     MAX_MESSAGE_SIZE,
 };
-use std::net::ToSocketAddrs;
+use std::{net::ToSocketAddrs, sync::Arc};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
@@ -90,7 +90,10 @@ impl Protocol for Quic {
             "failed quic connect to remote address"
         );
 
-        Ok((QuicSender(connection.clone()), QuicReceiver(connection)))
+        Ok((
+            QuicSender(Arc::from(QuicSenderRef(connection.clone()))),
+            QuicReceiver(Arc::from(QuicReceiverRef(connection))),
+        ))
     }
 
     /// Binds to a local endpoint. Uses `maybe_tls_cert_path` and `maybe_tls_cert_key`
@@ -132,7 +135,10 @@ impl Protocol for Quic {
 }
 
 #[derive(Clone)]
-pub struct QuicSender(quinn::Connection);
+pub struct QuicSender(Arc<QuicSenderRef>);
+
+#[derive(Clone)]
+pub struct QuicSenderRef(quinn::Connection);
 
 #[async_trait]
 impl Sender for QuicSender {
@@ -159,7 +165,7 @@ impl Sender for QuicSender {
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Open an outgoing `SendStream`
         let mut send_stream = bail!(
-            self.0.open_uni().await,
+            self.0 .0.open_uni().await,
             Connection,
             "failed to open outgoing stream"
         );
@@ -187,7 +193,10 @@ impl Sender for QuicSender {
 }
 
 #[derive(Clone)]
-pub struct QuicReceiver(quinn::Connection);
+pub struct QuicReceiver(Arc<QuicReceiverRef>);
+
+#[derive(Clone)]
+pub struct QuicReceiverRef(quinn::Connection);
 
 #[async_trait]
 impl Receiver for QuicReceiver {
@@ -201,7 +210,7 @@ impl Receiver for QuicReceiver {
     async fn recv_message(&self) -> Result<Message> {
         // Accept an incoming unidirectional stream
         let mut recv_stream = bail!(
-            self.0.accept_uni().await,
+            self.0 .0.accept_uni().await,
             Connection,
             "failed to accept incoming stream"
         );
@@ -242,7 +251,10 @@ impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnecti
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
         // Clone and return the connection
-        Ok((QuicSender(connection.clone()), QuicReceiver(connection)))
+        Ok((
+            QuicSender(Arc::from(QuicSenderRef(connection.clone()))),
+            QuicReceiver(Arc::from(QuicReceiverRef(connection))),
+        ))
     }
 }
 
@@ -273,7 +285,7 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
 
 /// If we drop the sender, we want to close the connection (to prevent us from sending data
 /// to a stale connection)
-impl Drop for QuicSender {
+impl Drop for QuicSenderRef {
     fn drop(&mut self) {
         // Close the connection with no reason
         self.0.close(VarInt::from_u32(0), b"")
@@ -282,7 +294,7 @@ impl Drop for QuicSender {
 
 /// If we drop the receiver, we want to close the connection (to prevent us from sending data
 /// to a stale connection)
-impl Drop for QuicReceiver {
+impl Drop for QuicReceiverRef {
     fn drop(&mut self) {
         // Close the connection with no reason
         self.0.close(VarInt::from_u32(0), b"")
