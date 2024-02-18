@@ -4,24 +4,22 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, VarInt};
 
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;
 use crate::{
-    bail, bail_option,
-    crypto::{self},
+    bail, bail_option, crypto,
     error::{Error, Result},
     message::Message,
-    read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    MAX_MESSAGE_SIZE,
 };
-use std::{collections::VecDeque, net::ToSocketAddrs};
+use std::net::ToSocketAddrs;
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
 #[cfg(feature = "metrics")]
-use crate::connection::metrics;
+use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
 /// listeners, connections, etc.
@@ -92,14 +90,7 @@ impl Protocol for Quic {
             "failed quic connect to remote address"
         );
 
-        // Open a bidirectional stream over the connection
-        let (sender, receiver) = bail!(
-            connection.open_bi().await,
-            Connection,
-            "failed to open bidirectional stream"
-        );
-
-        Ok((QuicSender(sender), QuicReceiver(receiver)))
+        Ok((QuicSender(connection.clone()), QuicReceiver(connection)))
     }
 
     /// Binds to a local endpoint. Uses `maybe_tls_cert_path` and `maybe_tls_cert_key`
@@ -140,58 +131,63 @@ impl Protocol for Quic {
     }
 }
 
-pub struct QuicSender(quinn::SendStream);
+#[derive(Clone)]
+pub struct QuicSender(quinn::Connection);
 
 #[async_trait]
 impl Sender for QuicSender {
-    /// Send a message over the connection.
+    /// Send an (unserialized) message over the stream.
     ///
     /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&mut self, message: Message) -> Result<()> {
+    /// If we fail to send or serialize the message
+    async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize the message
-        let message = bail!(
+        let raw_message = Bytes::from(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
-        );
+        ));
 
-        // Write the message to the stream
-        write_length_delimited!(self.0, message);
-
-        Ok(())
+        // Send the now-raw message
+        self.send_message_raw(raw_message).await
     }
 
-    /// Send a vector of pre-formed messages over the connection.
+    /// Send a pre-serialized message over the connection.
     ///
     /// # Errors
-    /// - If we fail to deliver any of the messages. This usually means a connection problem.
-    async fn send_messages(&mut self, messages: VecDeque<Bytes>) -> Result<()> {
-        // Write each message (length-delimited)
-        for message in messages {
-            write_length_delimited!(self.0, message);
-        }
-
-        Ok(())
-    }
-
-    /// Gracefully shuts down the outgoing stream, ensuring all data
-    /// has been written.
-    ///
-    /// # Errors
-    /// - If we could not shut down the stream.
-    async fn finish(&mut self) -> Result<()> {
-        bail!(
-            self.0.finish().await,
+    /// - If we fail to deliver the message. This usually means a connection problem.
+    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
+        // Open an outgoing `SendStream`
+        let mut send_stream = bail!(
+            self.0.open_uni().await,
             Connection,
-            "failed to finish connection"
+            "failed to open outgoing stream"
         );
+
+        // Send the serialized message over the stream
+        bail!(
+            send_stream.write_all(&raw_message).await,
+            Connection,
+            "failed to write message to stream"
+        );
+
+        // Close the stream, indiciating all data has been sent
+        bail!(
+            send_stream.finish().await,
+            Connection,
+            "failed to finish sending stream"
+        );
+
+        // If enabled, write to our metrics
+        #[cfg(feature = "metrics")]
+        BYTES_SENT.add(raw_message.len() as f64);
 
         Ok(())
     }
 }
 
-pub struct QuicReceiver(quinn::RecvStream);
+#[derive(Clone)]
+pub struct QuicReceiver(quinn::Connection);
 
 #[async_trait]
 impl Receiver for QuicReceiver {
@@ -199,15 +195,28 @@ impl Receiver for QuicReceiver {
     /// it.
     ///
     /// # Errors
+    /// - if we fail to accept an incoming stream
     /// - if we fail to receive the message
     /// - if we fail deserialization
-    async fn recv_message(&mut self) -> Result<Message> {
-        // Receive the raw message
-        let raw_message = bail!(
-            self.recv_message_raw().await,
+    async fn recv_message(&self) -> Result<Message> {
+        // Accept an incoming unidirectional stream
+        let mut recv_stream = bail!(
+            self.0.accept_uni().await,
             Connection,
-            "failed to receive message"
+            "failed to accept incoming stream"
         );
+
+        // Read until the end, when the sender has indicated it's done reading
+        // TODO: serverside, set time out here
+        let raw_message = Bytes::from(bail!(
+            recv_stream.read_to_end(MAX_MESSAGE_SIZE as usize).await,
+            Connection,
+            "failed to read bytes from receiving stream"
+        ));
+
+        // If enabled, write to our metrics
+        #[cfg(feature = "metrics")]
+        BYTES_RECV.add(raw_message.len() as f64);
 
         // Deserialize and return the message
         Ok(bail!(
@@ -215,15 +224,6 @@ impl Receiver for QuicReceiver {
             Deserialize,
             "failed to deserialize message"
         ))
-    }
-
-    /// Receives a single message over the stream without deserializing
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&mut self) -> Result<Vec<u8>> {
-        Ok(read_length_delimited!(self.0))
     }
 }
 
@@ -233,24 +233,16 @@ pub struct UnfinalizedQuicConnection(Connecting);
 
 #[async_trait]
 impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection {
-    /// Finalize the connection by awaiting on `Connecting` and accepting a bidirectional
-    /// stream.
+    /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
-    /// If we fail to accept a bidirectional stream or finish our connection.
+    /// If we to finalize our connection.
     async fn finalize(self) -> Result<(QuicSender, QuicReceiver)> {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
-        // Accept a bidirectional stream from the connection
-        let (sender, receiver) = bail!(
-            connection.accept_bi().await,
-            Connection,
-            "failed to accept bidirectional stream"
-        );
-
-        // Split and return the finalized connection
-        Ok((QuicSender(sender), QuicReceiver(receiver)))
+        // Clone and return the connection
+        Ok((QuicSender(connection.clone()), QuicReceiver(connection)))
     }
 }
 
@@ -276,5 +268,23 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
         );
 
         Ok(UnfinalizedQuicConnection(connection))
+    }
+}
+
+/// If we drop the sender, we want to close the connection (to prevent us from sending data
+/// to a stale connection)
+impl Drop for QuicSender {
+    fn drop(&mut self) {
+        // Close the connection with no reason
+        self.0.close(VarInt::from_u32(0), b"")
+    }
+}
+
+/// If we drop the receiver, we want to close the connection (to prevent us from sending data
+/// to a stale connection)
+impl Drop for QuicReceiver {
+    fn drop(&mut self) {
+        // Close the connection with no reason
+        self.0.close(VarInt::from_u32(0), b"")
     }
 }

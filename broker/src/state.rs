@@ -1,18 +1,12 @@
 //! The following crate defines the internal state-tracking primitives as used
 //! by the broker.
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
-use proto::{
-    connection::{batch::BatchedSender, protocols::Protocol},
-    message::Topic,
-};
+use proto::{connection::protocols::Protocol, message::Topic};
 use slotmap::{DefaultKey, DenseSlotMap};
 
 use crate::map::{SnapshotMap, SnapshotWithChanges};
-
-/// This helps with readability, it just defines a sender
-pub type Sender<ProtocolType> = Arc<BatchedSender<ProtocolType>>;
 
 /// These also help with readability.
 pub type ConnectionId = DefaultKey;
@@ -59,7 +53,7 @@ macro_rules! remove_connection_from {
 // we want to make sure the connection is not pointing to that key any more.
 struct Connection<ProtocolType: Protocol> {
     // The actual connection (sender)
-    inner: Sender<ProtocolType>,
+    inner: ProtocolType::Sender,
     // A list of public keys that the sender is linked to
     keys: HashSet<UserPublicKey>,
     // A list of topics that the sender is linked to
@@ -129,7 +123,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     ///
     /// It returns a `Vec<(connection id, sender)>`.
     /// TODO: type alias
-    pub fn get_all_connections(&self) -> Vec<(ConnectionId, Sender<ProtocolType>)> {
+    pub fn get_all_connections(&self) -> Vec<(ConnectionId, ProtocolType::Sender)> {
         // Iterate and collect every connection, cloning the necessary values.
         self.connections
             .values()
@@ -139,7 +133,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
 
     /// Adds a connection to the state. It returns a key (the connection ID) with which
     /// we can use later when we want to reference that connection.
-    pub fn add_connection(&mut self, connection: Sender<ProtocolType>) -> ConnectionId {
+    pub fn add_connection(&mut self, connection: ProtocolType::Sender) -> ConnectionId {
         // Add the connection with no keys and no topics
         self.connections.insert_with_key(|id| Connection {
             inner: connection,
@@ -154,7 +148,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     pub fn remove_connection(
         &mut self,
         connection_id: ConnectionId,
-    ) -> Option<Sender<ProtocolType>> {
+    ) -> Option<ProtocolType::Sender> {
         // Remove a possible connection by its ID
         let possible_connection = self.connections.remove(connection_id);
 
@@ -269,7 +263,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     pub fn get_connections_by_key(
         &self,
         key: &UserPublicKey,
-    ) -> Vec<(ConnectionId, Sender<ProtocolType>)> {
+    ) -> Vec<(ConnectionId, ProtocolType::Sender)> {
         // We return this at the end
         let mut connections = Vec::new();
 
@@ -298,7 +292,7 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
     pub fn get_connections_by_topic(
         &self,
         topics: Vec<Topic>,
-    ) -> Vec<(ConnectionId, Sender<ProtocolType>)> {
+    ) -> Vec<(ConnectionId, ProtocolType::Sender)> {
         // We return this at the end
         let mut connections = Vec::new();
 
@@ -330,8 +324,6 @@ impl<ProtocolType: Protocol> ConnectionLookup<ProtocolType> {
 
 #[cfg(test)]
 pub mod test {
-    use std::time::Duration;
-
     use proto::connection::protocols::{MockProtocol, MockSender};
 
     use super::*;
@@ -340,11 +332,7 @@ pub mod test {
     /// have a lot of extra code to fake implement the connection trait.
     macro_rules! mock_connection {
         () => {
-            Arc::new(BatchedSender::from(
-                MockSender::new(),
-                Duration::from_secs(1),
-                1200,
-            ))
+            MockSender::new()
         };
     }
 

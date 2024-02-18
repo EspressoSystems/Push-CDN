@@ -8,16 +8,11 @@ pub mod user;
 /// the actor from the local state if the message failed to send
 #[macro_export]
 macro_rules! send_or_remove_many {
-    ($connections: expr, $lookup:expr, $message: expr, $position: expr) => {
+    ($connections: expr, $lookup:expr, $message: expr) => {
         // For each connection,
         for connection in $connections {
             // Queue a message back
-            if connection
-                .1
-                .queue_message($message.clone(), $position)
-                .await
-                .is_err()
-            {
+            if connection.1.send_message_raw($message.clone()).await.is_err() {
                 // If it fails, remove the connection.
                 get_lock!($lookup, write).remove_connection(connection.0);
             };
@@ -31,7 +26,7 @@ macro_rules! send_or_remove_many {
 macro_rules! send_direct {
     ($lookup: expr, $key: expr, $message: expr) => {{
         let connections = $lookup.read().await.get_connections_by_key(&$key).clone();
-        send_or_remove_many!(connections, $lookup, $message, Position::Back);
+        send_or_remove_many!(connections, $lookup, $message);
     }};
 }
 
@@ -45,7 +40,7 @@ macro_rules! send_broadcast {
             .await
             .get_connections_by_topic($topics.clone())
             .clone();
-        send_or_remove_many!(connections, $lookup, $message, Position::Back);
+        send_or_remove_many!(connections, $lookup, $message);
     }};
 }
 
