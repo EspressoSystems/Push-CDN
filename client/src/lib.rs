@@ -55,7 +55,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     /// If the connection or serialization has failed
     pub async fn send_broadcast_message(&self, topics: Vec<Topic>, message: Vec<u8>) -> Result<()> {
         // Form and send the single message
-        self.send_message(&Message::Broadcast(Broadcast { topics, message }))
+        self.send_message(Message::Broadcast(Broadcast { topics, message }))
             .await
     }
 
@@ -78,7 +78,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
         );
 
         // Form and send the single message
-        self.send_message(&Message::Direct(Direct {
+        self.send_message(Message::Direct(Direct {
             recipient: recipient_bytes,
             message,
         }))
@@ -102,7 +102,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Subscribe(topics_to_send.clone()))
+            self.send_message(Message::Subscribe(topics_to_send.clone()))
                 .await,
             Connection,
             "failed to send subscription message"
@@ -136,7 +136,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
 
         // Send the topics
         bail!(
-            self.send_message(&Message::Unsubscribe(topics_to_send.clone()))
+            self.send_message(Message::Unsubscribe(topics_to_send.clone()))
                 .await,
             Connection,
             "failed to send unsubscription message"
@@ -158,7 +158,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolTyp
     ///
     /// # Errors
     /// - if the downstream message sending fails.
-    pub async fn send_message(&self, message: &Message) -> Result<()> {
+    pub async fn send_message(&self, message: Message) -> Result<()> {
         self.0.send_message(message).await
     }
 }

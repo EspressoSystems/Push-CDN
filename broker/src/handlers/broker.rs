@@ -1,14 +1,13 @@
 //! This file defines the broker connection handler.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use proto::{
     authenticate_with_broker,
     connection::{
         auth::broker::BrokerAuth,
-        batch::{BatchedSender, Position},
-        protocols::{Protocol, Receiver},
+        protocols::{Protocol, Receiver, Sender},
     },
     crypto::signature::SignatureScheme,
     error::{Error, Result},
@@ -48,12 +47,6 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // Create new batch sender
         let (sender, receiver) = connection;
-        // TODO: parameterize max interval and max size
-        let sender = Arc::from(BatchedSender::<BrokerProtocol>::from(
-            sender,
-            Duration::from_millis(50),
-            1500,
-        ));
 
         // Add to our connected broker identities so we don't try to reconnect
         let mut connected_broker_guard = get_lock!(self.connected_broker_identities, write);
@@ -64,12 +57,6 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // If we aren't already connected, add it
         connected_broker_guard.insert(broker_address.clone());
-
-        drop(connected_broker_guard);
-
-        // Freeze the sender before adding it to our connections so we don't receive messages out of order.
-        // This is to enforce message ordering
-        let _ = sender.freeze().await;
 
         // Add our connection to the list of connections
         let connection_id = self
@@ -87,8 +74,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             .send_updates_to_brokers(all_brokers, vec![(connection_id, sender.clone())])
             .await;
 
-        // Unfreeze the sender, flushing the updates
-        let _ = sender.unfreeze().await;
+        // Drop this here so we can continue sending broker update messages
+        drop(connected_broker_guard);
 
         info!("connected to broker {}", broker_address);
 
@@ -117,7 +104,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     pub async fn broker_receive_loop(
         &self,
         connection_id: ConnectionId,
-        mut receiver: <BrokerProtocol as Protocol>::Receiver,
+        receiver: <BrokerProtocol as Protocol>::Receiver,
     ) -> Result<()> {
         while let Ok(message) = receiver.recv_message().await {
             match message {

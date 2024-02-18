@@ -32,7 +32,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolT
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
         keypair: &KeyPair<Scheme>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -108,7 +108,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolT
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &mut (ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {

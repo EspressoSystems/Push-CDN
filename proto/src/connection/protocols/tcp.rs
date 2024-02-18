@@ -5,12 +5,13 @@
 use async_trait::async_trait;
 
 use bytes::Bytes;
+use kanal::{bounded_async, AsyncReceiver, AsyncSender};
+use std::result::Result as StdResult;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpSocket, TcpStream,
-    },
+    net::{TcpSocket, TcpStream},
+    spawn,
+    task::AbortHandle,
 };
 
 #[cfg(feature = "metrics")]
@@ -22,7 +23,7 @@ use crate::{
     message::Message,
     read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
-use std::{collections::VecDeque, net::ToSocketAddrs};
+use std::{net::ToSocketAddrs, sync::Arc};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
@@ -74,11 +75,12 @@ impl Protocol for Tcp {
             "failed tcp connect to remote address"
         );
 
-        // Split the connection into a `ReadHalf` and `WriteHalf` so we can operate
+        // Split the connection into a `ReadHalf` and `WriteHalf`, spawning tasks so we can operate
         // concurrently over both
-        let (read_half, write_half) = stream.into_split();
+        let (sender, receiver) = into_split(stream);
 
-        Ok((TcpSender(write_half), TcpReceiver(read_half)))
+        // Return the sender and receiver
+        Ok((sender, receiver))
     }
 
     /// Binds to a local endpoint. Does not use a TLS configuration.
@@ -99,92 +101,115 @@ impl Protocol for Tcp {
     }
 }
 
-/// This struct is a light wrapper over the send half of a TCP connection.
-pub struct TcpSender(OwnedWriteHalf);
+#[derive(Clone)]
+pub struct TcpSender(Arc<TcpSenderRef>);
+
+#[derive(Clone)]
+struct TcpSenderRef(AsyncSender<Bytes>, Arc<AbortHandle>);
+
+fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
+    // Create a channel for sending messages to the task. 40 messages was chosen arbitrarily
+    let (send_to_task, receive_as_task) = bounded_async(40);
+
+    // Create a channel for receiving messages from the task. 40 messages was chosen arbitrarily
+    let (send_as_task, receive_from_task) = bounded_async(40);
+
+    // Split the connection into owned halves
+    let (mut read_half, mut write_half) = connection.into_split();
+
+    // Start the sending task
+    let sending_task = spawn(async move {
+        loop {
+            // Receive a message from our code
+            let Ok(message): StdResult<Bytes, _> = receive_as_task.recv().await else {
+                // If the channel is closed, stop.
+                return;
+            };
+
+            // Send a message over the real connection
+            write_length_delimited!(write_half, message);
+        }
+    })
+    .abort_handle();
+
+    // Start the receiving task
+    let receiving_task = spawn(async move {
+        loop {
+            // Receive a message from the real connection
+            let message = Bytes::from(read_length_delimited!(read_half));
+
+            // Send a message to our code
+            if send_as_task.send(message).await.is_err() {
+                // If the channel is closed, stop
+                return;
+            };
+        }
+    })
+    .abort_handle();
+
+    (
+        TcpSender(Arc::from(TcpSenderRef(
+            send_to_task,
+            Arc::from(receiving_task),
+        ))),
+        TcpReceiver(Arc::from(TcpReceiverRef(
+            receive_from_task,
+            Arc::from(sending_task),
+        ))),
+    )
+}
 
 #[async_trait]
 impl Sender for TcpSender {
-    /// Send an unserialized message over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&mut self, message: Message) -> Result<()> {
-        // Serialize the message
-        let message = bail!(
+    async fn send_message(&self, message: Message) -> Result<()> {
+        // Serialize our message
+        let raw_message = Bytes::from(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
-        );
+        ));
 
-        // Write the message to the stream
-        write_length_delimited!(self.0, message);
-
-        Ok(())
+        // Send the message in its raw form
+        self.send_message_raw(raw_message).await
     }
 
-    /// Send a vector of pre-formed messages over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_messages(&mut self, messages: VecDeque<Bytes>) -> Result<()> {
-        // Write each message (length-delimited)
-        for message in messages {
-            write_length_delimited!(self.0, message);
-        }
-
-        Ok(())
-    }
-
-    /// Gracefully shuts down the outgoing stream, ensuring all data
-    /// has been written.
-    ///
-    /// # Errors
-    /// - If we could not shut down the stream.
-    async fn finish(&mut self) -> Result<()> {
+    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
+        // Send the message over our channel
         bail!(
-            self.0.shutdown().await,
+            self.0.0.send(raw_message).await,
             Connection,
-            "failed to finish connection"
+            "failed to send message: connection closed"
         );
 
         Ok(())
     }
 }
 
-/// This is a light wrapper over the read half of a TCP connection
-pub struct TcpReceiver(OwnedReadHalf);
+#[derive(Clone)]
+pub struct TcpReceiver(Arc<TcpReceiverRef>);
+
+#[derive(Clone)]
+struct TcpReceiverRef(AsyncReceiver<Bytes>, Arc<AbortHandle>);
 
 #[async_trait]
 impl Receiver for TcpReceiver {
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    /// - if we fail deserialization
-    async fn recv_message(&mut self) -> Result<Message> {
-        // Receive the raw message
+    async fn recv_message(&self) -> Result<Message> {
+        // Receive the message
         let raw_message = bail!(
-            self.recv_message_raw().await,
+            self.0.0.recv().await,
             Connection,
-            "failed to receive message"
+            "failed to receive message: connection closed"
         );
 
-        // Deserialize and return the message
-        Ok(bail!(
+        // Deserialize the message
+        let message = bail!(
             Message::deserialize(&raw_message),
             Deserialize,
             "failed to deserialize message"
-        ))
-    }
+        );
 
-    /// Receives a single message over the stream without deserializing
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&mut self) -> Result<Vec<u8>> {
-        Ok(read_length_delimited!(self.0))
+        // Return the message
+        Ok(message)
     }
 }
 
@@ -200,11 +225,11 @@ impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection 
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
-        // Split the connection
-        let (receiver, sender) = self.0.into_split();
+        // Split the connection and start the sending and receiving tasks
+        let (sender, receiver) = into_split(self.0);
 
         // Wrap and return the finalized connection
-        Ok((TcpSender(sender), TcpReceiver(receiver)))
+        Ok((sender, receiver))
     }
 }
 
@@ -231,5 +256,73 @@ impl Listener<UnfinalizedTcpConnection> for TcpListener {
 
         // Return the unfinalized connection
         Ok(UnfinalizedTcpConnection(connection.0))
+    }
+}
+
+/// A macro to read a length-delimited (serialized) message from a stream.
+/// Has a bounds check for if the message is too big
+#[macro_export]
+macro_rules! read_length_delimited {
+    ($stream: expr) => {{
+        // Read the message size from the stream
+        let Ok(message_size) = $stream.read_u64().await else {
+            return;
+        };
+
+        // Make sure the message isn't too big
+        if message_size > MAX_MESSAGE_SIZE {
+            return;
+        }
+
+        // Create buffer of the proper size
+        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
+
+        // Read the message from the stream
+        if $stream.read_exact(&mut buffer).await.is_err() {
+            return;
+        }
+
+        // Add to our metrics, if desired
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_RECV.add(message_size as f64);
+
+        buffer
+    }};
+}
+
+/// A macro to write a length-delimited (serialized) message to a stream.
+#[macro_export]
+macro_rules! write_length_delimited {
+    ($stream: expr, $message:expr) => {
+        // Get the length of the message
+        let message_len = $message.len() as u64;
+
+        // Write the message size to the stream
+        if $stream.write_u64(message_len).await.is_err() {
+            return;
+        }
+
+        // Write the message to the stream
+        if $stream.write_all(&$message).await.is_err() {
+            return;
+        }
+
+        // Increment the number of bytes we've sent by this amount
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_SENT.add(message_len as f64);
+    };
+}
+
+/// If we drop the sender, we want to shut down the receiver.
+impl Drop for TcpSenderRef {
+    fn drop(&mut self) {
+        self.1.abort();
+    }
+}
+
+/// If we drop the receiver, we want to shut down the sender.
+impl Drop for TcpReceiverRef {
+    fn drop(&mut self) {
+        self.1.abort();
     }
 }

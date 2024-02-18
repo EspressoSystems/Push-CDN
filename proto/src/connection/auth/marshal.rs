@@ -35,7 +35,7 @@ impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &mut (
+        connection: &(
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),

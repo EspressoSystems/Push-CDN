@@ -1,6 +1,6 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{collections::VecDeque, net::SocketAddr};
+use std::net::SocketAddr;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,18 +10,12 @@ use crate::{error::Result, message::Message};
 pub mod quic;
 pub mod tcp;
 
-/// Assert that we are at _least_ running on a 64-bit system
-/// TODO: find out if there is a better way than the `u64` cast
-const _: [(); 0 - (!(usize::BITS >= u64::BITS)) as usize] = [];
-
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
 #[automock(type Sender=MockSender; type Receiver=MockReceiver; type UnfinalizedConnection=MockUnfinalizedConnection<MockSender, MockReceiver>; type Listener=MockListener<MockUnfinalizedConnection<MockSender, MockReceiver>>;)]
 #[async_trait]
 pub trait Protocol: Send + Sync + 'static {
-    // TODO: make these generic over reader/writer
-    // TODO: make these connection type that defines into_split
-    type Sender: Sender + Send + Sync;
-    type Receiver: Receiver + Send + Sync;
+    type Sender: Sender + Send + Sync + Clone;
+    type Receiver: Receiver + Send + Sync + Clone;
 
     type UnfinalizedConnection: UnfinalizedConnection<Self::Sender, Self::Receiver> + Send + Sync;
     type Listener: Listener<Self::UnfinalizedConnection> + Send + Sync;
@@ -46,43 +40,29 @@ pub trait Protocol: Send + Sync + 'static {
 #[automock]
 #[async_trait]
 pub trait Sender {
-    /// Send a message over the connection.
+    /// Send an (unserialized) message over the stream.
+    ///
+    /// # Errors
+    /// If we fail to send or serialize the message
+    async fn send_message(&self, message: Message) -> Result<()>;
+
+    /// Send a pre-serialized message over the connection.
     ///
     /// # Errors
     /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message(&mut self, message: Message) -> Result<()>;
-
-    /// Send a vector of pre-formed messages over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver any of the messages. This usually means a connection problem.
-    async fn send_messages(&mut self, messages: VecDeque<Bytes>) -> Result<()>;
-
-    /// Gracefully shuts down the outgoing stream, ensuring all data
-    /// has been written.
-    ///
-    /// # Errors
-    /// - If we could not shut down the stream.
-    async fn finish(&mut self) -> Result<()>;
+    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()>;
 }
 
 #[automock]
 #[async_trait]
 pub trait Receiver {
-    /// Receives a single message over the stream and deserializes
+    /// Receives a message or message[s] over the stream and deserializes
     /// it.
     ///
     /// # Errors
     /// - if we fail to receive the message
     /// - if we fail deserialization
-    async fn recv_message(&mut self) -> Result<Message>;
-
-    /// Receives a single message over the stream without deserializing
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&mut self) -> Result<Vec<u8>>;
+    async fn recv_message(&self) -> Result<Message>;
 }
 
 #[automock]
@@ -105,66 +85,16 @@ pub trait UnfinalizedConnection<Sender: Send + Sync, Receiver: Send + Sync> {
     async fn finalize(self) -> Result<(Sender, Receiver)>;
 }
 
-/// A macro to write a length-delimited (serialized) message to a stream.
-#[macro_export]
-macro_rules! write_length_delimited {
-    ($stream: expr, $message:expr) => {
-        // Get the length of the message
-        let message_len = $message.len() as u64;
-
-        // Increment the number of bytes we've sent by this amount
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_SENT.add(message_len as f64);
-
-        // Write the message size to the stream
-        bail!(
-            $stream.write_u64(message_len).await,
-            Connection,
-            "failed to send message size"
-        );
-
-        // Write the message to the stream
-        bail!(
-            $stream.write_all(&$message).await,
-            Connection,
-            "failed to send message"
-        );
-    };
+/// We need to implement `clone` manually because we need it and `mockall` can't do it.
+impl Clone for MockSender {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
-/// A macro to read a length-delimited (serialized) message from a stream.
-/// Has a bounds check for if the message is too big
-#[macro_export]
-macro_rules! read_length_delimited {
-    ($stream: expr) => {{
-        // Read the message size from the stream
-        let message_size = bail!(
-            $stream.read_u64().await,
-            Connection,
-            "failed to read message size"
-        );
-
-        // Make sure the message isn't too big
-        if message_size > MAX_MESSAGE_SIZE {
-            return Err(Error::Connection(
-                "expected to receive message that was too big".to_string(),
-            ));
-        }
-
-        // Create buffer of the proper size
-        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
-
-        // Read the message from the stream
-        bail!(
-            $stream.read_exact(&mut buffer).await,
-            Connection,
-            "failed to receive message from connection"
-        );
-
-        // Add to our metrics, if desired
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_RECV.add(message_size as f64);
-
-        buffer
-    }};
+/// We need to implement `clone` manually because we need it and `mockall` can't do it.
+impl Clone for MockReceiver {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }

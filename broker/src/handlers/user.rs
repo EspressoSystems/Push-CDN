@@ -7,8 +7,7 @@ use bytes::Bytes;
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
-        batch::{BatchedSender, Position},
-        protocols::{Protocol, Receiver},
+        protocols::{Protocol, Receiver, Sender},
     },
     crypto::signature::SignatureScheme,
     message::Message,
@@ -29,14 +28,14 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        mut connection: (
+        connection: (
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),
     ) {
         // Verify (authenticate) the connection
         let Ok((public_key, topics)) = BrokerAuth::<UserScheme>::verify_user(
-            &mut connection,
+            &connection,
             &self.identity,
             &mut self.discovery_client.clone(),
         )
@@ -51,11 +50,6 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // Create new batch sender
         let (sender, receiver) = connection;
-        let sender = Arc::new(BatchedSender::<UserProtocol>::from(
-            sender,
-            Duration::from_millis(50),
-            1500,
-        ));
 
         // Add the connection to the list of connections
         let connection_id = get_lock!(self.user_connection_lookup, write).add_connection(sender);
@@ -115,7 +109,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     pub async fn user_receive_loop(
         &self,
         connection_id: ConnectionId,
-        mut receiver: <UserProtocol as Protocol>::Receiver,
+        receiver: <UserProtocol as Protocol>::Receiver,
     ) {
         while let Ok(message) = receiver.recv_message().await {
             match message {

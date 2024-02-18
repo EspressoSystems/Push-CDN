@@ -2,16 +2,12 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crate::{
-    get_lock,
-    state::{ConnectionId, Sender},
-    Inner,
-};
+use crate::{get_lock, state::ConnectionId, Inner};
 use crate::{new_serialized_message, send_or_remove_many};
 use bytes::Bytes;
+use proto::connection::protocols::{Protocol, Sender};
 use proto::{
     bail,
-    connection::batch::Position,
     crypto::signature::SignatureScheme,
     error::{Error, Result},
     message::Message,
@@ -35,8 +31,7 @@ macro_rules! send_update_to_brokers {
             send_or_remove_many!(
                 $recipients,
                 $self.broker_connection_lookup,
-                message,
-                Position::$position
+                message
             );
         }
     }};
@@ -70,8 +65,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     /// on every user join if the number of connected users is sufficiently small.
     pub async fn send_updates_to_brokers(
         self: &Arc<Self>,
-        full: Vec<(ConnectionId, Sender<BrokerProtocol>)>,
-        partial: Vec<(ConnectionId, Sender<BrokerProtocol>)>,
+        full: Vec<(ConnectionId, <BrokerProtocol as Protocol>::Sender)>,
+        partial: Vec<(ConnectionId, <BrokerProtocol as Protocol>::Sender)>,
     ) -> Result<()> {
         // When a broker connects, we have to send:
         // 1. Our snapshot to the new broker (of what topics/users we're subscribed for)
