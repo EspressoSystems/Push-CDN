@@ -28,14 +28,14 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        mut connection: (
+        connection: (
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),
     ) {
         // Verify (authenticate) the connection
         let Ok((public_key, topics)) = BrokerAuth::<UserScheme>::verify_user(
-            &mut connection,
+            &connection,
             &self.identity,
             &mut self.discovery_client.clone(),
         )

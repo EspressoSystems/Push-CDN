@@ -75,7 +75,7 @@ impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &mut (
+        connection: &(
             <UserProtocol as Protocol>::Sender,
             <UserProtocol as Protocol>::Receiver,
         ),
@@ -155,7 +155,7 @@ impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
     /// - If we fail to authenticate
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
-        connection: &mut (
+        connection: &(
             <BrokerProtocol as Protocol>::Sender,
             <BrokerProtocol as Protocol>::Receiver,
         ),
@@ -237,7 +237,7 @@ impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
     /// # Errors
     /// - If verification has failed
     pub async fn verify_broker(
-        connection: &mut (
+        connection: &(
             <BrokerProtocol as Protocol>::Sender,
             <BrokerProtocol as Protocol>::Receiver,
         ),

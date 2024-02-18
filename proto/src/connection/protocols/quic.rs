@@ -288,7 +288,7 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
 impl Drop for QuicSenderRef {
     fn drop(&mut self) {
         // Close the connection with no reason
-        self.0.close(VarInt::from_u32(0), b"")
+        self.0.close(VarInt::from_u32(0), b"");
     }
 }
 
@@ -297,6 +297,6 @@ impl Drop for QuicSenderRef {
 impl Drop for QuicReceiverRef {
     fn drop(&mut self) {
         // Close the connection with no reason
-        self.0.close(VarInt::from_u32(0), b"")
+        self.0.close(VarInt::from_u32(0), b"");
     }
 }
