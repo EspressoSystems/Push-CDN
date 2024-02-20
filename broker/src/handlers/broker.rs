@@ -51,8 +51,11 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         // Add to our connected broker identities so we don't try to reconnect
         let mut connected_broker_guard = get_lock!(self.connected_broker_identities, write);
         if connected_broker_guard.contains(&broker_address) {
-            // If the address is already there (we're already connected), drop this one
-            return;
+            // If the address is already there (we're already connected), drop this one. Agree which one to drop based on the node
+            // index.
+            if self.identity > broker_address{
+                return;
+            }
         }
 
         // If we aren't already connected, add it

@@ -58,7 +58,8 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
 }
 
 /// Used as a unique identifier for a broker. Defines both public and private addresses.
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+/// We need this to be ordered so we can use primitives like versioned vectors over it.
+#[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord)]
 pub struct BrokerIdentifier {
     /// The address that a broker advertises to publicly (to users)
     pub public_advertise_address: String,
