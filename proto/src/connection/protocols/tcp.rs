@@ -16,7 +16,11 @@ use tokio::{
 use crate::connection::metrics;
 
 use crate::{
-    bail, bail_option, connection::Bytes, error::{Error, Result}, message::Message, parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE
+    bail, bail_option,
+    connection::Bytes,
+    error::{Error, Result},
+    message::Message,
+    parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
 use std::{net::ToSocketAddrs, sync::Arc};
 

@@ -6,7 +6,10 @@ use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use tokio::{sync::RwLock, task::spawn_blocking};
 
 use crate::{
-    bail, connection::Bytes, error::{Error, Result}, message::Message
+    bail,
+    connection::Bytes,
+    error::{Error, Result},
+    message::Message,
 };
 use std::{
     collections::HashMap,

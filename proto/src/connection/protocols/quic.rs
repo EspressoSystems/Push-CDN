@@ -8,7 +8,12 @@ use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, VarInt};
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;
 use crate::{
-    bail, bail_option, connection::Bytes, crypto, error::{Error, Result}, message::Message, parse_socket_address, MAX_MESSAGE_SIZE
+    bail, bail_option,
+    connection::Bytes,
+    crypto,
+    error::{Error, Result},
+    message::Message,
+    parse_socket_address, MAX_MESSAGE_SIZE,
 };
 use std::{
     net::{SocketAddr, ToSocketAddrs},

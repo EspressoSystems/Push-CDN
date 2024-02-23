@@ -12,11 +12,11 @@ use proto::{
     },
     crypto::signature::SignatureScheme,
     message::Message,
-    UserProtocol,
+    mnemonic, UserProtocol,
 };
 use tracing::{error, info};
 
-use crate::{metrics, mnemonic, Inner};
+use crate::{metrics, Inner};
 
 impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// This function handles a user (public) connection.
@@ -40,7 +40,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
 
         // Create a human-readable user identifier (by public key)
         let public_key = Bytes::from(public_key);
-        let user_identifier = mnemonic!(public_key);
+        let user_identifier = mnemonic(&public_key);
         info!("{user_identifier} connected");
 
         // Create new batch sender

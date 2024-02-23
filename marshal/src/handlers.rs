@@ -1,8 +1,9 @@
 use proto::{
     connection::{auth::marshal::MarshalAuth, protocols::Protocol},
     crypto::signature::SignatureScheme,
-    DiscoveryClientType, UserProtocol,
+    mnemonic, DiscoveryClientType, UserProtocol,
 };
+use tracing::info;
 
 use crate::Marshal;
 
@@ -16,6 +17,10 @@ impl<Scheme: SignatureScheme> Marshal<Scheme> {
         mut discovery_client: DiscoveryClientType,
     ) {
         // Verify (authenticate) the connection
-        let _ = MarshalAuth::<Scheme>::verify_user(&connection, &mut discovery_client).await;
+        if let Ok(user_public_key) =
+            MarshalAuth::<Scheme>::verify_user(&connection, &mut discovery_client).await
+        {
+            info!("user {} authenticated", mnemonic(&user_public_key));
+        }
     }
 }

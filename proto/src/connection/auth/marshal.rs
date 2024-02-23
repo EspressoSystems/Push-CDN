@@ -7,7 +7,6 @@ use std::{
 
 use tracing::error;
 
-use crate::crypto::signature::{Serializable, SignatureScheme};
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
@@ -16,6 +15,10 @@ use crate::{
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
     DiscoveryClientType, UserProtocol,
+};
+use crate::{
+    connection::Bytes,
+    crypto::signature::{Serializable, SignatureScheme},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
@@ -40,7 +43,7 @@ impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
             <UserProtocol as Protocol>::Receiver,
         ),
         discovery_client: &mut DiscoveryClientType,
-    ) -> Result<()> {
+    ) -> Result<Bytes> {
         // Receive the signed message from the user
         let auth_message = bail!(
             connection.1.recv_message().await,
@@ -77,6 +80,11 @@ impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
         if timestamp.as_secs() - auth_message.timestamp > 5 {
             fail_verification_with_message!(connection, "timestamp is too old");
         }
+
+        // Serialize the public key so we can get its mnemonic
+        let Ok(public_key) = public_key.serialize() else {
+            fail_verification_with_message!(connection, "failed to serialize public key");
+        };
 
         // Get the broker with the least amount of connections
         // TODO: do a macro for this
@@ -118,6 +126,6 @@ impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
         // Send the permit to the user, along with the public broker advertise address
         let _ = connection.0.send_message(response_message).await;
 
-        Ok(())
+        Ok(Bytes::from(public_key))
     }
 }

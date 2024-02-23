@@ -1,7 +1,12 @@
 //! This crate defines the common code structures and constants used by both the
 //! broker client and server.
 
-use connection::protocols::{quic::Quic, tcp::Tcp};
+use std::hash::{Hash, Hasher};
+
+use connection::{
+    protocols::{quic::Quic, tcp::Tcp},
+    Bytes,
+};
 
 pub mod connection;
 pub mod crypto;
@@ -40,4 +45,11 @@ pub const QUIC_MAX_CONCURRENT_STREAMS: u64 = 10;
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]
 pub mod messages_capnp {
     include!(concat!(env!("OUT_DIR"), "/messages_capnp.rs"));
+}
+
+/// A function for generating a cute little user mnemonic from a hash
+pub fn mnemonic(bytes: &Bytes) -> String {
+    let mut state = std::hash::DefaultHasher::new();
+    bytes.hash(&mut state);
+    mnemonic::to_string(state.finish().to_le_bytes())
 }

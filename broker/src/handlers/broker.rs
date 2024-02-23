@@ -6,7 +6,8 @@ use proto::{
     authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
-        protocols::{Protocol, Receiver}, Bytes,
+        protocols::{Protocol, Receiver},
+        Bytes,
     },
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,

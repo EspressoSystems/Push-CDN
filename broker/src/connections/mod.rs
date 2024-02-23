@@ -6,10 +6,13 @@ use std::{collections::HashSet, sync::Arc};
 use dashmap::DashMap;
 pub use direct::DirectMap;
 use proto::{
-    connection::{protocols::{Protocol, Sender}, Bytes},
+    connection::{
+        protocols::{Protocol, Sender},
+        Bytes,
+    },
     discovery::BrokerIdentifier,
     message::Topic,
-    BrokerProtocol, UserProtocol,
+    mnemonic, BrokerProtocol, UserProtocol,
 };
 use tokio::{spawn, sync::RwLock};
 use tracing::{error, warn};
@@ -37,17 +40,6 @@ pub struct Connections {
     direct_map: RwLock<DirectMap>,
     // The map for looking up where broadcast messages should go.
     broadcast_map: BroadcastMap,
-}
-
-/// A macro for generating a cute little user mnemonic from a hash
-#[macro_export]
-macro_rules! mnemonic {
-    ($item: expr) => {{
-        use std::hash::{Hash, Hasher};
-        let mut state = std::hash::DefaultHasher::new();
-        $item.hash(&mut state);
-        mnemonic::to_string(&state.finish().to_le_bytes())
-    }};
 }
 
 impl Connections {
@@ -326,7 +318,7 @@ impl Connections {
         } else {
             // Warn if the recipient user did not exist.
             // TODO: remove this
-            warn!("user {} did not exist in map", mnemonic!(user_public_key));
+            warn!("user {} did not exist in map", mnemonic(&user_public_key));
         }
     }
 

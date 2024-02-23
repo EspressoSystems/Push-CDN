@@ -7,7 +7,6 @@ use std::{
 
 use tracing::error;
 
-use crate::crypto::signature::{KeyPair, Serializable};
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
@@ -17,6 +16,10 @@ use crate::{
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
     BrokerProtocol, DiscoveryClientType, UserProtocol,
+};
+use crate::{
+    connection::Bytes,
+    crypto::signature::{KeyPair, Serializable},
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
@@ -81,7 +84,7 @@ impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
         ),
         broker_identifier: &BrokerIdentifier,
         discovery_client: &mut DiscoveryClientType,
-    ) -> Result<(Vec<u8>, Vec<Topic>)> {
+    ) -> Result<(Bytes, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
             connection.1.recv_message().await,
@@ -143,8 +146,11 @@ impl<Scheme: SignatureScheme> BrokerAuth<Scheme> {
             fail_verification_with_message!(connection, "wrong message type");
         };
 
-        // Return the public key
-        Ok((serialized_public_key, subscribed_topics_message))
+        // Return the public key and the initially subscribed topics
+        Ok((
+            Bytes::from(serialized_public_key),
+            subscribed_topics_message,
+        ))
     }
 
     /// Authenticate with a broker (as a broker).
