@@ -100,7 +100,7 @@ impl Connections {
     }
 
     /// Get the partial list of topics that we are interested in. Returns the
-    /// additions and removals as a tuple `(a, r)`` in that order. We send this
+    /// additions and removals as a tuple `(a, r)` in that order. We send this
     /// to other brokers whenever there are changes.
     pub async fn get_partial_topic_sync(self: &Arc<Self>) -> (Vec<Topic>, Vec<Topic>) {
         // Lock the maps
@@ -226,7 +226,7 @@ impl Connections {
             .brokers
             .write()
             .await
-            .dissociate_keys_from_value(broker_identifier, topics);
+            .dissociate_keys_from_value(broker_identifier, &topics);
     }
 
     /// Locally unsubscribe a broker from some topics.
@@ -235,12 +235,12 @@ impl Connections {
             .users
             .write()
             .await
-            .dissociate_keys_from_value(user_public_key, topics);
+            .dissociate_keys_from_value(user_public_key, &topics);
     }
 
     /// Send a message to all currently connected brokers. On failure,
     /// the broker will be removed.
-    pub fn send_to_brokers(self: &Arc<Self>, message: Bytes) {
+    pub fn send_to_brokers(self: &Arc<Self>, message: &Bytes) {
         // Get our list of brokers
         let brokers = self.brokers.clone().into_read_only();
 
@@ -294,7 +294,7 @@ impl Connections {
 
             // Spawn a task to send the message
             spawn(async move {
-                if let Err(_) = connection.send_message_raw(message).await {
+                if connection.send_message_raw(message).await.is_err() {
                     // If we fail to send the message, remove the user.
                     inner.remove_user(user_public_key).await;
                 };
@@ -321,7 +321,7 @@ impl Connections {
                 // This is so we don't thrash between brokers
                 if !to_user_only {
                     // Send to the broker responsible
-                    self.send_to_broker(&broker_identifier, message);
+                    self.send_to_broker(broker_identifier, message);
                 }
             }
         } else {

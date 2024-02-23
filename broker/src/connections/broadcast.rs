@@ -99,24 +99,24 @@ impl<K: Hash + PartialEq + Eq + Clone, V: Hash + PartialEq + Eq + Clone> Relatio
     }
 
     /// Bidirectionally dissociate a key in the map with a value.
-    pub fn dissociate_keys_from_value(&mut self, k: &K, vs: Vec<V>) {
+    pub fn dissociate_keys_from_value(&mut self, k: &K, vs: &[V]) {
         // For each value,
-        for v in vs.clone() {
+        for v in vs {
             // Get the keys associated with the value
-            if let Some(ks) = self.value_to_keys.get_mut(&v) {
+            if let Some(ks) = self.value_to_keys.get_mut(v) {
                 // Remove the keys from the value
                 ks.remove(k);
 
                 // If we're empty, remove the value
                 if ks.is_empty() {
-                    self.value_to_keys.remove(&v);
+                    self.value_to_keys.remove(v);
                 }
             }
         }
 
         // Remove values associated with that key
-        if let Some(k_vs) = self.key_to_values.get_mut(&k) {
-            for v in &vs {
+        if let Some(k_vs) = self.key_to_values.get_mut(k) {
+            for v in vs {
                 k_vs.remove(v);
             }
             // If we have no more values, remove the key

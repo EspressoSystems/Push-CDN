@@ -69,7 +69,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         let raw_message = prepare_sync_message!(partial_sync_map);
 
         // Send it to all brokers
-        self.connections.send_to_brokers(raw_message);
+        self.connections.send_to_brokers(&raw_message);
 
         Ok(())
     }
@@ -113,7 +113,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
                 Serialize,
                 "failed to serialize topics"
             ));
-            self.connections.send_to_brokers(raw_subscribe_message);
+            self.connections.send_to_brokers(&raw_subscribe_message);
         }
 
         // If we have some removals,
@@ -126,7 +126,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             ));
 
             // Send to all brokers
-            self.connections.send_to_brokers(raw_unsubscribe_message);
+            self.connections.send_to_brokers(&raw_unsubscribe_message);
         }
 
         Ok(())
