@@ -1,11 +1,9 @@
-use std::sync::Arc;
+//! This is where we define routing for direct messages.
+// TODO: write tests for this
 
-use proto::discovery::BrokerIdentifier;
+use proto::{connection::Bytes, discovery::BrokerIdentifier};
 
 use super::versioned::VersionedMap;
-
-/// A little type alias to help readability
-type Bytes = Arc<Vec<u8>>;
 
 /// We define the direct map as just a type alias of a `VersionedMap`, which
 // deals with version vectors.

@@ -1,15 +1,12 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::{net::SocketAddr, sync::Arc};
-
 use async_trait::async_trait;
 use mockall::automock;
 
-/// A little type alias for helping readability.
-/// TODO: put these in one place
-type Bytes = Arc<Vec<u8>>;
-
 use crate::{error::Result, message::Message};
+
+use super::Bytes;
+pub mod memory;
 pub mod quic;
 pub mod tcp;
 
@@ -34,7 +31,7 @@ pub trait Protocol: Send + Sync + 'static {
     /// # Errors
     /// If we fail to bind to the given socket address
     async fn bind(
-        bind_address: SocketAddr,
+        bind_address: &str,
         maybe_tls_cert_path: Option<String>,
         maybe_tls_key_path: Option<String>,
     ) -> Result<Self::Listener>;
@@ -99,5 +96,77 @@ impl Clone for MockSender {
 impl Clone for MockReceiver {
     fn clone(&self) -> Self {
         Self::default()
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use anyhow::Result;
+    use tokio::{join, spawn, task::JoinHandle};
+
+    use crate::message::{Direct, Message};
+
+    use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
+
+    /// Test connection establishment, listening for connections, and message
+    /// sending and receiving. All protocols should be calling this test function
+    pub async fn test_connection<P: Protocol>(bind_address: String) -> Result<()> {
+        // Create listener
+        let listener = P::bind(bind_address.as_str(), None, None).await?;
+
+        // The messages we will send and receive
+        let new_connection_to_listener = Message::Direct(Direct {
+            recipient: vec![0, 1, 2],
+            message: b"meowtown".to_vec(),
+        });
+        let listener_to_new_connection = Message::Direct(Direct {
+            recipient: vec![3, 4, 5],
+            message: b"town of meow".to_vec(),
+        });
+
+        // Spawn a task to listen for and accept connections
+        let listener_to_new_connection_ = listener_to_new_connection.clone();
+        let new_connection_to_listener_ = new_connection_to_listener.clone();
+        let listener_jh: JoinHandle<Result<()>> = spawn(async move {
+            // Accept the connection
+            let unfinalized_connection = listener.accept().await?;
+
+            // Finalize the connection
+            let (sender, receiver) = unfinalized_connection.finalize().await?;
+
+            // Send our message
+            sender.send_message(listener_to_new_connection_).await?;
+
+            // Receive a message, assert it's the correct one
+            let message = receiver.recv_message().await?;
+            assert!(message == new_connection_to_listener_);
+
+            Ok(())
+        });
+
+        // Spawn a task to connect and send and receive the message
+        let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
+            // Connect to the remote
+            let (sender, receiver) = P::connect(bind_address.as_str()).await?;
+
+            // Receive a message, assert it's the correct one
+            let message = receiver.recv_message().await?;
+            assert!(message == listener_to_new_connection);
+
+            // Send our message
+            sender.send_message(new_connection_to_listener).await?;
+
+            Ok(())
+        });
+
+        // Wait for the results
+        let (listener_result, new_connection_result) = join!(listener_jh, new_connection_jh);
+
+        // Ensure none of them errored
+        listener_result??;
+        new_connection_result??;
+
+        // We were successful
+        Ok(())
     }
 }

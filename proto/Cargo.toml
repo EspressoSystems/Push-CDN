@@ -52,3 +52,6 @@ warp = "0.3.6"
 anyhow = "1.0.79"
 kanal = "0.1.0-pre8"
 rkyv.workspace = true
+
+[dev-dependencies]
+portpicker = "0.1.1"

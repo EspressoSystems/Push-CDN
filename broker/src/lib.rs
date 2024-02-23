@@ -153,10 +153,9 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         );
 
         // Create the user (public) listener
-        let public_bind_address = parse_socket_address!(public_bind_address);
         let user_listener = bail!(
             <UserProtocol as Protocol>::bind(
-                public_bind_address,
+                public_bind_address.as_str(),
                 tls_cert_path.clone(),
                 tls_key_path.clone(),
             )
@@ -169,10 +168,13 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         );
 
         // Create the broker (private) listener
-        let private_bind_address = parse_socket_address!(private_bind_address);
         let broker_listener = bail!(
-            <BrokerProtocol as Protocol>::bind(private_bind_address, tls_cert_path, tls_key_path,)
-                .await,
+            <BrokerProtocol as Protocol>::bind(
+                private_bind_address.as_str(),
+                tls_cert_path,
+                tls_key_path,
+            )
+            .await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",

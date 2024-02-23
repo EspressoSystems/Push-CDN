@@ -5,19 +5,15 @@
 use async_trait::async_trait;
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, VarInt};
 
-/// A little type alias for helping readability.
-/// TODO: put these in one place
-type Bytes = Arc<Vec<u8>>;
-
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;
 use crate::{
-    bail, bail_option, crypto,
-    error::{Error, Result},
-    message::Message,
-    MAX_MESSAGE_SIZE,
+    bail, bail_option, connection::Bytes, crypto, error::{Error, Result}, message::Message, parse_socket_address, MAX_MESSAGE_SIZE
 };
-use std::{net::ToSocketAddrs, sync::Arc};
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    sync::Arc,
+};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
@@ -103,13 +99,17 @@ impl Protocol for Quic {
     /// to conditionally load or generate the given (or not given) certificate.
     ///
     /// # Errors
+    /// - If we cannot parse the bind address
     /// - If we cannot load the certificate
     /// - If we cannot bind to the local interface
     async fn bind(
-        bind_address: std::net::SocketAddr,
+        bind_address: &str,
         maybe_tls_cert_path: Option<String>,
         maybe_tls_key_path: Option<String>,
     ) -> Result<Self::Listener> {
+        // Parse the bind address
+        let bind_address: SocketAddr = parse_socket_address!(bind_address);
+
         // Conditionally load or generate a certificate and key
         let (certificates, key) = bail!(
             crypto::tls::load_or_self_sign_tls_certificate_and_key(
@@ -301,5 +301,25 @@ impl Drop for QuicReceiverRef {
     fn drop(&mut self) {
         // Close the connection with no reason
         self.0.close(VarInt::from_u32(0), b"");
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::super::test::test_connection as super_test_connection;
+    use super::Quic;
+    use anyhow::{anyhow, Result};
+
+    #[tokio::test]
+    /// Test connection establishment, listening for connections, and message
+    /// sending and receiving. Just proxies to the super traits' function
+    pub async fn test_connection() -> Result<()> {
+        // Get random, available port
+        let Some(port) = portpicker::pick_unused_port() else {
+            return Err(anyhow!("no unused ports"));
+        };
+
+        // Test using the super traits' function
+        super_test_connection::<Quic>(format!("127.0.0.1:{}", port)).await
     }
 }

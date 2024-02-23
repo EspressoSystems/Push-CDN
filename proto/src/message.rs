@@ -93,7 +93,7 @@ macro_rules! deserialize {
 }
 /// A wrapper for all message types. Allows us to match on a specific message type
 /// downstream. Uses a zero-copy serialization and deserialization framework.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Message {
     /// The wrapper for a `AuthenticateWithKey` message
     AuthenticateWithKey(AuthenticateWithKey),
@@ -350,7 +350,7 @@ impl From<Topic> for messages_capnp::Topic {
 
 /// This message is used to authenticate the client to a marshal or a broker
 /// to a broker. It contains a way of proving identity of the sender.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct AuthenticateWithKey {
     // The public verification key, used downstream against the signed timestamp to verify the sender.
     pub public_key: Vec<u8>,
@@ -362,7 +362,7 @@ pub struct AuthenticateWithKey {
 
 /// This message is used to authenticate the client to a server. It contains the permit
 /// issued by the marshal.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct AuthenticateWithPermit {
     // The permit issued by the marshal, if applicable.
     pub permit: u64,
@@ -370,7 +370,7 @@ pub struct AuthenticateWithPermit {
 
 /// This message is sent to the client or broker upon authentication. It contains
 /// if it was successful or not, the context, and the permit, if applicable.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct AuthenticateResponse {
     // The permit. Sent from servers to clients to verify authentication. Is `0`
     // if failed, `1` if successful, and neither if it is an actual permit.
@@ -382,7 +382,7 @@ pub struct AuthenticateResponse {
 
 /// This message is a direct message. It is sent by a client, used to deliver a
 /// message to only the intended recipient.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Direct {
     // The recipient to send the message to
     pub recipient: Vec<u8>,
@@ -393,7 +393,7 @@ pub struct Direct {
 /// This message is a broadcast message. It is sent by a client, used to deliver a
 /// message to all recipients who are interested in a topic. Uses the passed
 /// vector of topics to denote interest.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Broadcast {
     // The topics to sent the message to
     pub topics: Vec<Topic>,

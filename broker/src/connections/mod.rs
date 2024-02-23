@@ -6,7 +6,7 @@ use std::{collections::HashSet, sync::Arc};
 use dashmap::DashMap;
 pub use direct::DirectMap;
 use proto::{
-    connection::protocols::{Protocol, Sender},
+    connection::{protocols::{Protocol, Sender}, Bytes},
     discovery::BrokerIdentifier,
     message::Topic,
     BrokerProtocol, UserProtocol,
@@ -20,8 +20,7 @@ mod broadcast;
 mod direct;
 mod versioned;
 
-/// Some associated types for readability
-type Bytes = Arc<Vec<u8>>;
+/// Associated type for readability
 type UserPublicKey = Bytes;
 
 /// Stores information about all current connections.

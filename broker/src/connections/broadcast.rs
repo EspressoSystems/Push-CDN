@@ -4,14 +4,10 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    sync::Arc,
 };
 
-use proto::{discovery::BrokerIdentifier, message::Topic};
+use proto::{connection::Bytes, discovery::BrokerIdentifier, message::Topic};
 use tokio::sync::RwLock;
-
-/// A little type alias to help readability
-type Bytes = Arc<Vec<u8>>;
 
 /// Our broadcast map is just two associative (bidirectional, multi) maps:
 /// one for brokers and one for users.

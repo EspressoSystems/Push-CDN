@@ -3,6 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use proto::connection::Bytes;
 use proto::discovery::DiscoveryClient;
 use proto::{
     connection::{
@@ -14,8 +15,6 @@ use proto::{
     UserProtocol,
 };
 use tracing::{error, info};
-
-type Bytes = Arc<Vec<u8>>;
 
 use crate::{metrics, mnemonic, Inner};
 

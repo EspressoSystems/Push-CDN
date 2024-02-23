@@ -5,26 +5,18 @@
 use async_trait::async_trait;
 
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
-use std::result::Result as StdResult;
+use std::{net::SocketAddr, result::Result as StdResult};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
     spawn,
-    task::AbortHandle,
 };
-
-/// A little type alias for helping readability.
-/// TODO: put these in one place
-type Bytes = Arc<Vec<u8>>;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
 
 use crate::{
-    bail, bail_option,
-    error::{Error, Result},
-    message::Message,
-    read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    bail, bail_option, connection::Bytes, error::{Error, Result}, message::Message, parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE
 };
 use std::{net::ToSocketAddrs, sync::Arc};
 
@@ -90,11 +82,15 @@ impl Protocol for Tcp {
     ///
     /// # Errors
     /// - If we cannot bind to the local interface
+    /// - If we cannot parse the bind address
     async fn bind(
-        bind_address: std::net::SocketAddr,
+        bind_address: &str,
         _maybe_tls_cert_path: Option<String>,
         _maybe_tls_key_path: Option<String>,
     ) -> Result<Self::Listener> {
+        // Parse the bind address
+        let bind_address: SocketAddr = parse_socket_address!(bind_address);
+
         // Try to bind to the local address
         Ok(TcpListener(bail!(
             tokio::net::TcpListener::bind(bind_address).await,
@@ -108,7 +104,7 @@ impl Protocol for Tcp {
 pub struct TcpSender(Arc<TcpSenderRef>);
 
 #[derive(Clone)]
-struct TcpSenderRef(AsyncSender<Bytes>, Arc<AbortHandle>);
+struct TcpSenderRef(AsyncSender<Bytes>);
 
 fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task
@@ -121,7 +117,7 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     let (mut read_half, mut write_half) = connection.into_split();
 
     // Start the sending task
-    let sending_task = spawn(async move {
+    spawn(async move {
         loop {
             // Receive a message from our code
             let Ok(message): StdResult<Bytes, _> = receive_as_task.recv().await else {
@@ -136,7 +132,7 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     .abort_handle();
 
     // Start the receiving task
-    let receiving_task = spawn(async move {
+    spawn(async move {
         loop {
             // Receive a message from the real connection
             let message = Bytes::from(read_length_delimited!(read_half));
@@ -151,14 +147,8 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     .abort_handle();
 
     (
-        TcpSender(Arc::from(TcpSenderRef(
-            send_to_task,
-            Arc::from(receiving_task),
-        ))),
-        TcpReceiver(Arc::from(TcpReceiverRef(
-            receive_from_task,
-            Arc::from(sending_task),
-        ))),
+        TcpSender(Arc::from(TcpSenderRef(send_to_task))),
+        TcpReceiver(Arc::from(TcpReceiverRef(receive_from_task))),
     )
 }
 
@@ -192,7 +182,7 @@ impl Sender for TcpSender {
 pub struct TcpReceiver(Arc<TcpReceiverRef>);
 
 #[derive(Clone)]
-struct TcpReceiverRef(AsyncReceiver<Bytes>, Arc<AbortHandle>);
+struct TcpReceiverRef(AsyncReceiver<Bytes>);
 
 #[async_trait]
 impl Receiver for TcpReceiver {
@@ -319,13 +309,34 @@ macro_rules! write_length_delimited {
 /// If we drop the sender, we want to shut down the receiver.
 impl Drop for TcpSenderRef {
     fn drop(&mut self) {
-        self.1.abort();
+        self.0.close();
     }
 }
 
 /// If we drop the receiver, we want to shut down the sender.
+/// TODO: check if we are already doing this
 impl Drop for TcpReceiverRef {
     fn drop(&mut self) {
-        self.1.abort();
+        self.0.close();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::super::test::test_connection as super_test_connection;
+    use super::Tcp;
+    use anyhow::{anyhow, Result};
+
+    #[tokio::test]
+    /// Test connection establishment, listening for connections, and message
+    /// sending and receiving. Just proxies to the super traits' function
+    pub async fn test_connection() -> Result<()> {
+        // Get random, available port
+        let Some(port) = portpicker::pick_unused_port() else {
+            return Err(anyhow!("no unused ports"));
+        };
+
+        // Test using the super's function
+        super_test_connection::<Tcp>(format!("127.0.0.1:{}", port)).await
     }
 }

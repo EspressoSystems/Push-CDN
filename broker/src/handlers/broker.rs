@@ -6,7 +6,7 @@ use proto::{
     authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
-        protocols::{Protocol, Receiver},
+        protocols::{Protocol, Receiver}, Bytes,
     },
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,
@@ -15,8 +15,6 @@ use proto::{
     verify_broker, BrokerProtocol,
 };
 use tracing::{error, info};
-
-type Bytes = Arc<Vec<u8>>;
 
 use crate::{connections::DirectMap, metrics, Inner};
 

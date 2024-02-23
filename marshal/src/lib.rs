@@ -68,12 +68,10 @@ impl<Scheme: SignatureScheme> Marshal<Scheme> {
             tls_key_path,
         } = config;
 
-        // Parse bind address
-        let bind_address = bail!(bind_address.parse(), Parse, "failed to parse bind address");
-
         // Create the `Listener` from the bind address
         let listener = bail!(
-            <UserProtocol as Protocol>::bind(bind_address, tls_cert_path, tls_key_path).await,
+            <UserProtocol as Protocol>::bind(bind_address.as_str(), tls_cert_path, tls_key_path)
+                .await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );
