@@ -132,7 +132,6 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         Ok(())
     }
 
-    
     /// Run the sync task. This is responsible for updating brokers with our user and topic states
     /// on an interval.
     pub async fn run_sync_task(self: Arc<Self>) {

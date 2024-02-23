@@ -3,6 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use proto::discovery::DiscoveryClient;
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -13,7 +14,6 @@ use proto::{
     UserProtocol,
 };
 use tracing::{error, info};
-use proto::discovery::DiscoveryClient;
 
 type Bytes = Arc<Vec<u8>>;
 
@@ -48,9 +48,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         let (sender, receiver) = connection;
 
         // Add our user
-        self.connections
-            .add_user(public_key.clone(), sender)
-            .await;
+        self.connections.add_user(public_key.clone(), sender).await;
 
         // Subscribe our user to their connections
         self.connections
@@ -116,7 +114,9 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, message, false).await;
+                    self.connections
+                        .send_broadcast(topics, message, false)
+                        .await;
                 }
 
                 // Subscribe messages from users will just update the state locally
