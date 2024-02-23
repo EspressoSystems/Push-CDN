@@ -4,8 +4,7 @@
 
 use async_trait::async_trait;
 
-use bytes::Bytes;
-use kanal::{bounded_async, AsyncReceiver, AsyncSender};
+use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use std::result::Result as StdResult;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -13,6 +12,10 @@ use tokio::{
     spawn,
     task::AbortHandle,
 };
+
+/// A little type alias for helping readability.
+/// TODO: put these in one place
+type Bytes = Arc<Vec<u8>>;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
@@ -108,11 +111,11 @@ pub struct TcpSender(Arc<TcpSenderRef>);
 struct TcpSenderRef(AsyncSender<Bytes>, Arc<AbortHandle>);
 
 fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
-    // Create a channel for sending messages to the task. 40 messages was chosen arbitrarily
-    let (send_to_task, receive_as_task) = bounded_async(40);
+    // Create a channel for sending messages to the task
+    let (send_to_task, receive_as_task) = unbounded_async();
 
-    // Create a channel for receiving messages from the task. 40 messages was chosen arbitrarily
-    let (send_as_task, receive_from_task) = bounded_async(40);
+    // Create a channel for receiving messages from the task
+    let (send_as_task, receive_from_task) = unbounded_async();
 
     // Split the connection into owned halves
     let (mut read_half, mut write_half) = connection.into_split();
@@ -176,7 +179,7 @@ impl Sender for TcpSender {
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message over our channel
         bail!(
-            self.0.0.send(raw_message).await,
+            self.0 .0.send(raw_message).await,
             Connection,
             "failed to send message: connection closed"
         );
@@ -196,7 +199,7 @@ impl Receiver for TcpReceiver {
     async fn recv_message(&self) -> Result<Message> {
         // Receive the message
         let raw_message = bail!(
-            self.0.0.recv().await,
+            self.0 .0.recv().await,
             Connection,
             "failed to receive message: connection closed"
         );

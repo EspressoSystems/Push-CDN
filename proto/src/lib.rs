@@ -18,7 +18,7 @@ pub mod metrics;
 pub type DiscoveryClientType = discovery::embedded::Embedded;
 
 // If local discovery mode is not set, we want to use Redis as opposed to the embedded
-// DB.p
+// DB.
 #[cfg(not(feature = "local_discovery"))]
 pub type DiscoveryClientType = discovery::redis::Redis;
 

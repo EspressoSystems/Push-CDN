@@ -3,5 +3,5 @@
 
 pub mod broker_listener;
 pub mod heartbeat;
-pub mod update;
+pub mod sync;
 pub mod user_listener;

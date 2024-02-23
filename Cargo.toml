@@ -15,4 +15,4 @@ prometheus = { version = "0.13.3" }
 lazy_static = "1.4.0"
 derive_builder = "0.13.1"
 async-std = { version = "1.12.0", features = ["tokio1", "attributes"] }
-bytes = "1.5.0"
+rkyv = { version = "0.7.44", features = ["validation"] }

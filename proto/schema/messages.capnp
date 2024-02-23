@@ -16,11 +16,13 @@ struct Message {
         # The wrapper for a `Broadcast` message
         broadcast @4 :Broadcast;
 
+        # A message denoting we'd like to subscribe to some topics
         subscribe @5 :List(Topic);
+        # A message denoting we'd like to unsubscribe from some topics
         unsubscribe @6 :List(Topic);
 
-        usersConnected @7 :List(Data);
-        usersDisconnected @8 :List(Data);
+        # A message containing a map which we use to converge on user connection state
+        userSync @7: Data;
     }
 }
 

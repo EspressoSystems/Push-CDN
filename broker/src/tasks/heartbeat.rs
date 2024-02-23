@@ -1,6 +1,6 @@
 //! The heartbeat task periodically posts our state to either Redis or an embeddable file DB.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use proto::{
     connection::protocols::Protocol, crypto::signature::SignatureScheme,
@@ -9,7 +9,7 @@ use proto::{
 use tokio::{spawn, time::sleep};
 use tracing::{error, warn};
 
-use crate::{get_lock, Inner};
+use crate::Inner;
 
 impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
@@ -22,10 +22,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         loop {
             // Register with the discovery service every n seconds, updating our number of connected users
             if let Err(err) = discovery_client
-                .perform_heartbeat(
-                    get_lock!(self.user_connection_lookup, read).get_connection_count() as u64,
-                    Duration::from_secs(60),
-                )
+                .perform_heartbeat(self.connections.num_users() as u64, Duration::from_secs(60))
                 .await
             {
                 // If we fail, we want to see this
@@ -36,8 +33,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
             match discovery_client.get_other_brokers().await {
                 Ok(brokers) => {
                     // Calculate the difference, spawn tasks to connect to them
-                    for broker in brokers
-                        .difference(&get_lock!(self.connected_broker_identities, read).clone())
+                    for broker in
+                        brokers.difference(&HashSet::from_iter(self.connections.all_brokers()))
                     {
                         // TODO: make this into a separate function
                         // Extrapolate the address to connect to

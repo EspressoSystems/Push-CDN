@@ -2,7 +2,7 @@
 //! We spawn two clients. In a single-broker run, this lets them connect
 //! cross-broker.
 
-use std::time::Instant;
+use std::time::Duration;
 
 use clap::Parser;
 use client::{Client, ConfigBuilder};
@@ -11,11 +11,15 @@ use proto::{
     connection::protocols::quic::Quic,
     crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
+    message::Message,
 };
 
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
+use rand::{rngs::StdRng, Rng, SeedableRng};
+use tokio::time::sleep;
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -58,23 +62,32 @@ async fn main() -> Result<()> {
         // Generate two random keypairs, one for each client
         let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
-        let now = Instant::now();
-        for _ in 0..2500 {
-            // Create a big 512MB message
-            let m = vec![0u8; 100000];
+        // This client sends a message of a random size every second.
+        loop {
+            // Create a message of random size
+            let len = StdRng::from_entropy().gen_range(0..10000) as usize;
+            let m = vec![0u8; len];
 
             if let Err(err) = client.send_direct_message(&other_public_key, m).await {
                 tracing::error!("failed to send message: {}", err);
             };
+            info!("sent message to client_0, size: {}", len);
+            sleep(Duration::from_secs(1)).await;
         }
-        println!("{:?}", now.elapsed());
     } else {
-        for _ in 0..2500 {
-            if let Err(err) = client.receive_message().await {
-                tracing::error!("failed to receive message: {}", err);
+        // This client receives a direct message and prints the size.
+        loop {
+            let Ok(message) = client.receive_message().await else {
+                tracing::error!("failed to receive message");
+                continue;
             };
+
+            if let Message::Direct(direct) = message {
+                info!(
+                    "received message from client_1, size: {}",
+                    direct.message.len()
+                );
+            }
         }
     }
-
-    Ok(())
 }

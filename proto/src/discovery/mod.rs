@@ -5,6 +5,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
+use rkyv::{Archive, Deserialize, Serialize};
 use std::result::Result as StdResult;
 
 use crate::error::{Error, Result};
@@ -59,7 +60,8 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
 
 /// Used as a unique identifier for a broker. Defines both public and private addresses.
 /// We need this to be ordered so we can use primitives like versioned vectors over it.
-#[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive)]
+#[archive(check_bytes)]
 pub struct BrokerIdentifier {
     /// The address that a broker advertises to publicly (to users)
     pub public_advertise_address: String,

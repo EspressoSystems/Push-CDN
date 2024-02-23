@@ -6,7 +6,7 @@ edition = "2021"
 description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
 
 [features]
-default = ["local_discovery", "insecure", "runtime-tokio"]
+default = ["insecure", "runtime-tokio"]
 
 local_discovery = ["proto/local_discovery"]
 insecure = ["proto/insecure"]

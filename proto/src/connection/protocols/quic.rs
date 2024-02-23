@@ -3,8 +3,11 @@
 //! logic.
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, VarInt};
+
+/// A little type alias for helping readability.
+/// TODO: put these in one place
+type Bytes = Arc<Vec<u8>>;
 
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;

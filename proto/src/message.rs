@@ -112,10 +112,8 @@ pub enum Message {
     /// The wrapper for an `Unsubscribe` message
     Unsubscribe(Vec<Topic>),
 
-    /// The wrapper for a `UsersConnected` message
-    UsersConnected(Vec<Vec<u8>>),
-    /// The wrapper for a `UsersDisconnected` message
-    UsersDisconnected(Vec<Vec<u8>>),
+    /// A message containing a map which we use to converge on user connection state
+    UserSync(Vec<u8>),
 }
 
 impl Message {
@@ -130,7 +128,7 @@ impl Message {
     pub fn serialize(&self) -> Result<Vec<u8>> {
         // Create a new root message, our message base
         let mut default_message = capnp::message::Builder::new_default();
-        let root: messages_capnp::message::Builder = default_message.init_root();
+        let mut root: messages_capnp::message::Builder = default_message.init_root();
 
         // Conditional logic based on what kind of message we passed in
         match self {
@@ -206,22 +204,8 @@ impl Message {
                 }
             }
 
-            Self::UsersConnected(to_serialize) => {
-                // Initialize a new `UsersConnected` message.
-                let mut message = root.init_users_connected(checked_to_u32!(to_serialize.len()));
-
-                for (i, user) in to_serialize.iter().enumerate() {
-                    message.set(checked_to_u32!(i), user);
-                }
-            }
-
-            Self::UsersDisconnected(to_serialize) => {
-                // Initialize a new `Subscribe` message.
-                let mut message = root.init_users_disconnected(checked_to_u32!(to_serialize.len()));
-
-                for (i, user) in to_serialize.iter().enumerate() {
-                    message.set(checked_to_u32!(i), user);
-                }
+            Self::UserSync(to_serialize) => {
+                root.set_user_sync(to_serialize);
             }
         }
 
@@ -317,17 +301,12 @@ impl Message {
 
                     Self::Unsubscribe(deserialize!(message, List))
                 }
-                messages_capnp::message::UsersConnected(maybe_message) => {
+
+                messages_capnp::message::UserSync(maybe_message) => {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::UsersConnected(deserialize!(message, List))
-                }
-                messages_capnp::message::UsersDisconnected(maybe_message) => {
-                    let message =
-                        bail!(maybe_message, Deserialize, "failed to deserialize message");
-
-                    Self::UsersDisconnected(deserialize!(message, List))
+                    Self::UserSync(message.to_vec())
                 }
             },
         )
@@ -508,16 +487,7 @@ mod test {
         // `Unsubscribe` message
         assert_serialize_deserialize!(Message::Unsubscribe(vec![Topic::DA, Topic::Global],));
 
-        // `UsersConnected` message
-        assert_serialize_deserialize!(Message::UsersConnected(vec![
-            vec![0u8, 1u8],
-            vec![2u8, 3u8]
-        ]));
-
-        // `UsersDisconnected` message
-        assert_serialize_deserialize!(Message::UsersDisconnected(vec![
-            vec![0u8, 1u8],
-            vec![2u8, 3u8]
-        ]));
+        // `UserSync` message
+        assert_serialize_deserialize!(Message::UserSync(vec![0u8, 1u8]));
     }
 }

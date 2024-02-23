@@ -1,10 +1,13 @@
 //! This module defines connections, listeners, and their implementations.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use mockall::automock;
+
+/// A little type alias for helping readability.
+/// TODO: put these in one place
+type Bytes = Arc<Vec<u8>>;
 
 use crate::{error::Result, message::Message};
 pub mod quic;

@@ -6,9 +6,8 @@ edition = "2021"
 description = "Defines client interactions for both marshals and brokers"
 
 [features]
-default = ["local_discovery", "insecure", "runtime-tokio"]
+default = ["insecure", "runtime-tokio"]
 
-local_discovery = ["proto/local_discovery"]
 insecure = ["proto/insecure"]
 
 runtime-tokio = ["proto/runtime-tokio"]
@@ -24,4 +23,3 @@ rand.workspace = true
 tracing.workspace = true
 clap.workspace = true
 derive_builder.workspace = true
-bytes.workspace = true

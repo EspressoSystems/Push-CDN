@@ -6,8 +6,9 @@ edition = "2021"
 description = "Defines the broker server, which is responsible for routing messages from clients"
 
 [features]
-default = ["local_discovery", "insecure", "runtime-tokio"]
+default = ["insecure", "runtime-tokio", "strong_consistency"]
 
+strong_consistency = []
 local_discovery = ["proto/local_discovery"]
 insecure = ["proto/insecure"]
 
@@ -30,4 +31,6 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 derive_builder.workspace = true
 mnemonic = "1.0.1"
-bytes.workspace = true
+rkyv.workspace = true
+derivative = "2.2.0"
+dashmap = "5.5.3"

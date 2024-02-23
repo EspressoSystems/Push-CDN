@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
             .private_advertise_address(private_address.clone())
             .private_bind_address(private_address)
             .discovery_endpoint(args.discovery_endpoint)
+            .metrics_port(args.metrics_port)
             .keypair(KeyPair {
                 public_key,
                 private_key

@@ -4,14 +4,12 @@
 // TODO: split out this file into multiple files.
 // TODO: logging
 
+mod connections;
 mod handlers;
-mod map;
 pub mod reexports;
-mod state;
 mod tasks;
 
 use std::{
-    collections::HashSet,
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -26,6 +24,7 @@ use proto::{
 };
 
 // TODO: figure out if we should use Tokio's here
+use connections::Connections;
 use proto::{
     bail,
     connection::protocols::Protocol,
@@ -33,8 +32,7 @@ use proto::{
     error::{Error, Result},
     parse_socket_address, BrokerProtocol, DiscoveryClientType, UserProtocol,
 };
-use state::ConnectionLookup;
-use tokio::{select, spawn, sync::RwLock};
+use tokio::{select, spawn};
 use tracing::info;
 
 use crate::metrics::RUNNING_SINCE;
@@ -91,19 +89,9 @@ struct Inner<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
     /// against the stake table.
     keypair: KeyPair<BrokerScheme>,
 
-    /// The set of all broker identities we see. Mapped against the brokers we see in `Discovery`
-    /// so that we don't connect multiple times.
-    connected_broker_identities: RwLock<HashSet<BrokerIdentifier>>,
-
-    /// A map of interests to their possible broker connections. We use this to facilitate
-    /// where messages go. They need to be separate because of possibly different protocol
-    /// types.
-    broker_connection_lookup: RwLock<ConnectionLookup<BrokerProtocol>>,
-
-    /// A map of interests to their possible user connections. We use this to facilitate
-    /// where messages go. They need to be separate because of possibly different protocol
-    /// types.
-    user_connection_lookup: RwLock<ConnectionLookup<UserProtocol>>,
+    /// The connections that currently exist. We use this everywhere we need to update connection
+    /// state or send messages.
+    connections: Arc<Connections>,
 
     /// The `PhantomData` that we need to be generic over protocol types.
     pd: PhantomData<UserScheme>,
@@ -207,11 +195,9 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         Ok(Self {
             inner: Arc::from(Inner {
                 discovery_client,
-                identity,
+                identity: identity.clone(),
                 keypair,
-                connected_broker_identities: RwLock::default(),
-                broker_connection_lookup: RwLock::default(),
-                user_connection_lookup: RwLock::default(),
+                connections: Arc::from(Connections::new(identity)),
                 pd: PhantomData,
             }),
             metrics_bind_address,
@@ -235,8 +221,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
         // let heartbeat_task = ;
         let heartbeat_task = spawn(self.inner.clone().run_heartbeat_task());
 
-        // Spawn the updates task, which updates other brokers with our topics and keys periodically.
-        let update_task = spawn(self.inner.clone().run_update_task());
+        // Spawn the sync task, which updates other brokers with our keys periodically.
+        let sync_task = spawn(self.inner.clone().run_sync_task());
 
         // Spawn the public (user) listener task
         // TODO: maybe macro this, since it's repeat code with the private listener task
@@ -274,8 +260,8 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerSc
             _ = heartbeat_task => {
                 Err(Error::Exited("heartbeat task exited!".to_string()))
             }
-            _ = update_task => {
-                Err(Error::Exited("updates task exited!".to_string()))
+            _ = sync_task => {
+                Err(Error::Exited("sync task exited!".to_string()))
             }
             _ = user_listener_task => {
                 Err(Error::Exited("user listener task exited!".to_string()))

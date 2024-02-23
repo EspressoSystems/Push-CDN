@@ -2,25 +2,23 @@
 
 use std::sync::Arc;
 
-use bytes::Bytes;
 use proto::{
-    authenticate_with_broker,
+    authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
-        protocols::{Protocol, Receiver, Sender},
+        protocols::{Protocol, Receiver},
     },
     crypto::signature::SignatureScheme,
+    discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
     verify_broker, BrokerProtocol,
 };
 use tracing::{error, info};
 
-use crate::{
-    get_lock, send_broadcast, send_direct, send_or_remove_many, state::ConnectionId, Inner,
-};
+type Bytes = Arc<Vec<u8>>;
 
-use crate::metrics;
+use crate::{connections::DirectMap, metrics, Inner};
 
 impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
     /// This function is the callback for handling a broker (private) connection.
@@ -34,7 +32,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     ) {
         // Depending on which way the direction came in, we will want to authenticate with a different
         // flow.
-        let broker_address = if is_outbound {
+        let broker_identifier = if is_outbound {
             // If we reached out to the other broker first, authenticate first.
             let broker_address = authenticate_with_broker!(connection, self);
             verify_broker!(connection, self);
@@ -48,65 +46,59 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
         // Create new batch sender
         let (sender, receiver) = connection;
 
-        // Add to our connected broker identities so we don't try to reconnect
-        let mut connected_broker_guard = get_lock!(self.connected_broker_identities, write);
-        if connected_broker_guard.contains(&broker_address) {
-            // If the address is already there (we're already connected), drop this one. Agree which one to drop based on the node
-            // index.
-            if self.identity > broker_address{
-                return;
-            }
+        // Add to our brokers
+        self.connections
+            .add_broker(broker_identifier.clone(), sender);
+
+        // Send a full user sync
+        if let Err(err) = self.full_user_sync(&broker_identifier).await {
+            error!("failed to perform full user sync: {err}");
+            self.connections.remove_broker(&broker_identifier).await;
+            return;
+        };
+
+        // Send a full topic sync
+        // TODO: macro removals or something
+        if let Err(err) = self.full_topic_sync(&broker_identifier).await {
+            error!("failed to perform full topic sync: {err}");
+            self.connections.remove_broker(&broker_identifier).await;
+            return;
+        };
+
+        // If we have `strong_consistency` enabled, send partials
+        #[cfg(feature = "strong_consistency")]
+        if let Err(err) = self.partial_topic_sync().await {
+            error!("failed to perform partial topic sync: {err}");
         }
 
-        // If we aren't already connected, add it
-        connected_broker_guard.insert(broker_address.clone());
+        #[cfg(feature = "strong_consistency")]
+        if let Err(err) = self.partial_user_sync().await {
+            error!("failed to perform partial user sync: {err}");
+        }
 
-        // Add our connection to the list of connections
-        let connection_id = self
-            .broker_connection_lookup
-            .write()
-            .await
-            .add_connection(sender.clone());
-
-        // Get all brokers (excluding ourselves)
-        let all_brokers = get_lock!(self.broker_connection_lookup, read).get_all_connections();
-
-        // Send all relevant updates to brokers, flushing our updates. Send the partial updates
-        // to everyone, and the full to the new broker.
-        let _ = self
-            .send_updates_to_brokers(all_brokers, vec![(connection_id, sender.clone())])
-            .await;
-
-        // Drop this here so we can continue sending broker update messages
-        drop(connected_broker_guard);
-
-        info!("connected to broker {}", broker_address);
+        info!("connected to broker {}", broker_identifier);
 
         // Increment our metric
         metrics::NUM_BROKERS_CONNECTED.inc();
 
         // If we error, come back to the callback so we can remove the connection from the list.
-        if let Err(err) = self.broker_receive_loop(connection_id, receiver).await {
+        if let Err(err) = self.broker_receive_loop(&broker_identifier, receiver).await {
             error!("broker disconnected with error: {err}");
         };
 
-        info!("disconnected from broker {}", broker_address);
+        info!("disconnected from broker {}", broker_identifier);
 
         // Decrement our metric
         metrics::NUM_BROKERS_CONNECTED.dec();
 
         // Remove from the connected broker identities so that we may
         // try to reconnect inthe future.
-        get_lock!(self.connected_broker_identities, write).remove(&broker_address);
-
-        // Remove from our connections so that we don't send any more data
-        // their way.
-        get_lock!(self.broker_connection_lookup, write).remove_connection(connection_id);
+        self.connections.remove_broker(&broker_identifier).await;
     }
 
     pub async fn broker_receive_loop(
-        &self,
-        connection_id: ConnectionId,
+        self: &Arc<Self>,
+        broker_identifier: &BrokerIdentifier,
         receiver: <BrokerProtocol as Protocol>::Receiver,
     ) -> Result<()> {
         while let Ok(message) = receiver.recv_message().await {
@@ -114,35 +106,45 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
                 // If we receive a direct message from a broker, we want to send it to all users with that key
                 Message::Direct(ref direct) => {
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
+                    let user_public_key = Bytes::from(direct.recipient.clone());
 
-                    send_direct!(self.user_connection_lookup, direct.recipient, message);
+                    self.connections
+                        .send_direct(user_public_key, message, true)
+                        .await;
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
+                    let topics = broadcast.topics.clone();
 
-                    send_broadcast!(self.user_connection_lookup, broadcast.topics, message);
+                    self.connections.send_broadcast(topics, message, true).await;
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
-                Message::Subscribe(subscribe) => get_lock!(self.broker_connection_lookup, write)
-                    .subscribe_connection_id_to_topics(connection_id, subscribe),
+                Message::Subscribe(subscribe) => {
+                    self.connections
+                        .subscribe_broker_to(broker_identifier, subscribe)
+                        .await;
+                }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
                 Message::Unsubscribe(unsubscribe) => {
-                    get_lock!(self.broker_connection_lookup, write)
-                        .unsubscribe_connection_id_from_topics(connection_id, unsubscribe);
+                    self.connections
+                        .unsubscribe_broker_from(broker_identifier, unsubscribe)
+                        .await;
                 }
 
-                // If a broker has told us they have some users connected, we update our map as such
-                Message::UsersConnected(users) => get_lock!(self.broker_connection_lookup, write)
-                    .subscribe_connection_id_to_keys(connection_id, users),
+                // If we receive a `UserSync` message, we want to sync with our map
+                Message::UserSync(user_sync) => {
+                    // Deserialize via `rkyv`
+                    let user_sync: DirectMap = bail!(
+                        rkyv::from_bytes(&user_sync),
+                        Deserialize,
+                        "failed to deserialize user sync message"
+                    );
 
-                // If a broker has told us they have some users disconnected, we update our map as such
-                Message::UsersDisconnected(users) => {
-                    get_lock!(self.broker_connection_lookup, write)
-                        .unsubscribe_connection_id_from_keys(connection_id, users);
+                    self.connections.apply_user_sync(user_sync).await;
                 }
 
                 // Do nothing if we receive an unexpected message
