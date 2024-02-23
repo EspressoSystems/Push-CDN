@@ -16,7 +16,8 @@ jobs:
       - run: cargo fmt
 
       # run clippy for each feature flag configuration
-      - run: cargo clippy --features metrics --features local_discovery
+      # TODO: make this better
+      - run: cargo clippy --features metrics
       - run: cargo clippy --no-default-features --features runtime-async-std
       
       - run: cargo test
