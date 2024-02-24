@@ -4,7 +4,7 @@
 // TODO: split out this file into multiple files.
 // TODO: logging
 
-#[forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 mod connections;
 mod handlers;

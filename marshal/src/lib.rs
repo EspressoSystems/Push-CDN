@@ -3,7 +3,7 @@
 //! (right now) with the least amount of connections. It's basically a load
 //! balancer for the brokers.
 
-#[forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use std::{marker::PhantomData, sync::Arc};
 

@@ -1,7 +1,7 @@
 //! This crate defines the common code structures and constants used by both the
 //! broker client and server.
 
-#[forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use std::hash::{Hash, Hasher};
 
