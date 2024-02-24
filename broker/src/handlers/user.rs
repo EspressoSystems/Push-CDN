@@ -12,23 +12,26 @@ use proto::{
     },
     crypto::signature::SignatureScheme,
     message::Message,
-    mnemonic, UserProtocol,
+    mnemonic,
 };
 use tracing::{error, info};
 
 use crate::{metrics, Inner};
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        connection: (
-            <UserProtocol as Protocol>::Sender,
-            <UserProtocol as Protocol>::Receiver,
-        ),
+        connection: (UserProtocol::Sender, UserProtocol::Receiver),
     ) {
         // Verify (authenticate) the connection
-        let Ok((public_key, topics)) = BrokerAuth::<UserScheme>::verify_user(
+        let Ok((public_key, topics)) = BrokerAuth::verify_user::<UserScheme, UserProtocol>(
             &connection,
             &self.identity,
             &mut self.discovery_client.clone(),

@@ -14,7 +14,7 @@ use proto::{
     crypto::signature::SignatureScheme,
     discovery::DiscoveryClient,
     error::{Error, Result},
-    DiscoveryClientType, UserProtocol,
+    DiscoveryClientType,
 };
 use tokio::spawn;
 use tracing::warn;
@@ -41,9 +41,9 @@ pub struct Config {
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<Scheme: SignatureScheme> {
+pub struct Marshal<Scheme: SignatureScheme, UserProtocol: Protocol> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<<UserProtocol as Protocol>::Listener>,
+    listener: Arc<UserProtocol::Listener>,
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: DiscoveryClientType,
@@ -53,7 +53,7 @@ pub struct Marshal<Scheme: SignatureScheme> {
     pd: PhantomData<Scheme>,
 }
 
-impl<Scheme: SignatureScheme> Marshal<Scheme> {
+impl<Scheme: SignatureScheme, UserProtocol: Protocol> Marshal<Scheme, UserProtocol> {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
     ///

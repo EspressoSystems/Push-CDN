@@ -5,7 +5,6 @@ use std::sync::Arc;
 use proto::{
     connection::protocols::{Listener, Protocol, UnfinalizedConnection},
     crypto::signature::SignatureScheme,
-    BrokerProtocol,
 };
 use tokio::spawn;
 use tracing::warn;
@@ -13,7 +12,13 @@ use tracing::warn;
 
 use crate::Inner;
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// Runs the broker listener task in a loop.
     pub async fn run_broker_listener_task(
         self: Arc<Self>,

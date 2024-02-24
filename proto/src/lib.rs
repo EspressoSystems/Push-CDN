@@ -3,10 +3,7 @@
 
 use std::hash::{Hash, Hasher};
 
-use connection::{
-    protocols::{quic::Quic, tcp::Tcp},
-    Bytes,
-};
+use connection::Bytes;
 
 pub mod connection;
 pub mod crypto;
@@ -26,10 +23,6 @@ pub type DiscoveryClientType = discovery::embedded::Embedded;
 // DB.
 #[cfg(not(feature = "local_discovery"))]
 pub type DiscoveryClientType = discovery::redis::Redis;
-
-// Defines the protocol types for each protocol actor.
-pub type BrokerProtocol = Tcp;
-pub type UserProtocol = Quic;
 
 /// Common constants used in both the client and server
 ///

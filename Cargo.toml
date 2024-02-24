@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["proto", "broker", "marshal", "client", "testing"]
+members = ["proto", "broker", "marshal", "client"]
 
 package.description = "The PushCDN is a distributed, scalable, and fault-tolerant pub/sub messaging system"
 

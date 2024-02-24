@@ -155,10 +155,10 @@ impl Sender for MemorySender {
 }
 
 #[derive(Clone)]
-pub struct MemoryReceiver(Arc<MemoryReceiverRef>);
+pub struct MemoryReceiver(pub Arc<MemoryReceiverRef>);
 
 #[derive(Clone)]
-pub struct MemoryReceiverRef(AsyncReceiver<Bytes>);
+pub struct MemoryReceiverRef(pub AsyncReceiver<Bytes>);
 
 #[async_trait]
 impl Receiver for MemoryReceiver {
@@ -274,6 +274,20 @@ impl Drop for MemorySenderRef {
 impl Drop for MemoryReceiverRef {
     fn drop(&mut self) {
         self.0.close();
+    }
+}
+
+impl Memory {
+    /// Generate a testing pair of channels for sending and receiving in memory.
+    /// This is particularly useful for tests.
+    pub fn gen_testing_pair() -> (MemorySender, MemoryReceiver) {
+        // Create channels
+        let (sender, receiver) = unbounded_async();
+
+        (
+            MemorySender(Arc::from(MemorySenderRef(sender))),
+            MemoryReceiver(Arc::from(MemoryReceiverRef(receiver))),
+        )
     }
 }
 

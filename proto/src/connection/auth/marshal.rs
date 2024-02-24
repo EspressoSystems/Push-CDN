@@ -1,5 +1,7 @@
 //! In this crate we deal with the authentication flow as a marshal.
 
+// TODO: make scheme stuff per function if it makes sense
+
 use std::{
     marker::PhantomData,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -14,7 +16,7 @@ use crate::{
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
-    DiscoveryClientType, UserProtocol,
+    DiscoveryClientType,
 };
 use crate::{
     connection::Bytes,
@@ -22,12 +24,12 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<Scheme: SignatureScheme> {
+pub struct MarshalAuth<Scheme: SignatureScheme, UserProtocol: Protocol> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
-    pub pd: PhantomData<Scheme>,
+    pub pd: PhantomData<(Scheme, UserProtocol)>,
 }
 
-impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
+impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserProtocol> {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message
@@ -38,10 +40,7 @@ impl<Scheme: SignatureScheme> MarshalAuth<Scheme> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &(
-            <UserProtocol as Protocol>::Sender,
-            <UserProtocol as Protocol>::Receiver,
-        ),
+        connection: &(UserProtocol::Sender, UserProtocol::Receiver),
         discovery_client: &mut DiscoveryClientType,
     ) -> Result<Bytes> {
         // Receive the signed message from the user

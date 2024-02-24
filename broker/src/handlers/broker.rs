@@ -13,20 +13,23 @@ use proto::{
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
-    verify_broker, BrokerProtocol,
+    verify_broker,
 };
 use tracing::{error, info};
 
 use crate::{connections::DirectMap, metrics, Inner};
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (
-            <BrokerProtocol as Protocol>::Sender,
-            <BrokerProtocol as Protocol>::Receiver,
-        ),
+        mut connection: (BrokerProtocol::Sender, BrokerProtocol::Receiver),
         is_outbound: bool,
     ) {
         // Depending on which way the direction came in, we will want to authenticate with a different
@@ -102,7 +105,7 @@ impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerSch
     ) -> Result<()> {
         while let Ok(message) = receiver.recv_message().await {
             match message {
-                // If we receive a direct message from a broker, we want to send it to all users with that key
+                // If we receive a direct message from a broker, we want to send it to the user with that key
                 Message::Direct(ref direct) => {
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let user_public_key = Bytes::from(direct.recipient.clone());

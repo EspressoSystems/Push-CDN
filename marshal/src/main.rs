@@ -6,6 +6,7 @@ use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme 
 use marshal::{ConfigBuilder, Marshal};
 use proto::{
     bail,
+    connection::protocols::quic::Quic,
     error::{Error, Result},
 };
 
@@ -44,7 +45,7 @@ async fn main() -> Result<()> {
     );
 
     // Create new `Marshal` from the config
-    let marshal = Marshal::<BLS>::new(config).await?;
+    let marshal = Marshal::<BLS, Quic>::new(config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;

@@ -9,6 +9,9 @@ mod handlers;
 pub mod reexports;
 mod tasks;
 
+#[cfg(test)]
+mod test;
+
 use std::{
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
@@ -30,7 +33,7 @@ use proto::{
     connection::protocols::Protocol,
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
-    parse_socket_address, BrokerProtocol, DiscoveryClientType, UserProtocol,
+    parse_socket_address, DiscoveryClientType,
 };
 use tokio::{select, spawn};
 use tracing::info;
@@ -78,7 +81,12 @@ pub struct Config<BrokerScheme: SignatureScheme> {
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
-struct Inner<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
+struct Inner<
+    BrokerScheme: SignatureScheme,
+    UserScheme: SignatureScheme,
+    BrokerProtocol: Protocol,
+    UserProtocol: Protocol,
+> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
@@ -91,28 +99,39 @@ struct Inner<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections>,
+    connections: Arc<Connections<BrokerProtocol, UserProtocol>>,
 
     /// The `PhantomData` that we need to be generic over protocol types.
     pd: PhantomData<UserScheme>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> {
+pub struct Broker<
+    BrokerScheme: SignatureScheme,
+    UserScheme: SignatureScheme,
+    BrokerProtocol: Protocol,
+    UserProtocol: Protocol,
+> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<BrokerScheme, UserScheme>>,
+    inner: Arc<Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>>,
 
     /// The public (user -> broker) listener
-    user_listener: <UserProtocol as Protocol>::Listener,
+    user_listener: UserProtocol::Listener,
 
     /// The private (broker <-> broker) listener
-    broker_listener: <BrokerProtocol as Protocol>::Listener,
+    broker_listener: BrokerProtocol::Listener,
 
     /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
     metrics_bind_address: Option<SocketAddr>,
 }
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Broker<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Broker<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors

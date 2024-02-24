@@ -3,15 +3,20 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use proto::{
-    connection::protocols::Protocol, crypto::signature::SignatureScheme,
-    discovery::DiscoveryClient, BrokerProtocol,
+    connection::protocols::Protocol, crypto::signature::SignatureScheme, discovery::DiscoveryClient,
 };
 use tokio::{spawn, time::sleep};
 use tracing::{error, warn};
 
 use crate::Inner;
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
     /// the marshal to correctly choose the broker with the least amount of connections.
     pub async fn run_heartbeat_task(self: Arc<Self>) {

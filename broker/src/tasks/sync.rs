@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use proto::{
     bail,
+    connection::protocols::Protocol,
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,
     error::{Error, Result},
@@ -32,7 +33,13 @@ macro_rules! prepare_sync_message {
     }};
 }
 
-impl<BrokerScheme: SignatureScheme, UserScheme: SignatureScheme> Inner<BrokerScheme, UserScheme> {
+impl<
+        BrokerScheme: SignatureScheme,
+        UserScheme: SignatureScheme,
+        BrokerProtocol: Protocol,
+        UserProtocol: Protocol,
+    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
+{
     /// Perform a full user sync, sending our entire list of users to a remote broker. The broker is
     /// removed if we could not send it.
     ///

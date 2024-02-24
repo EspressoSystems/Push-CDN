@@ -12,7 +12,7 @@ use proto::{
     },
     discovery::BrokerIdentifier,
     message::Topic,
-    mnemonic, BrokerProtocol, UserProtocol,
+    mnemonic,
 };
 use tokio::{spawn, sync::RwLock};
 use tracing::{error, warn};
@@ -27,14 +27,14 @@ mod versioned;
 type UserPublicKey = Bytes;
 
 /// Stores information about all current connections.
-pub struct Connections {
+pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<Bytes, <UserProtocol as Protocol>::Sender>,
+    users: DashMap<Bytes, UserProtocol::Sender>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, <BrokerProtocol as Protocol>::Sender>,
+    brokers: DashMap<BrokerIdentifier, BrokerProtocol::Sender>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: RwLock<DirectMap>,
@@ -42,7 +42,7 @@ pub struct Connections {
     broadcast_map: BroadcastMap,
 }
 
-impl Connections {
+impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtocol, UserProtocol> {
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {

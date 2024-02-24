@@ -9,6 +9,7 @@ use jf_primitives::signatures::{
 use local_ip_address::local_ip;
 use proto::{
     bail,
+    connection::protocols::{quic::Quic, tcp::Tcp},
     crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
 };
@@ -80,7 +81,7 @@ async fn main() -> Result<()> {
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::<BLS, BLS>::new(broker_config).await?;
+    let broker = Broker::<BLS, BLS, Tcp, Quic>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     broker.start().await?;
