@@ -1,6 +1,8 @@
 //! In here we define an API that is a little more higher-level and ergonomic
 //! for end users. It is a light wrapper on top of a `Retry` connection.
 
+#[forbid(unsafe_code)]
+
 pub mod reexports;
 mod retry;
 
