@@ -465,7 +465,7 @@ async fn test_broadcast_user() {
 /// Test sending a broadcast message from a broker.
 /// This test makes sure that:
 /// 1. Any broker that sends a topic will see it routed to only users
-/// 2. The user sending it, if subscribed, will NOT receive it
+/// 2. The broker sending it, if subscribed, will NOT receive it
 #[tokio::test]
 async fn test_broadcast_broker() {
     // This run definition: 3 brokers, 6 users
