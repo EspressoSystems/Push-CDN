@@ -158,6 +158,10 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
 
 #[async_trait]
 impl Sender for TcpSender {
+    /// Send an unserialized message over the stream.
+    ///
+    /// # Errors
+    /// If we fail to send or serialize the message
     async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize our message
         let raw_message = Bytes::from(bail!(
@@ -170,6 +174,10 @@ impl Sender for TcpSender {
         self.send_message_raw(raw_message).await
     }
 
+    /// Send a raw (already serialized) message over the stream.
+    ///
+    /// # Errors
+    /// If we fail to send the message
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message over our channel
         bail!(
