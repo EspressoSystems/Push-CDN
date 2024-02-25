@@ -38,7 +38,7 @@ use proto::{
     error::{Error, Result},
     parse_socket_address, DiscoveryClientType,
 };
-use tokio::{select, spawn, sync::Semaphore};
+use tokio::{select, spawn};
 use tracing::info;
 
 use crate::metrics::RUNNING_SINCE;
