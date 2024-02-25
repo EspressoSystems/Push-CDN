@@ -16,8 +16,8 @@ runtime-tokio = ["proto/runtime-tokio"]
 runtime-async-std = ["dep:async-std", "proto/runtime-async-std"]
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports", "async_tokio"] }
-pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
+criterion.workspace = true
+pprof.workspace = true
 
 # Benchmark direct messages (non-networked)
 [[bench]]

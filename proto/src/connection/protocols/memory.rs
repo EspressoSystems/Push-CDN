@@ -169,6 +169,24 @@ impl Receiver for MemoryReceiver {
     /// - If the other side of the channel is closed
     /// - If we fail deserialization
     async fn recv_message(&self) -> Result<Message> {
+        // Receive raw message
+        let raw_message = self.recv_message_raw().await?;
+
+        // Deserialize and return the message
+        Ok(bail!(
+            Message::deserialize(&raw_message),
+            Deserialize,
+            "failed to deserialize message"
+        ))
+    }
+
+    /// Receives a single message from our channel without
+    /// deserializing≥
+    ///
+    /// # Errors
+    /// - If the other side of the channel is closed
+    /// - If we fail deserialization
+    async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive a message from the channel
         let raw_message = bail!(
             self.0 .0.recv().await,
@@ -180,12 +198,7 @@ impl Receiver for MemoryReceiver {
         #[cfg(feature = "metrics")]
         BYTES_RECV.add(raw_message.len() as f64);
 
-        // Deserialize and return the message
-        Ok(bail!(
-            Message::deserialize(&raw_message),
-            Deserialize,
-            "failed to deserialize message"
-        ))
+        Ok(raw_message)
     }
 }
 

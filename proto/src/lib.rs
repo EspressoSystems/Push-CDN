@@ -26,8 +26,6 @@ pub type DiscoveryClientType = discovery::embedded::Embedded;
 #[cfg(not(feature = "local_discovery"))]
 pub type DiscoveryClientType = discovery::redis::Redis;
 
-/// Common constants used in both the client and server
-///
 /// The maximum message size to be received over a connection.
 /// After this, it will be automatically closed by the receiver.
 pub const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 1024;

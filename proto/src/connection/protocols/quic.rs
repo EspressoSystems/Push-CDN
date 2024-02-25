@@ -214,8 +214,26 @@ impl Receiver for QuicReceiver {
     /// # Errors
     /// - if we fail to accept an incoming stream
     /// - if we fail to receive the message
-    /// - if we fail deserialization
+    /// - if we fail to deserialize the message
     async fn recv_message(&self) -> Result<Message> {
+        // Receive the raw message
+        let raw_message = self.recv_message_raw().await?;
+
+        // Deserialize and return the message
+        Ok(bail!(
+            Message::deserialize(&raw_message),
+            Deserialize,
+            "failed to deserialize message"
+        ))
+    }
+
+    /// Receives a single message over the stream and deserializes
+    /// it.
+    ///
+    /// # Errors
+    /// - if we fail to accept an incoming stream
+    /// - if we fail to receive the message
+    async fn recv_message_raw(&self) -> Result<Bytes> {
         // Accept an incoming unidirectional stream
         let mut recv_stream = bail!(
             self.0 .0.accept_uni().await,
@@ -235,12 +253,7 @@ impl Receiver for QuicReceiver {
         #[cfg(feature = "metrics")]
         BYTES_RECV.add(raw_message.len() as f64);
 
-        // Deserialize and return the message
-        Ok(bail!(
-            Message::deserialize(&raw_message),
-            Deserialize,
-            "failed to deserialize message"
-        ))
+        Ok(raw_message)
     }
 }
 

@@ -63,6 +63,12 @@ pub trait Receiver {
     /// - if we fail to receive the message
     /// - if we fail deserialization
     async fn recv_message(&self) -> Result<Message>;
+
+    /// Receives a message or message[s] over the stream without deserializing.
+    ///
+    /// # Errors
+    /// - if we fail to receive the message
+    async fn recv_message_raw(&self) -> Result<Bytes>;
 }
 
 #[automock]
@@ -169,4 +175,58 @@ pub mod tests {
         // We were successful
         Ok(())
     }
+}
+
+/// A macro to read a length-delimited (serialized) message from a stream.
+/// Has a bounds check for if the message is too big
+#[macro_export]
+macro_rules! read_length_delimited {
+    ($stream: expr) => {{
+        // Read the message size from the stream
+        let Ok(message_size) = $stream.read_u64().await else {
+            return;
+        };
+
+        // Make sure the message isn't too big
+        if message_size > MAX_MESSAGE_SIZE {
+            return;
+        }
+
+        // Create buffer of the proper size
+        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
+
+        // Read the message from the stream
+        if $stream.read_exact(&mut buffer).await.is_err() {
+            return;
+        }
+
+        // Add to our metrics, if desired
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_RECV.add(message_size as f64);
+
+        buffer
+    }};
+}
+
+/// A macro to write a length-delimited (serialized) message to a stream.
+#[macro_export]
+macro_rules! write_length_delimited {
+    ($stream: expr, $message:expr) => {
+        // Get the length of the message
+        let message_len = $message.len() as u64;
+
+        // Write the message size to the stream
+        if $stream.write_u64(message_len).await.is_err() {
+            return;
+        }
+
+        // Write the message to the stream
+        if $stream.write_all(&$message).await.is_err() {
+            return;
+        }
+
+        // Increment the number of bytes we've sent by this amount
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_SENT.add(message_len as f64);
+    };
 }
