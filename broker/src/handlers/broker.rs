@@ -55,7 +55,7 @@ impl<
         // Send a full user sync
         if let Err(err) = self.full_user_sync(&broker_identifier).await {
             error!("failed to perform full user sync: {err}");
-            self.connections.remove_broker(&broker_identifier).await;
+            self.connections.remove_broker(&broker_identifier);
             return;
         };
 
@@ -63,7 +63,7 @@ impl<
         // TODO: macro removals or something
         if let Err(err) = self.full_topic_sync(&broker_identifier).await {
             error!("failed to perform full topic sync: {err}");
-            self.connections.remove_broker(&broker_identifier).await;
+            self.connections.remove_broker(&broker_identifier);
             return;
         };
 
@@ -95,7 +95,7 @@ impl<
 
         // Remove from the connected broker identities so that we may
         // try to reconnect inthe future.
-        self.connections.remove_broker(&broker_identifier).await;
+        self.connections.remove_broker(&broker_identifier);
     }
 
     pub async fn broker_receive_loop(

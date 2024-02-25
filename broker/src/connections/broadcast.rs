@@ -6,8 +6,8 @@ use std::{
     hash::Hash,
 };
 
+use parking_lot::RwLock;
 use proto::{connection::Bytes, discovery::BrokerIdentifier, message::Topic};
-use tokio::sync::RwLock;
 
 /// Our broadcast map is just two associative (bidirectional, multi) maps:
 /// one for brokers and one for users.

@@ -33,3 +33,5 @@ derive_builder.workspace = true
 rkyv.workspace = true
 derivative = "2.2.0"
 dashmap = "5.5.3"
+parking_lot = "0.12.1"
+

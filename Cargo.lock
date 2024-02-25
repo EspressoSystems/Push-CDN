@@ -676,6 +676,7 @@ dependencies = [
  "jf-primitives",
  "lazy_static",
  "local-ip-address",
+ "parking_lot",
  "paste",
  "prometheus",
  "proto",

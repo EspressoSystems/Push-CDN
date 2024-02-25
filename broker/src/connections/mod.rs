@@ -5,6 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use dashmap::DashMap;
 pub use direct::DirectMap;
+use parking_lot::RwLock;
 use proto::{
     connection::{
         protocols::{Protocol, Sender},
@@ -14,7 +15,7 @@ use proto::{
     message::Topic,
     mnemonic,
 };
-use tokio::{spawn, sync::RwLock};
+use tokio::spawn;
 use tracing::{error, warn};
 
 use self::{broadcast::BroadcastMap, versioned::VersionedMap};
@@ -63,40 +64,40 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// Get the full versioned vector map of user -> broker.
     /// We send this to other brokers so they can merge it.
     pub async fn get_full_user_sync(self: &Arc<Self>) -> DirectMap {
-        self.direct_map.read().await.get_full()
+        self.direct_map.read().get_full()
     }
 
     /// Get the differences in the versioned vector map of user -> broker
     /// We send this to other brokers so they can merge it.
     pub async fn get_partial_user_sync(self: &Arc<Self>) -> DirectMap {
-        self.direct_map.write().await.diff()
+        self.direct_map.write().diff()
     }
 
     /// Apply a received user sync map. Overwrites our values if they are old.
     /// Kicks off users that are now connected elsewhere.
     pub async fn apply_user_sync(self: &Arc<Self>, map: DirectMap) {
         // Merge the maps, returning the difference
-        let users_to_remove = self.direct_map.write().await.merge(map);
+        let users_to_remove = self.direct_map.write().merge(map);
 
         // We should remove the users that are different, if they exist locally.
         for user in users_to_remove {
-            self.remove_user(user).await;
+            self.remove_user(user);
         }
     }
 
     /// Get the full list of topics that we are interested in.
     /// We send this to new brokers when they start.
-    pub async fn get_full_topic_sync(self: &Arc<Self>) -> Vec<Topic> {
-        self.broadcast_map.users.read().await.get_values()
+    pub fn get_full_topic_sync(self: &Arc<Self>) -> Vec<Topic> {
+        self.broadcast_map.users.read().get_values()
     }
 
     /// Get the partial list of topics that we are interested in. Returns the
     /// additions and removals as a tuple `(a, r)` in that order. We send this
     /// to other brokers whenever there are changes.
-    pub async fn get_partial_topic_sync(self: &Arc<Self>) -> (Vec<Topic>, Vec<Topic>) {
+    pub fn get_partial_topic_sync(self: &Arc<Self>) -> (Vec<Topic>, Vec<Topic>) {
         // Lock the maps
-        let mut previous = self.broadcast_map.previous_subscribed_topics.write().await;
-        let now = HashSet::from_iter(self.broadcast_map.users.read().await.get_values());
+        let mut previous = self.broadcast_map.previous_subscribed_topics.write();
+        let now = HashSet::from_iter(self.broadcast_map.users.read().get_values());
 
         // Calculate additions and removals
         let added = now.difference(&previous);
@@ -145,13 +146,12 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         // Insert into our direct map
         self.direct_map
             .write()
-            .await
             .insert(user_public_key, self.identity.clone());
     }
 
     /// Remove a broker from our map by their identifier. Also removes them
     /// from our broadcast map, in case they were subscribed to any topics.
-    pub async fn remove_broker(self: &Arc<Self>, broker_identifier: &BrokerIdentifier) {
+    pub fn remove_broker(self: &Arc<Self>, broker_identifier: &BrokerIdentifier) {
         // Remove from broker list
         self.brokers.remove(broker_identifier);
 
@@ -159,7 +159,6 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .brokers
             .write()
-            .await
             .remove_key(broker_identifier);
     }
 
@@ -167,7 +166,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// from our broadcast map, in case they were subscribed to any topics, and
     /// the versioned vector map. This is so other brokers don't keep trying
     /// to send us messages for a disconnected user.
-    pub async fn remove_user(self: &Arc<Self>, user_public_key: Bytes) {
+    pub fn remove_user(self: &Arc<Self>, user_public_key: Bytes) {
         // Remove from user list
         self.users.remove(&user_public_key);
 
@@ -175,13 +174,11 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .users
             .write()
-            .await
             .remove_key(&user_public_key);
 
         // Remove from direct map if they're connected to us
         self.direct_map
             .write()
-            .await
             .remove_if_equals(user_public_key, self.identity.clone());
     }
 
@@ -194,7 +191,6 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .brokers
             .write()
-            .await
             .associate_key_with_values(broker_identifier, topics);
     }
 
@@ -203,7 +199,6 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .users
             .write()
-            .await
             .associate_key_with_values(user_public_key, topics);
     }
 
@@ -216,7 +211,6 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .brokers
             .write()
-            .await
             .dissociate_keys_from_value(broker_identifier, &topics);
     }
 
@@ -225,7 +219,6 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .users
             .write()
-            .await
             .dissociate_keys_from_value(user_public_key, &topics);
     }
 
@@ -248,7 +241,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
                 if let Err(err) = connection.send_message_raw(message).await {
                     // If we fail, remove the broker from our map.
                     error!("broker send failed: {err}");
-                    inner.remove_broker(&broker_identifier).await;
+                    inner.remove_broker(&broker_identifier);
                 };
             });
         }
@@ -268,7 +261,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
                 if let Err(err) = connection.send_message_raw(message).await {
                     // Remove them if we failed to send it
                     error!("broker send failed: {err}");
-                    inner.remove_broker(&broker_identifier).await;
+                    inner.remove_broker(&broker_identifier);
                 };
             });
         }
@@ -287,7 +280,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
             spawn(async move {
                 if connection.send_message_raw(message).await.is_err() {
                     // If we fail to send the message, remove the user.
-                    inner.remove_user(user_public_key).await;
+                    inner.remove_user(user_public_key);
                 };
             });
         }
@@ -303,7 +296,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         to_user_only: bool,
     ) {
         // Look up from our map
-        if let Some(broker_identifier) = self.direct_map.read().await.get(&user_public_key) {
+        if let Some(broker_identifier) = self.direct_map.read().get(&user_public_key) {
             if *broker_identifier == self.identity {
                 // We own the user, send it this way
                 self.send_to_user(user_public_key, message);
@@ -341,21 +334,10 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         for topic in topics {
             // If we can send to brokers, we should do it
             if !to_users_only {
-                broker_recipients.extend(
-                    self.broadcast_map
-                        .brokers
-                        .read()
-                        .await
-                        .get_keys_by_value(&topic),
-                );
+                broker_recipients
+                    .extend(self.broadcast_map.brokers.read().get_keys_by_value(&topic));
             }
-            user_recipients.extend(
-                self.broadcast_map
-                    .users
-                    .read()
-                    .await
-                    .get_keys_by_value(&topic),
-            );
+            user_recipients.extend(self.broadcast_map.users.read().get_keys_by_value(&topic));
         }
 
         // If we can send to brokers, do so

@@ -89,7 +89,7 @@ impl<
         metrics::NUM_USERS_CONNECTED.dec();
 
         // Once the main loop ends, we remove the connection
-        self.connections.remove_user(public_key).await;
+        self.connections.remove_user(public_key);
     }
 
     /// This is the main loop where we deal with user connectins. On exit, the calling function

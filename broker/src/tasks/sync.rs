@@ -88,7 +88,7 @@ impl<
     /// - if we fail to serialize the message
     pub async fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full list of topics
-        let topics = self.connections.get_full_topic_sync().await;
+        let topics = self.connections.get_full_topic_sync();
 
         // Serialize the message
         let raw_message = Arc::from(bail!(
@@ -110,7 +110,7 @@ impl<
     /// - If we fail to serialize the message
     pub async fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial list of topics
-        let (additions, removals) = self.connections.get_partial_topic_sync().await;
+        let (additions, removals) = self.connections.get_partial_topic_sync();
 
         // If we have some additions,
         if !additions.is_empty() {
