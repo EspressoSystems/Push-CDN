@@ -43,13 +43,6 @@ use tracing::info;
 
 use crate::metrics::RUNNING_SINCE;
 
-/// The maximum number of in-flight bytes.
-/// 5GB right now
-const MAX_QUEUE_SIZE: usize = 1024 * 1024 * 1024 * 5;
-
-/// Create a permit that accounts for each byte
-static IN_FLIGHT_BYTES: Semaphore = Semaphore::const_new(MAX_QUEUE_SIZE);
-
 /// The broker's configuration. We need this when we create a new one.
 #[derive(Builder)]
 pub struct Config<BrokerScheme: SignatureScheme> {
