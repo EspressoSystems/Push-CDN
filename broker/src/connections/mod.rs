@@ -211,7 +211,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
         self.broadcast_map
             .brokers
             .write()
-            .dissociate_keys_from_value(broker_identifier, &topics);
+            .dissociate_keys_from_value(broker_identifier, topics);
     }
 
     /// Locally unsubscribe a broker from some topics.
@@ -321,7 +321,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     pub fn send_broadcast(
         self: &Arc<Self>,
         mut topics: Vec<Topic>,
-        message: Bytes,
+        message: &Bytes,
         to_users_only: bool,
     ) {
         // Deduplicate topics

@@ -15,6 +15,20 @@ insecure = ["proto/insecure"]
 runtime-tokio = ["proto/runtime-tokio"]
 runtime-async-std = ["dep:async-std", "proto/runtime-async-std"]
 
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports", "async_tokio"] }
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
+
+# Benchmark direct messages (non-networked)
+[[bench]]
+name = "direct"
+harness = false
+
+# Benchmark broadcast messages (non-networked)
+[[bench]]
+name = "broadcast"
+harness = false
+
 [dependencies]
 jf-primitives.workspace = true
 proto = { path = "../proto", default-features = false, features = ["metrics"] }

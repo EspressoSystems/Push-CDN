@@ -119,7 +119,7 @@ impl<
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, message, true);
+                    self.connections.send_broadcast(topics, &message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.

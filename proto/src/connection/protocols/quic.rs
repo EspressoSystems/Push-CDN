@@ -310,8 +310,8 @@ impl Drop for QuicReceiverRef {
 }
 
 #[cfg(test)]
-mod test {
-    use super::super::test::test_connection as super_test_connection;
+mod tests {
+    use super::super::tests::test_connection as super_test_connection;
     use super::Quic;
     use anyhow::{anyhow, Result};
 

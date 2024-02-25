@@ -326,8 +326,8 @@ impl Drop for TcpReceiverRef {
 }
 
 #[cfg(test)]
-mod test {
-    use super::super::test::test_connection as super_test_connection;
+mod tests {
+    use super::super::tests::test_connection as super_test_connection;
     use super::Tcp;
     use anyhow::{anyhow, Result};
 

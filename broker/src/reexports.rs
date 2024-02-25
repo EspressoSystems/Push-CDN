@@ -21,3 +21,9 @@ pub mod message {
 pub mod error {
     pub use proto::error::{Error, Result};
 }
+
+/// This is not guarded by `![cfg(test)]` because we use the same functions
+/// when doing benchmarks.
+pub mod tests {
+    pub use crate::tests::{Run, RunDefinition};
+}

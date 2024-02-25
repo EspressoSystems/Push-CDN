@@ -431,7 +431,7 @@ pub struct UsersDisconnected {
 
 /// Serialization and deserialization parity tests
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     // A macro that tests if a message, once serialized and then deserialized again,

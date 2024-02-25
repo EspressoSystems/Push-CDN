@@ -113,7 +113,7 @@ impl<
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, message, false);
+                    self.connections.send_broadcast(topics, &message, false);
                 }
 
                 // Subscribe messages from users will just update the state locally

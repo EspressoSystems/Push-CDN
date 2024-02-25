@@ -100,7 +100,7 @@ impl Clone for MockReceiver {
 }
 
 #[cfg(test)]
-pub mod test {
+pub mod tests {
     use anyhow::Result;
     use tokio::{join, spawn, task::JoinHandle};
 

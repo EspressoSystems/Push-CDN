@@ -11,8 +11,9 @@ mod handlers;
 pub mod reexports;
 mod tasks;
 
-#[cfg(test)]
-mod test;
+/// This is not guarded by `![cfg(test)]` because we use the same functions
+/// when running benchmarks.
+mod tests;
 
 use std::{
     marker::PhantomData,
