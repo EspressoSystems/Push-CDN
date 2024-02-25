@@ -183,11 +183,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally subscribe a broker to some topics.
-    pub fn subscribe_broker_to(
-        &self,
-        broker_identifier: &BrokerIdentifier,
-        topics: Vec<Topic>,
-    ) {
+    pub fn subscribe_broker_to(&self, broker_identifier: &BrokerIdentifier, topics: Vec<Topic>) {
         self.broadcast_map
             .brokers
             .write()
@@ -203,11 +199,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub fn unsubscribe_broker_from(
-        &self,
-        broker_identifier: &BrokerIdentifier,
-        topics: &[Topic],
-    ) {
+    pub fn unsubscribe_broker_from(&self, broker_identifier: &BrokerIdentifier, topics: &[Topic]) {
         self.broadcast_map
             .brokers
             .write()
@@ -215,11 +207,11 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub fn unsubscribe_user_from(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
+    pub fn unsubscribe_user_from(&self, user_public_key: &Bytes, topics: &[Topic]) {
         self.broadcast_map
             .users
             .write()
-            .dissociate_keys_from_value(user_public_key, &topics);
+            .dissociate_keys_from_value(user_public_key, topics);
     }
 
     /// Send a message to all currently connected brokers. On failure,

@@ -110,8 +110,7 @@ impl<
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let user_public_key = Bytes::from(direct.recipient.clone());
 
-                    self.connections
-                        .send_direct(user_public_key, message, true);
+                    self.connections.send_direct(user_public_key, message, true);
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users

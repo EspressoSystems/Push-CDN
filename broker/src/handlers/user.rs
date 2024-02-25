@@ -124,7 +124,7 @@ impl<
                 // Unsubscribe messages from users will just update the state locally
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
-                        .unsubscribe_user_from(public_key, unsubscribe);
+                        .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 
                 _ => return,
