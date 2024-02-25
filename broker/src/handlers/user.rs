@@ -50,21 +50,19 @@ impl<
         let (sender, receiver) = connection;
 
         // Add our user
-        self.connections.add_user(public_key.clone(), sender).await;
+        self.connections.add_user(public_key.clone(), sender);
 
         // Subscribe our user to their connections
-        self.connections
-            .subscribe_user_to(&public_key, topics)
-            .await;
+        self.connections.subscribe_user_to(&public_key, topics);
 
         // If we have `strong_consistency` enabled, send partials
         #[cfg(feature = "strong_consistency")]
-        if let Err(err) = self.partial_topic_sync().await {
+        if let Err(err) = self.partial_topic_sync() {
             error!("failed to perform partial topic sync: {err}");
         }
 
         #[cfg(feature = "strong_consistency")]
-        if let Err(err) = self.partial_user_sync().await {
+        if let Err(err) = self.partial_user_sync() {
             error!("failed to perform partial user sync: {err}");
         }
 
@@ -107,8 +105,7 @@ impl<
                     let user_public_key = Bytes::from(direct.recipient.clone());
 
                     self.connections
-                        .send_direct(user_public_key, message, false)
-                        .await;
+                        .send_direct(user_public_key, message, false);
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
@@ -116,23 +113,18 @@ impl<
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections
-                        .send_broadcast(topics, message, false)
-                        .await;
+                    self.connections.send_broadcast(topics, message, false);
                 }
 
                 // Subscribe messages from users will just update the state locally
                 Message::Subscribe(subscribe) => {
-                    self.connections
-                        .subscribe_user_to(public_key, subscribe)
-                        .await;
+                    self.connections.subscribe_user_to(public_key, subscribe);
                 }
 
                 // Unsubscribe messages from users will just update the state locally
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
-                        .unsubscribe_user_from(public_key, unsubscribe)
-                        .await;
+                        .unsubscribe_user_from(public_key, unsubscribe);
                 }
 
                 _ => return,

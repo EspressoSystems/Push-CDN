@@ -118,8 +118,7 @@ impl RunDefinition {
             broker_under_test
                 .inner
                 .connections
-                .add_user(identifier.clone(), to_tester)
-                .await;
+                .add_user(identifier.clone(), to_tester);
 
             // Spawn our user receiver in the broker under test
             let inner = broker_under_test.inner.clone();

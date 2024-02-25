@@ -45,9 +45,9 @@ impl<
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub async fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
+    pub fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full user sync map
-        let full_sync_map = self.connections.get_full_user_sync().await;
+        let full_sync_map = self.connections.get_full_user_sync();
 
         // Serialize the message
         let raw_message = prepare_sync_message!(full_sync_map);
@@ -63,9 +63,9 @@ impl<
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub async fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
+    pub fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
         // Get full user sync map
-        let partial_sync_map = self.connections.get_partial_user_sync().await;
+        let partial_sync_map = self.connections.get_partial_user_sync();
 
         // Return if we haven't had any changes
         if partial_sync_map.underlying_map.is_empty() {
@@ -86,7 +86,7 @@ impl<
     ///
     /// # Errors
     /// - if we fail to serialize the message
-    pub async fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
+    pub fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full list of topics
         let topics = self.connections.get_full_topic_sync();
 
@@ -108,7 +108,7 @@ impl<
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub async fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
+    pub fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial list of topics
         let (additions, removals) = self.connections.get_partial_topic_sync();
 
@@ -144,12 +144,12 @@ impl<
     pub async fn run_sync_task(self: Arc<Self>) {
         loop {
             // Perform user sync
-            if let Err(err) = self.partial_user_sync().await {
+            if let Err(err) = self.partial_user_sync() {
                 error!("failed to perform partial user sync: {err}");
             }
 
             // Perform topic sync
-            if let Err(err) = self.partial_topic_sync().await {
+            if let Err(err) = self.partial_topic_sync() {
                 error!("failed to perform partial user sync: {err}");
             };
 

@@ -63,19 +63,19 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
 
     /// Get the full versioned vector map of user -> broker.
     /// We send this to other brokers so they can merge it.
-    pub async fn get_full_user_sync(self: &Arc<Self>) -> DirectMap {
+    pub fn get_full_user_sync(self: &Arc<Self>) -> DirectMap {
         self.direct_map.read().get_full()
     }
 
     /// Get the differences in the versioned vector map of user -> broker
     /// We send this to other brokers so they can merge it.
-    pub async fn get_partial_user_sync(self: &Arc<Self>) -> DirectMap {
+    pub fn get_partial_user_sync(self: &Arc<Self>) -> DirectMap {
         self.direct_map.write().diff()
     }
 
     /// Apply a received user sync map. Overwrites our values if they are old.
     /// Kicks off users that are now connected elsewhere.
-    pub async fn apply_user_sync(self: &Arc<Self>, map: DirectMap) {
+    pub fn apply_user_sync(self: &Arc<Self>, map: DirectMap) {
         // Merge the maps, returning the difference
         let users_to_remove = self.direct_map.write().merge(map);
 
@@ -135,7 +135,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
 
     /// Insert a user into our map. Updates the versioned vector that
     /// keeps track of which users are connected where.
-    pub async fn add_user(
+    pub fn add_user(
         self: &Arc<Self>,
         user_public_key: Bytes,
         connection: <UserProtocol as Protocol>::Sender,
@@ -183,7 +183,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally subscribe a broker to some topics.
-    pub async fn subscribe_broker_to(
+    pub fn subscribe_broker_to(
         &self,
         broker_identifier: &BrokerIdentifier,
         topics: Vec<Topic>,
@@ -195,7 +195,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally subscribe a user to some topics.
-    pub async fn subscribe_user_to(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
+    pub fn subscribe_user_to(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
         self.broadcast_map
             .users
             .write()
@@ -203,10 +203,10 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub async fn unsubscribe_broker_from(
+    pub fn unsubscribe_broker_from(
         &self,
         broker_identifier: &BrokerIdentifier,
-        topics: Vec<Topic>,
+        topics: &[Topic],
     ) {
         self.broadcast_map
             .brokers
@@ -215,7 +215,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub async fn unsubscribe_user_from(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
+    pub fn unsubscribe_user_from(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
         self.broadcast_map
             .users
             .write()
@@ -289,7 +289,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// Send a direct message to either a user or a broker. First figures out where the message
     /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
     /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub async fn send_direct(
+    pub fn send_direct(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
         message: Bytes,
@@ -318,7 +318,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// Send a broadcast message to both users and brokers. First figures out where the message
     /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
     /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub async fn send_broadcast(
+    pub fn send_broadcast(
         self: &Arc<Self>,
         mut topics: Vec<Topic>,
         message: Bytes,

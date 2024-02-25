@@ -53,7 +53,7 @@ impl<
             .add_broker(broker_identifier.clone(), sender);
 
         // Send a full user sync
-        if let Err(err) = self.full_user_sync(&broker_identifier).await {
+        if let Err(err) = self.full_user_sync(&broker_identifier) {
             error!("failed to perform full user sync: {err}");
             self.connections.remove_broker(&broker_identifier);
             return;
@@ -61,7 +61,7 @@ impl<
 
         // Send a full topic sync
         // TODO: macro removals or something
-        if let Err(err) = self.full_topic_sync(&broker_identifier).await {
+        if let Err(err) = self.full_topic_sync(&broker_identifier) {
             error!("failed to perform full topic sync: {err}");
             self.connections.remove_broker(&broker_identifier);
             return;
@@ -69,12 +69,12 @@ impl<
 
         // If we have `strong_consistency` enabled, send partials
         #[cfg(feature = "strong_consistency")]
-        if let Err(err) = self.partial_topic_sync().await {
+        if let Err(err) = self.partial_topic_sync() {
             error!("failed to perform partial topic sync: {err}");
         }
 
         #[cfg(feature = "strong_consistency")]
-        if let Err(err) = self.partial_user_sync().await {
+        if let Err(err) = self.partial_user_sync() {
             error!("failed to perform partial user sync: {err}");
         }
 
@@ -111,8 +111,7 @@ impl<
                     let user_public_key = Bytes::from(direct.recipient.clone());
 
                     self.connections
-                        .send_direct(user_public_key, message, true)
-                        .await;
+                        .send_direct(user_public_key, message, true);
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
@@ -120,21 +119,19 @@ impl<
                     let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, message, true).await;
+                    self.connections.send_broadcast(topics, message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
                 Message::Subscribe(subscribe) => {
                     self.connections
-                        .subscribe_broker_to(broker_identifier, subscribe)
-                        .await;
+                        .subscribe_broker_to(broker_identifier, subscribe);
                 }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
-                        .unsubscribe_broker_from(broker_identifier, unsubscribe)
-                        .await;
+                        .unsubscribe_broker_from(broker_identifier, &unsubscribe);
                 }
 
                 // If we receive a `UserSync` message, we want to sync with our map
@@ -146,7 +143,7 @@ impl<
                         "failed to deserialize user sync message"
                     );
 
-                    self.connections.apply_user_sync(user_sync).await;
+                    self.connections.apply_user_sync(user_sync);
                 }
 
                 // Do nothing if we receive an unexpected message
