@@ -19,7 +19,6 @@ use proto::{
     DiscoveryClientType,
 };
 use tokio::spawn;
-use tracing::warn;
 
 /// The `Marshal's` configuration (with a Builder), to help with usability.
 /// We need this to construct a `Marshal`
@@ -105,13 +104,11 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> Marshal<Scheme, UserProtoc
             //
             // TODO: figure out when an endpoint closes, should I be looping on it? What are the criteria
             // for closing? It would error but what does that actually _mean_? Is it recoverable?
-            let unfinalized_connection = match self.listener.accept().await {
-                Ok(connection) => connection,
-                Err(err) => {
-                    warn!("failed to accept connection: {}", err);
-                    continue;
-                }
-            };
+            let unfinalized_connection = bail!(
+                self.listener.accept().await,
+                Connection,
+                "failed to accept connection"
+            );
 
             // Create a task to handle the connection
             let discovery_client = self.discovery_client.clone();

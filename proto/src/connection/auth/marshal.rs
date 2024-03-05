@@ -104,7 +104,7 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
         let permit = match discovery_client
             .issue_permit(
                 &broker_with_least_connections,
-                Duration::from_secs(5),
+                Duration::from_secs(30),
                 auth_message.public_key,
             )
             .await

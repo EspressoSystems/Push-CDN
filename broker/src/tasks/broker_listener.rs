@@ -7,7 +7,7 @@ use proto::{
     crypto::signature::SignatureScheme,
 };
 use tokio::spawn;
-use tracing::warn;
+use tracing::error;
 // TODO: change connection to be named struct instead of tuple for readability purposes
 
 use crate::Inner;
@@ -32,8 +32,8 @@ impl<
             let unfinalized_connection = match listener.accept().await {
                 Ok(connection) => connection,
                 Err(err) => {
-                    warn!("failed to accept connection: {}", err);
-                    continue;
+                    error!("failed to accept connection: {}", err);
+                    return;
                 }
             };
 
