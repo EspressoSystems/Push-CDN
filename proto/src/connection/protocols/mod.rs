@@ -183,7 +183,7 @@ pub mod tests {
 macro_rules! read_length_delimited {
     ($stream: expr) => {{
         // Read the message size from the stream
-        let Ok(message_size) = $stream.read_u64().await else {
+        let Ok(message_size) = $stream.read_u32().await else {
             return;
         };
 

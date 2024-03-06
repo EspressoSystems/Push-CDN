@@ -78,7 +78,7 @@ impl Protocol for Quic {
         // Set up TLS configuration
         #[cfg(not(feature = "insecure"))]
         // Production mode: native certs
-        let config = ClientConfig::with_native_roots();
+        let mut config = ClientConfig::with_native_roots();
 
         // Local testing mode: skip server verification, insecure
         #[cfg(feature = "insecure")]

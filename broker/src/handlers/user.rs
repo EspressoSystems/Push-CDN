@@ -1,10 +1,12 @@
 //! This file defines the user handler module, wherein we define connection handlers for
 //! `Arc<Inner>`.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+
+#[cfg(feature = "strong_consistency")]
+use proto::discovery::DiscoveryClient;
 
 use proto::connection::Bytes;
-use proto::discovery::DiscoveryClient;
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -14,7 +16,7 @@ use proto::{
     message::Message,
     mnemonic,
 };
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{metrics, Inner};
 
@@ -58,12 +60,12 @@ impl<
         // If we have `strong_consistency` enabled, send partials
         #[cfg(feature = "strong_consistency")]
         if let Err(err) = self.partial_topic_sync() {
-            error!("failed to perform partial topic sync: {err}");
+            tracing::error!("failed to perform partial topic sync: {err}");
         }
 
         #[cfg(feature = "strong_consistency")]
         if let Err(err) = self.partial_user_sync() {
-            error!("failed to perform partial user sync: {err}");
+            tracing::error!("failed to perform partial user sync: {err}");
         }
 
         // We want to perform a heartbeat for every user connection so that the number
@@ -72,7 +74,7 @@ impl<
         let _ = self
             .discovery_client
             .clone()
-            .perform_heartbeat(self.connections.num_users() as u64, Duration::from_secs(60))
+            .perform_heartbeat(self.connections.num_users() as u64, std::time::Duration::from_secs(60))
             .await;
 
         // Increment our metric
