@@ -77,58 +77,28 @@ impl DiscoveryClient for Redis {
         num_connections: u64,
         heartbeat_expiry: Duration,
     ) -> Result<()> {
-        // Set up atomic transaction
-        // TODO: macro this bail to something like bail_redis
+        // Atomically execute the following commands
         bail!(
-            redis::cmd("MULTI")
-                .query_async(&mut self.underlying_connection)
-                .await,
-            Connection,
-            "failed to connect to Redis"
-        );
-
-        // Add our identifier to the broker list (if not there already)
-        bail!(
-            redis::cmd("SADD")
+            redis::pipe()
+                .atomic()
+                // Add our identifier to the broker list (if not there already)
+                .cmd("SADD")
                 .arg(&["brokers", &self.identifier.to_string()])
-                .query_async(&mut self.underlying_connection)
-                .await,
-            Connection,
-            "failed to connect to Redis"
-        );
-
-        // Set our expiry
-        bail!(
-            redis::cmd("EXPIREMEMBER")
+                // Set our expiry
+                .cmd("EXPIREMEMBER")
                 .arg(&[
                     "brokers",
                     &self.identifier.to_string(),
                     &heartbeat_expiry.as_secs().to_string()
                 ])
-                .query_async(&mut self.underlying_connection)
-                .await,
-            Connection,
-            "failed to connect to Redis"
-        );
-
-        // Set our number connections
-        bail!(
-            redis::cmd("SET")
+                // Set our number of connections
+                .cmd("SET")
                 .arg(&[
                     format!("{}/num_connections", self.identifier),
                     num_connections.to_string(),
                     "EX".to_string(),
                     heartbeat_expiry.as_secs().to_string()
                 ])
-                .query_async(&mut self.underlying_connection)
-                .await,
-            Connection,
-            "failed to connect to Redis"
-        );
-
-        // Atomically execute all transactions
-        bail!(
-            redis::cmd("EXEC")
                 .query_async(&mut self.underlying_connection)
                 .await,
             Connection,
