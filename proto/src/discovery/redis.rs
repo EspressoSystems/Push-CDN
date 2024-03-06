@@ -5,12 +5,11 @@
 //! 3. Brokers to verify permits
 //! 4. Brokers for peer discovery
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use redis::aio::ConnectionManager;
-use tokio::sync::Semaphore;
 
 use crate::{
     bail,
@@ -25,8 +24,6 @@ use super::{BrokerIdentifier, DiscoveryClient};
 pub struct Redis {
     /// The underlying `Redis` connection. Is managed, so we don't have to worry about reconnections
     underlying_connection: ConnectionManager,
-    /// The semaphore we need to ensure that heartbeat transactions are atomic
-    heartbeat_semaphore: Arc<Semaphore>,
     /// Our operator identifier (in practice, will be something like a concat of advertise addresses)
     identifier: BrokerIdentifier,
 }
@@ -64,7 +61,6 @@ impl DiscoveryClient for Redis {
                 "failed to create Redis connection manager"
             ),
             identifier,
-            heartbeat_semaphore: Arc::from(Semaphore::const_new(1)),
         })
     }
 
@@ -81,12 +77,6 @@ impl DiscoveryClient for Redis {
         num_connections: u64,
         heartbeat_expiry: Duration,
     ) -> Result<()> {
-        // Acquire permit to perform the heartbeat so we don't interleave requests˜
-        let heartbeat_permit = bail!(
-            self.heartbeat_semaphore.acquire().await,
-            Async,
-            "failed to acquire semaphore"
-        );
         // Set up atomic transaction
         // TODO: macro this bail to something like bail_redis
         bail!(
@@ -145,8 +135,6 @@ impl DiscoveryClient for Redis {
             "failed to connect to Redis"
         );
 
-        // Drop the heartbeat permit, allowing others to perform
-        drop(heartbeat_permit);
         Ok(())
     }
 

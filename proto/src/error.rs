@@ -34,8 +34,6 @@ pub enum Error {
     Time(String),
     /// An error that is used to specify that a required task has exited.
     Exited(String),
-    /// An error related to a general asynchronicity/lock issue.
-    Async(String),
 }
 
 #[macro_export]
