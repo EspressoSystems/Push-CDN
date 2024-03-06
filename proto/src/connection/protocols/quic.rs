@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
-use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig};
+use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 
@@ -21,6 +21,7 @@ use crate::{
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
+use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     result::Result as StdResult,
@@ -81,7 +82,12 @@ impl Protocol for Quic {
 
         // Local testing mode: skip server verification, insecure
         #[cfg(feature = "insecure")]
-        let config = ClientConfig::new(SkipServerVerification::new_config());
+        let mut config = ClientConfig::new(SkipServerVerification::new_config());
+
+        // Enable sending of keep-alives
+        let mut transport_config = TransportConfig::default();
+        transport_config.keep_alive_interval(Some(Duration::from_secs(5)));
+        config.transport_config(Arc::from(transport_config));
 
         // Set default client config
         endpoint.set_default_client_config(config);
