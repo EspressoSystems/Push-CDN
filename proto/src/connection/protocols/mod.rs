@@ -213,10 +213,10 @@ macro_rules! read_length_delimited {
 macro_rules! write_length_delimited {
     ($stream: expr, $message:expr) => {
         // Get the length of the message
-        let message_len = $message.len() as u64;
+        let message_len = $message.len() as u32;
 
         // Write the message size to the stream
-        if $stream.write_u64(message_len).await.is_err() {
+        if $stream.write_u32(message_len).await.is_err() {
             return;
         }
 
