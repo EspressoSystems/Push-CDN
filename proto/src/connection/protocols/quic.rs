@@ -4,19 +4,18 @@
 
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
-use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig};
+use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
 
+use crate::connection::Bytes;
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;
 use crate::{
-    bail, bail_option,
-    connection::Bytes,
-    crypto,
+    bail, bail_option, crypto,
     error::{Error, Result},
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
@@ -151,11 +150,18 @@ impl Protocol for Quic {
         );
 
         // Create server configuration from the loaded certificate
-        let server_config = bail!(
+        let mut server_config = bail!(
             ServerConfig::with_single_cert(certificates, key),
             Crypto,
             "failed to load TLS certificate"
         );
+
+        // Set the maximum numbers of concurrent streams (one and zero because we're
+        // not using them for framing)
+        let mut transport_config = TransportConfig::default();
+        transport_config.max_concurrent_bidi_streams(VarInt::from_u32(1));
+        transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
+        server_config.transport_config(Arc::from(transport_config));
 
         // Create endpoint from the given server configuration and
         // bind address
@@ -205,7 +211,7 @@ fn into_channels(
     spawn(async move {
         loop {
             // Receive a message from the real connection
-            let message = Bytes::from(read_length_delimited!(read_half));
+            let message = read_length_delimited!(read_half);
 
             // Send a message to our code
             if send_as_task.send(message).await.is_err() {

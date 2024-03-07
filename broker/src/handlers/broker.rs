@@ -7,7 +7,7 @@ use proto::{
     connection::{
         auth::broker::BrokerAuth,
         protocols::{Protocol, Receiver},
-        Bytes,
+        UserPublicKey,
     },
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,
@@ -103,22 +103,25 @@ impl<
         broker_identifier: &BrokerIdentifier,
         receiver: <BrokerProtocol as Protocol>::Receiver,
     ) -> Result<()> {
-        while let Ok(message) = receiver.recv_message().await {
+        while let Ok(raw_message) = receiver.recv_message_raw().await {
+            // Attempt to deserialize the message
+            // TODO: FIXED SIZE RECIPIENT FOR DESERIALIZATION
+            let message = Message::deserialize(&raw_message)?;
+
             match message {
                 // If we receive a direct message from a broker, we want to send it to the user with that key
                 Message::Direct(ref direct) => {
-                    let message = Bytes::from(message.serialize().expect("serialization failed"));
-                    let user_public_key = Bytes::from(direct.recipient.clone());
+                    let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.connections.send_direct(user_public_key, message, true);
+                    self.connections
+                        .send_direct(user_public_key, raw_message, true);
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
-                    let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &message, true);
+                    self.connections.send_broadcast(topics, &raw_message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.

@@ -1,8 +1,8 @@
 //! Benchmarks for allocating and sending direct messages.
 //! If run with `--profile-time=N seconds`, it will output a flamegraph.
 
-use proto::connection::protocols::Sender;
-use std::{sync::Arc, time::Duration};
+use proto::connection::{protocols::Sender, Bytes};
+use std::time::Duration;
 
 use broker::reexports::tests::{Run, RunDefinition};
 use broker::{assert_received, send_message_as};

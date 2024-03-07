@@ -139,7 +139,7 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     spawn(async move {
         loop {
             // Receive a message from the real connection
-            let message = Bytes::from(read_length_delimited!(read_half));
+            let message = read_length_delimited!(read_half);
 
             // Send a message to our code
             if send_as_task.send(message).await.is_err() {

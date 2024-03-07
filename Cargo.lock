@@ -2827,6 +2827,7 @@ dependencies = [
  "capnp",
  "capnpc",
  "criterion",
+ "derivative",
  "jf-primitives",
  "kanal",
  "lazy_static",

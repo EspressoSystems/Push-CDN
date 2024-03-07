@@ -1,12 +1,12 @@
 //! Deterministic tests for sending and receiving direct messages.
 //! Asserts they all go to the right place.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use super::RunDefinition;
 use crate::{assert_received, send_message_as};
 use proto::{
-    connection::protocols::Sender,
+    connection::{protocols::Sender, Bytes},
     message::{Direct, Message, Topic},
 };
 use tokio::time::{sleep, timeout};

@@ -5,7 +5,6 @@ use crate::{
     bail,
     error::{Error, Result},
 };
-use core::result::Result as StdResult;
 use rcgen::generate_simple_self_signed;
 
 // TODO: have `SkipServerVerify` as a separate module
@@ -25,10 +24,10 @@ pub struct SkipServerVerification;
 #[cfg(feature = "insecure")]
 impl SkipServerVerification {
     pub fn new_config() -> Arc<ClientConfig> {
-        Arc::new(
+        Arc::from(
             rustls::ClientConfig::builder()
                 .with_safe_defaults()
-                .with_custom_certificate_verifier(Arc::new(Self {}))
+                .with_custom_certificate_verifier(Arc::from(Self {}))
                 .with_no_client_auth(),
         )
     }
@@ -46,7 +45,7 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
         _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
         _now: std::time::SystemTime,
-    ) -> StdResult<rustls::client::ServerCertVerified, rustls::Error> {
+    ) -> core::result::Result<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
 }

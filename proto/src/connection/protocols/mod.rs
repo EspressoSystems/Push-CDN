@@ -193,7 +193,7 @@ macro_rules! read_length_delimited {
         }
 
         // Create buffer of the proper size
-        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
+        let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
         // Read the message from the stream
         if $stream.read_exact(&mut buffer).await.is_err() {
@@ -204,7 +204,7 @@ macro_rules! read_length_delimited {
         #[cfg(feature = "metrics")]
         metrics::BYTES_RECV.add(message_size as f64);
 
-        buffer
+        Bytes::from(buffer)
     }};
 }
 
