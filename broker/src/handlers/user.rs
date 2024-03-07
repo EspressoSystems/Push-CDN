@@ -7,6 +7,7 @@ use std::sync::Arc;
 use proto::discovery::DiscoveryClient;
 
 use proto::connection::UserPublicKey;
+use proto::error::{Error, Result};
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
