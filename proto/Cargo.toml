@@ -66,3 +66,4 @@ anyhow = "1.0.79"
 kanal = "0.1.0-pre8"
 rkyv.workspace = true
 mnemonic = "1.0.1"
+derivative.workspace = true

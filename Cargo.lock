@@ -676,11 +676,13 @@ dependencies = [
 
 [[package]]
 name = "blst"
-version = "0.3.10"
-source = "git+https://github.com/EspressoSystems/blst.git?branch=no-std#faefc7fcb21864aaf4f6f443636ce8924108fcbd"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c94087b935a822949d3291a9989ad2b2051ea141eda0fd4e478a75f6aa3e604b"
 dependencies = [
  "cc",
  "glob",
+ "threadpool",
  "zeroize",
 ]
 
@@ -1981,7 +1983,7 @@ checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish.git#34059730ee692a35963732b7b9f909c9546dd5c0"
+source = "git+https://github.com/EspressoSystems/jellyfish.git?tag=0.4.1#e96464c4bd8beb608a6a4afc8b8a2441c981f21a"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -2026,7 +2028,7 @@ dependencies = [
 [[package]]
 name = "jf-relation"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish.git#34059730ee692a35963732b7b9f909c9546dd5c0"
+source = "git+https://github.com/EspressoSystems/jellyfish.git?tag=0.4.1#e96464c4bd8beb608a6a4afc8b8a2441c981f21a"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -2052,7 +2054,7 @@ dependencies = [
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish.git#34059730ee692a35963732b7b9f909c9546dd5c0"
+source = "git+https://github.com/EspressoSystems/jellyfish.git?tag=0.4.1#e96464c4bd8beb608a6a4afc8b8a2441c981f21a"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -2825,6 +2827,7 @@ dependencies = [
  "capnp",
  "capnpc",
  "criterion",
+ "derivative",
  "jf-primitives",
  "kanal",
  "lazy_static",
@@ -3923,6 +3926,15 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
+]
+
+[[package]]
+name = "threadpool"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
+dependencies = [
+ "num_cpus",
 ]
 
 [[package]]

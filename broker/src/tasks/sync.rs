@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use proto::{
     bail,
-    connection::protocols::Protocol,
+    connection::{protocols::Protocol, Bytes},
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,
     error::{Error, Result},
@@ -25,7 +25,7 @@ macro_rules! prepare_sync_message {
         );
 
         // Wrap the message in `UserSync` and serialize it
-        Arc::from(bail!(
+        Bytes::from(bail!(
             Message::UserSync(message.to_vec()).serialize(),
             Serialize,
             "failed to serialize full user sync map"
@@ -49,11 +49,9 @@ impl<
         // Get full user sync map
         let full_sync_map = self.connections.get_full_user_sync();
 
-        // Serialize the message
-        let raw_message = prepare_sync_message!(full_sync_map);
-
-        // Send it to the broker
-        self.connections.send_to_broker(broker, raw_message);
+        // Serialize and send the message to the broker
+        self.connections
+            .send_to_broker(broker, prepare_sync_message!(full_sync_map));
 
         Ok(())
     }
@@ -90,15 +88,15 @@ impl<
         // Get full list of topics
         let topics = self.connections.get_full_topic_sync();
 
-        // Serialize the message
-        let raw_message = Arc::from(bail!(
-            Message::Subscribe(topics).serialize(),
-            Serialize,
-            "failed to serialize topics"
-        ));
-
-        // Send to the specified broker
-        self.connections.send_to_broker(broker, raw_message);
+        // Serialize and send the message
+        self.connections.send_to_broker(
+            broker,
+            Bytes::from(bail!(
+                Message::Subscribe(topics).serialize(),
+                Serialize,
+                "failed to serialize topics"
+            )),
+        );
 
         Ok(())
     }
@@ -115,7 +113,7 @@ impl<
         // If we have some additions,
         if !additions.is_empty() {
             // Serialize the subscribe message
-            let raw_subscribe_message = Arc::from(bail!(
+            let raw_subscribe_message = Bytes::from(bail!(
                 Message::Subscribe(additions).serialize(),
                 Serialize,
                 "failed to serialize topics"
@@ -126,7 +124,7 @@ impl<
         // If we have some removals,
         if !removals.is_empty() {
             // Serialize the unsubscribe message
-            let raw_unsubscribe_message = Arc::from(bail!(
+            let raw_unsubscribe_message = Bytes::from(bail!(
                 Message::Unsubscribe(removals).serialize(),
                 Serialize,
                 "failed to serialize topics"

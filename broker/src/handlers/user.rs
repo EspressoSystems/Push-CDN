@@ -1,10 +1,13 @@
 //! This file defines the user handler module, wherein we define connection handlers for
 //! `Arc<Inner>`.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use proto::connection::Bytes;
+#[cfg(feature = "strong_consistency")]
 use proto::discovery::DiscoveryClient;
+
+use proto::connection::UserPublicKey;
+use proto::error::{Error, Result};
 use proto::{
     connection::{
         auth::broker::BrokerAuth,
@@ -14,7 +17,7 @@ use proto::{
     message::Message,
     mnemonic,
 };
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{metrics, Inner};
 
@@ -42,7 +45,7 @@ impl<
         };
 
         // Create a human-readable user identifier (by public key)
-        let public_key = Bytes::from(public_key);
+        let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
         info!("{user_identifier} connected");
 
@@ -58,12 +61,12 @@ impl<
         // If we have `strong_consistency` enabled, send partials
         #[cfg(feature = "strong_consistency")]
         if let Err(err) = self.partial_topic_sync() {
-            error!("failed to perform partial topic sync: {err}");
+            tracing::error!("failed to perform partial topic sync: {err}");
         }
 
         #[cfg(feature = "strong_consistency")]
         if let Err(err) = self.partial_user_sync() {
-            error!("failed to perform partial user sync: {err}");
+            tracing::error!("failed to perform partial user sync: {err}");
         }
 
         // We want to perform a heartbeat for every user connection so that the number
@@ -72,14 +75,14 @@ impl<
         let _ = self
             .discovery_client
             .clone()
-            .perform_heartbeat(self.connections.num_users() as u64, Duration::from_secs(60))
+            .perform_heartbeat(self.connections.num_users() as u64, std::time::Duration::from_secs(60))
             .await;
 
         // Increment our metric
         metrics::NUM_USERS_CONNECTED.inc();
 
         // This runs the main loop for receiving information from the user
-        let () = self.user_receive_loop(&public_key, receiver).await;
+        let _ = self.user_receive_loop(&public_key, receiver).await;
 
         info!("{user_identifier} disconnected");
 
@@ -94,26 +97,28 @@ impl<
     /// should remove the user from the map.
     pub async fn user_receive_loop(
         &self,
-        public_key: &Bytes,
+        public_key: &UserPublicKey,
         receiver: <UserProtocol as Protocol>::Receiver,
-    ) {
-        while let Ok(message) = receiver.recv_message().await {
+    ) -> Result<()> {
+        while let Ok(raw_message) = receiver.recv_message_raw().await {
+            // Attempt to deserialize the message
+            // TODO: FIXED SIZE RECIPIENT FOR DESERIALIZATION
+            let message = Message::deserialize(&raw_message)?;
+
             match message {
                 // If we get a direct message from a user, send it to both users and brokers.
                 Message::Direct(ref direct) => {
-                    let message = Bytes::from(message.serialize().expect("serialization failed"));
-                    let user_public_key = Bytes::from(direct.recipient.clone());
+                    let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
                     self.connections
-                        .send_direct(user_public_key, message, false);
+                        .send_direct(user_public_key, raw_message, false);
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
-                    let message = Bytes::from(message.serialize().expect("serialization failed"));
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &message, false);
+                    self.connections.send_broadcast(topics, &raw_message, false);
                 }
 
                 // Subscribe messages from users will just update the state locally
@@ -127,8 +132,9 @@ impl<
                         .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 
-                _ => return,
+                _ => return Err(Error::Connection("connection closed".to_string())),
             }
         }
+        Err(Error::Connection("connection closed".to_string()))
     }
 }

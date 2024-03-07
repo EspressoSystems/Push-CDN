@@ -5,7 +5,7 @@
 
 use std::hash::{Hash, Hasher};
 
-use connection::Bytes;
+use connection::UserPublicKey;
 
 pub mod connection;
 pub mod crypto;
@@ -26,13 +26,10 @@ pub type DiscoveryClientType = discovery::embedded::Embedded;
 #[cfg(not(feature = "local_discovery"))]
 pub type DiscoveryClientType = discovery::redis::Redis;
 
+
 /// The maximum message size to be received over a connection.
 /// After this, it will be automatically closed by the receiver.
-pub const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 1024;
-
-/// The maximum amount of concurrent QUIC streams (messages) that can be opened.
-/// Having a value that is too high can degrade performance.
-pub const QUIC_MAX_CONCURRENT_STREAMS: u64 = 10;
+pub const MAX_MESSAGE_SIZE: u32 = u32::MAX;
 
 /// Include the built `capnp-rust` bindings
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]
@@ -41,7 +38,7 @@ pub mod messages_capnp {
 }
 
 /// A function for generating a cute little user mnemonic from a hash
-pub fn mnemonic(bytes: &Bytes) -> String {
+pub fn mnemonic(bytes: &UserPublicKey) -> String {
     let mut state = std::hash::DefaultHasher::new();
     bytes.hash(&mut state);
     mnemonic::to_string(state.finish().to_le_bytes())

@@ -7,12 +7,12 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use proto::{connection::Bytes, discovery::BrokerIdentifier, message::Topic};
+use proto::{connection::UserPublicKey, discovery::BrokerIdentifier, message::Topic};
 
 /// Our broadcast map is just two associative (bidirectional, multi) maps:
 /// one for brokers and one for users.
 pub struct BroadcastMap {
-    pub users: RwLock<RelationalMap<Bytes, Topic>>,
+    pub users: RwLock<RelationalMap<UserPublicKey, Topic>>,
     pub brokers: RwLock<RelationalMap<BrokerIdentifier, Topic>>,
 
     pub previous_subscribed_topics: RwLock<HashSet<Topic>>,

@@ -24,4 +24,3 @@ processes:
     depends_on:
       marshal_0:
         condition: process_started
-  

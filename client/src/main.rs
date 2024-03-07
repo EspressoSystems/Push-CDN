@@ -11,13 +11,11 @@ use proto::{
     connection::protocols::quic::Quic,
     crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
-    message::Message,
 };
 
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::time::sleep;
 use tracing::info;
 
@@ -40,7 +38,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Generate two random keypairs, one for each client
-    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
+    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
     // Build the config, the endpoint being where we expect the marshal to be
     let config = bail!(
@@ -59,35 +57,25 @@ async fn main() -> Result<()> {
 
     // We want the first node to send to the second
     if args.id != 0 {
-        // Generate two random keypairs, one for each client
-        let (_, other_public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
-
         // This client sends a message of a random size every second.
         loop {
-            // Create a message of random size
-            let len = StdRng::from_entropy().gen_range(0..10000) as usize;
-            let m = vec![0u8; len];
+            let m = vec![0u8; 10000];
 
-            if let Err(err) = client.send_direct_message(&other_public_key, m).await {
-                tracing::error!("failed to send message: {}", err);
+            if let Err(err) = client.send_direct_message(&public_key, m).await {
+                tracing::error!("failed to send message: {err}");
             };
-            info!("sent message to client_0, size: {}", len);
+            info!("sent message");
+
             sleep(Duration::from_secs(1)).await;
         }
     } else {
         // This client receives a direct message and prints the size.
         loop {
-            let Ok(message) = client.receive_message().await else {
-                tracing::error!("failed to receive message");
-                continue;
+            if let Err(err) = client.receive_message().await {
+                tracing::error!("failed to receive message: {err}");
             };
 
-            if let Message::Direct(direct) = message {
-                info!(
-                    "received message from client_1, size: {}",
-                    direct.message.len()
-                );
-            }
+            info!("received message");
         }
     }
 }

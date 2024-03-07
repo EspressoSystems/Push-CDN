@@ -183,7 +183,7 @@ pub mod tests {
 macro_rules! read_length_delimited {
     ($stream: expr) => {{
         // Read the message size from the stream
-        let Ok(message_size) = $stream.read_u64().await else {
+        let Ok(message_size) = $stream.read_u32().await else {
             return;
         };
 
@@ -193,7 +193,7 @@ macro_rules! read_length_delimited {
         }
 
         // Create buffer of the proper size
-        let mut buffer = vec![0; usize::try_from(message_size).expect("64 bit system")];
+        let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
         // Read the message from the stream
         if $stream.read_exact(&mut buffer).await.is_err() {
@@ -204,7 +204,7 @@ macro_rules! read_length_delimited {
         #[cfg(feature = "metrics")]
         metrics::BYTES_RECV.add(message_size as f64);
 
-        buffer
+        Bytes::from(buffer)
     }};
 }
 
@@ -213,10 +213,10 @@ macro_rules! read_length_delimited {
 macro_rules! write_length_delimited {
     ($stream: expr, $message:expr) => {
         // Get the length of the message
-        let message_len = $message.len() as u64;
+        let message_len = $message.len() as u32;
 
         // Write the message size to the stream
-        if $stream.write_u64(message_len).await.is_err() {
+        if $stream.write_u32(message_len).await.is_err() {
             return;
         }
 

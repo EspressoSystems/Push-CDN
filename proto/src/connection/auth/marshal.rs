@@ -19,7 +19,7 @@ use crate::{
     DiscoveryClientType,
 };
 use crate::{
-    connection::Bytes,
+    connection::UserPublicKey,
     crypto::signature::{Serializable, SignatureScheme},
 };
 
@@ -42,7 +42,7 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
     pub async fn verify_user(
         connection: &(UserProtocol::Sender, UserProtocol::Receiver),
         discovery_client: &mut DiscoveryClientType,
-    ) -> Result<Bytes> {
+    ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
         let auth_message = bail!(
             connection.1.recv_message().await,
@@ -104,7 +104,7 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
         let permit = match discovery_client
             .issue_permit(
                 &broker_with_least_connections,
-                Duration::from_secs(5),
+                Duration::from_secs(30),
                 auth_message.public_key,
             )
             .await
@@ -125,6 +125,6 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
         // Send the permit to the user, along with the public broker advertise address
         let _ = connection.0.send_message(response_message).await;
 
-        Ok(Bytes::from(public_key))
+        Ok(UserPublicKey::from(public_key))
     }
 }

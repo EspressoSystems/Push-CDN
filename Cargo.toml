@@ -6,7 +6,7 @@ package.description = "The PushCDN is a distributed, scalable, and fault-toleran
 
 [workspace.dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
-jf-primitives.git = "https://github.com/EspressoSystems/jellyfish.git"
+jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "0.4.1" }
 rand = "0.8.5"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
@@ -16,6 +16,7 @@ lazy_static = "1.4.0"
 derive_builder = "0.13.1"
 async-std = { version = "1.12.0", features = ["tokio1", "attributes"] }
 rkyv = { version = "0.7.44", features = ["validation"] }
+derivative = "2.2.0"
 
 # Dev dependencies (can't be defined explicitly in the workspace)
 # TODO: figure out if this actually builds on non-test targets

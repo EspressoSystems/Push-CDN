@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use proto::{
     connection::{
         protocols::{Protocol, Sender},
-        Bytes,
+        Bytes, UserPublicKey,
     },
     discovery::BrokerIdentifier,
     message::Topic,
@@ -24,16 +24,13 @@ mod broadcast;
 mod direct;
 mod versioned;
 
-/// Associated type for readability
-type UserPublicKey = Bytes;
-
 /// Stores information about all current connections.
 pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<Bytes, UserProtocol::Sender>,
+    users: DashMap<UserPublicKey, UserProtocol::Sender>,
     // The current brokers connected to us
     brokers: DashMap<BrokerIdentifier, BrokerProtocol::Sender>,
 
@@ -137,7 +134,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// keeps track of which users are connected where.
     pub fn add_user(
         self: &Arc<Self>,
-        user_public_key: Bytes,
+        user_public_key: UserPublicKey,
         connection: <UserProtocol as Protocol>::Sender,
     ) {
         // Add to our map
@@ -166,7 +163,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     /// from our broadcast map, in case they were subscribed to any topics, and
     /// the versioned vector map. This is so other brokers don't keep trying
     /// to send us messages for a disconnected user.
-    pub fn remove_user(self: &Arc<Self>, user_public_key: Bytes) {
+    pub fn remove_user(self: &Arc<Self>, user_public_key: UserPublicKey) {
         // Remove from user list
         self.users.remove(&user_public_key);
 
@@ -191,7 +188,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally subscribe a user to some topics.
-    pub fn subscribe_user_to(&self, user_public_key: &Bytes, topics: Vec<Topic>) {
+    pub fn subscribe_user_to(&self, user_public_key: &UserPublicKey, topics: Vec<Topic>) {
         self.broadcast_map
             .users
             .write()
@@ -207,7 +204,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub fn unsubscribe_user_from(&self, user_public_key: &Bytes, topics: &[Topic]) {
+    pub fn unsubscribe_user_from(&self, user_public_key: &UserPublicKey, topics: &[Topic]) {
         self.broadcast_map
             .users
             .write()
@@ -261,7 +258,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
 
     /// Send a message to a user connected to us.
     /// If it fails, the user is removed from our map.
-    pub fn send_to_user(self: &Arc<Self>, user_public_key: Bytes, message: Bytes) {
+    pub fn send_to_user(self: &Arc<Self>, user_public_key: UserPublicKey, message: Bytes) {
         // See if the user is connected
         if let Some(connection) = self.users.get(&user_public_key) {
             // If they are, clone things we will need

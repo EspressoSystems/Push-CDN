@@ -15,7 +15,7 @@ use crate::{
     DiscoveryClientType,
 };
 use crate::{
-    connection::Bytes,
+    connection::UserPublicKey,
     crypto::signature::{KeyPair, Serializable},
 };
 
@@ -74,7 +74,7 @@ impl BrokerAuth {
         connection: &(UserProtocol::Sender, UserProtocol::Receiver),
         broker_identifier: &BrokerIdentifier,
         discovery_client: &mut DiscoveryClientType,
-    ) -> Result<(Bytes, Vec<Topic>)> {
+    ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
             connection.1.recv_message().await,
@@ -138,7 +138,7 @@ impl BrokerAuth {
 
         // Return the public key and the initially subscribed topics
         Ok((
-            Bytes::from(serialized_public_key),
+            UserPublicKey::from(serialized_public_key),
             subscribed_topics_message,
         ))
     }
