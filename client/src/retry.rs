@@ -56,7 +56,7 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
 }
 
 /// The configuration needed to construct a `Retry` connection.
-#[derive(Builder)]
+#[derive(Builder, Clone)]
 pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
