@@ -1,5 +1,5 @@
 # Push-CDN
-A blazingly-fast distributed and fault tolerant messaging system with support for both publish-subscribe and direct messaging models.
+A distributed and fault tolerant messaging system with support for both publish-subscribe and direct messaging models.
 
 ## Diagram
 ![high level connection diagram](https://github.com/EspressoSystems/push-cdn/blob/master/diagrams/high-level-connections.png?raw=true)
