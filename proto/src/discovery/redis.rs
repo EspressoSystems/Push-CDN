@@ -135,7 +135,7 @@ impl DiscoveryClient for Redis {
 
         // Get the broker with the least number of connections
         let (mut least_connections, mut broker_with_least_connections) =
-            (u64::MAX, "meowtown".to_string());
+            (u64::MAX, String::new());
 
         for broker in brokers {
             // Get the number of connections the broker has

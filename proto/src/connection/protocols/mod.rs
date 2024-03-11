@@ -123,11 +123,11 @@ pub mod tests {
         // The messages we will send and receive
         let new_connection_to_listener = Message::Direct(Direct {
             recipient: vec![0, 1, 2],
-            message: b"meowtown".to_vec(),
+            message: b"direct 0,1,2".to_vec(),
         });
         let listener_to_new_connection = Message::Direct(Direct {
             recipient: vec![3, 4, 5],
-            message: b"town of meow".to_vec(),
+            message: b"direct 3,4,5".to_vec(),
         });
 
         // Spawn a task to listen for and accept connections

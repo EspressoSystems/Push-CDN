@@ -140,8 +140,7 @@ impl DiscoveryClient for Embedded {
         );
 
         // Our tracker for the "least connected" broker
-        let (mut least_connections, mut broker_with_least_connections) =
-            (u64::MAX, "meowtown".to_string());
+        let (mut least_connections, mut broker_with_least_connections) = (u64::MAX, String::new());
 
         // Iterate over every broker
         for broker in brokers {

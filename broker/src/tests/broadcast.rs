@@ -40,7 +40,7 @@ async fn test_broadcast_user() {
     // Create a broadcast message with the global topic
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::Global],
-        message: b"meowtown, incorporated".to_vec(),
+        message: b"test broadcast global".to_vec(),
     });
 
     // (As a user) send the broadcast message
@@ -59,7 +59,7 @@ async fn test_broadcast_user() {
     // Now we test the DA topic
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::DA],
-        message: b"meowtown.".to_vec(),
+        message: b"test broadcast DA".to_vec(),
     });
 
     // (As a user) send the broadcast message
@@ -106,7 +106,7 @@ async fn test_broadcast_broker() {
     // Create a broadcast message with the global topic
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::Global],
-        message: b"meowtown, incorporated".to_vec(),
+        message: b"test broadcast global".to_vec(),
     });
 
     // (As a user) send the broadcast message
@@ -124,7 +124,7 @@ async fn test_broadcast_broker() {
     // Now we test the DA topic
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::DA],
-        message: b"meowtown.".to_vec(),
+        message: b"test broadcast DA.".to_vec(),
     });
 
     // (As a user) send the broadcast message

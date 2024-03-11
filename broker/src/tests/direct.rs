@@ -34,7 +34,7 @@ async fn test_direct_user_to_user() {
     // Send a message from user_0 to itself
     let message = Message::Direct(Direct {
         recipient: vec![0],
-        message: b"meowtown".to_vec(),
+        message: b"test direct 0".to_vec(),
     });
 
     // Send the message to our broker
@@ -50,7 +50,7 @@ async fn test_direct_user_to_user() {
     // Create a message that user_1 will use to send to user_0
     let message = Message::Direct(Direct {
         recipient: vec![1],
-        message: b"meowtown2".to_vec(),
+        message: b"test direct 1".to_vec(),
     });
 
     // Send the message to user0 from user1
@@ -86,7 +86,7 @@ async fn test_direct_user_to_broker() {
     // Send a message as a user to another user that another broker owns (user_0 to user_2)
     let message = Message::Direct(Direct {
         recipient: vec![2],
-        message: b"meowtown".to_vec(),
+        message: b"test direct 2".to_vec(),
     });
 
     // Send the message as user_0
@@ -123,7 +123,7 @@ async fn test_direct_broker_to_user() {
     // Tests that broker_1 -> test_broker should not come back to us.
     let message = Message::Direct(Direct {
         recipient: vec![2],
-        message: b"meowtown".to_vec(),
+        message: b"test direct 2".to_vec(),
     });
 
     // Send the message as broker_1
