@@ -1,0 +1,25 @@
+[package]
+name = "cdn-marshal"
+version = "0.1.0"
+edition = "2021"
+
+description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"
+
+[features]
+default = ["insecure", "runtime-tokio"]
+
+local_discovery = ["cdn-proto/local_discovery"]
+insecure = ["cdn-proto/insecure"]
+
+runtime-tokio = ["cdn-proto/runtime-tokio"]
+runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
+
+[dependencies]
+jf-primitives.workspace = true
+cdn-proto = { path = "../cdn-proto", default-features = false }
+async-std = { workspace = true, optional = true }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+derive_builder.workspace = true

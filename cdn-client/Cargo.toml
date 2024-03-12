@@ -1,0 +1,25 @@
+[package]
+name = "cdn-client"
+version = "0.1.0"
+edition = "2021"
+
+description = "Defines client interactions for both marshals and brokers"
+
+[features]
+default = ["insecure", "runtime-tokio"]
+
+insecure = ["cdn-proto/insecure"]
+
+runtime-tokio = ["cdn-proto/runtime-tokio"]
+runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
+
+[dependencies]
+tokio = { workspace = true }
+async-std = { workspace = true, optional = true }
+jf-primitives.workspace = true
+cdn-proto = { path = "../cdn-proto", default-features = false }
+tracing-subscriber.workspace = true
+rand.workspace = true
+tracing.workspace = true
+clap.workspace = true
+derive_builder.workspace = true

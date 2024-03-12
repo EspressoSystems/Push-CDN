@@ -687,31 +687,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "broker"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "clap",
- "criterion",
- "dashmap",
- "delegate",
- "derivative",
- "derive_builder",
- "jf-primitives",
- "lazy_static",
- "local-ip-address",
- "parking_lot",
- "paste",
- "pprof",
- "prometheus",
- "proto",
- "rkyv",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -788,6 +763,95 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1174fb0b6ec23863f8b971027804a42614e347eafb0a95bf0b12cdae21fc4d0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "cdn-broker"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "cdn-proto",
+ "clap",
+ "criterion",
+ "dashmap",
+ "delegate",
+ "derivative",
+ "derive_builder",
+ "jf-primitives",
+ "lazy_static",
+ "local-ip-address",
+ "parking_lot",
+ "paste",
+ "pprof",
+ "prometheus",
+ "rkyv",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cdn-client"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "cdn-proto",
+ "clap",
+ "derive_builder",
+ "jf-primitives",
+ "rand",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cdn-marshal"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "cdn-proto",
+ "clap",
+ "derive_builder",
+ "jf-primitives",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cdn-proto"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-serialize",
+ "async-std",
+ "async-trait",
+ "capnp",
+ "capnpc",
+ "criterion",
+ "derivative",
+ "jf-primitives",
+ "kanal",
+ "lazy_static",
+ "mnemonic",
+ "mockall",
+ "pem",
+ "portpicker",
+ "pprof",
+ "prometheus",
+ "quinn",
+ "rand",
+ "rcgen",
+ "redis",
+ "rkyv",
+ "rustls",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "warp",
 ]
 
 [[package]]
@@ -897,21 +961,6 @@ name = "clap_lex"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
-
-[[package]]
-name = "client"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "clap",
- "derive_builder",
- "jf-primitives",
- "proto",
- "rand",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "colorchoice"
@@ -2179,20 +2228,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "marshal"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "clap",
- "derive_builder",
- "jf-primitives",
- "proto",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2813,41 +2848,6 @@ dependencies = [
  "parking_lot",
  "protobuf",
  "thiserror",
-]
-
-[[package]]
-name = "proto"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-serialize",
- "async-std",
- "async-trait",
- "capnp",
- "capnpc",
- "criterion",
- "derivative",
- "jf-primitives",
- "kanal",
- "lazy_static",
- "mnemonic",
- "mockall",
- "pem",
- "portpicker",
- "pprof",
- "prometheus",
- "quinn",
- "rand",
- "rcgen",
- "redis",
- "rkyv",
- "rustls",
- "sqlx",
- "thiserror",
- "tokio",
- "tracing",
- "url",
- "warp",
 ]
 
 [[package]]
