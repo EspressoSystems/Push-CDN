@@ -4,8 +4,8 @@
 use cdn_proto::connection::{protocols::Sender, Bytes};
 use std::time::Duration;
 
-use broker::reexports::tests::{Run, RunDefinition};
-use broker::{assert_received, send_message_as};
+use cdn_broker::reexports::tests::{Run, RunDefinition};
+use cdn_broker::{assert_received, send_message_as};
 use cdn_proto::message::{Broadcast, Message, Topic};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
