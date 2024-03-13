@@ -364,8 +364,8 @@ impl TryInto<Topic> for String {
 impl Display for Topic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Topic::Global => write!(f, "Global"),
-            Topic::DA => write!(f, "DA"),
+            Self::Global => write!(f, "Global"),
+            Self::DA => write!(f, "DA"),
         }
     }
 }

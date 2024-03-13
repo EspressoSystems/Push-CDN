@@ -17,7 +17,10 @@ use cdn_proto::{
     message::{Message, Topic},
 };
 use derive_builder::Builder;
-use tokio::{sync::RwLock, time::sleep};
+use tokio::{
+    sync::RwLock,
+    time::{sleep},
+};
 use tracing::{error, info};
 
 use crate::bail;
@@ -44,6 +47,7 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
     /// The receive side of the connection.
     receiver: Arc<RwLock<ProtocolType::Receiver>>,
 
+    /// The keypair to use when authenticating
     pub keypair: KeyPair<Scheme>,
 
     /// The topics we're currently subscribed to. We need this so we can send our subscriptions
@@ -88,6 +92,9 @@ macro_rules! try_with_reconnect {
             Err(err) => {
                 error!("connection failed: {err}");
 
+                // Sleep so we don't overload the server
+                sleep(Duration::from_secs(2)).await;
+
                 // Acquire our "semaphore". If another task is doing this, just return an error
                 if let Ok(mut sender_guard) = $self.inner.sender.clone().try_write_owned() {
                     let mut receiver_guard = $self.inner.receiver.clone().write_owned().await;
@@ -108,8 +115,6 @@ macro_rules! try_with_reconnect {
                                 Ok(connection) => break connection,
                                 Err(err) => {
                                     error!("failed connection: {err}");
-                                    // Sleep so we don't overload the server
-                                    sleep(Duration::from_secs(5)).await;
                                 }
                             }
                         };
