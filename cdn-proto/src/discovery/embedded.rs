@@ -60,9 +60,11 @@ impl DiscoveryClient for Embedded {
 
         // Perform migrations on the DB
         bail!(
-            sqlx::migrate!("../local_db/migrations").run(&pool).await,
+            query(include_str!("../../../local_db/migrations.sql"),)
+                .execute(&pool)
+                .await,
             File,
-            "failed to perform DB migrations"
+            "failed to migrate SQLite DB"
         );
 
         // Return the thinly wrapped `Self`.
