@@ -8,12 +8,12 @@ use cdn_proto::discovery::DiscoveryClient;
 
 use cdn_proto::connection::UserPublicKey;
 use cdn_proto::error::{Error, Result};
+use cdn_proto::Def;
 use cdn_proto::{
     connection::{
         auth::broker::BrokerAuth,
         protocols::{Protocol, Receiver},
     },
-    crypto::signature::SignatureScheme,
     message::Message,
     mnemonic,
 };
@@ -21,20 +21,17 @@ use tracing::info;
 
 use crate::{metrics, Inner};
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<BrokerDef: Def, UserDef: Def> Inner<BrokerDef, UserDef> {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        connection: (UserProtocol::Sender, UserProtocol::Receiver),
+        connection: (
+            <UserDef::Protocol as Protocol>::Sender,
+            <UserDef::Protocol as Protocol>::Receiver,
+        ),
     ) {
         // Verify (authenticate) the connection
-        let Ok((public_key, topics)) = BrokerAuth::verify_user::<UserScheme, UserProtocol>(
+        let Ok((public_key, topics)) = BrokerAuth::verify_user::<UserDef>(
             &connection,
             &self.identity,
             &mut self.discovery_client.clone(),
@@ -101,7 +98,7 @@ impl<
     pub async fn user_receive_loop(
         &self,
         public_key: &UserPublicKey,
-        receiver: <UserProtocol as Protocol>::Receiver,
+        receiver: <UserDef::Protocol as Protocol>::Receiver,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

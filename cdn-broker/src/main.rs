@@ -4,9 +4,9 @@
 use cdn_broker::{Broker, Config, ConfigBuilder};
 use cdn_proto::{
     bail,
-    connection::protocols::{quic::Quic, tcp::Tcp},
     crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
+    BrokerDef, UserDef,
 };
 use clap::Parser;
 use jf_primitives::signatures::{
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     // Create deterministic keys for brokers (for now, obviously)
     let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
-    let broker_config: Config<BLS> = bail!(
+    let broker_config: Config<BrokerDef> = bail!(
         ConfigBuilder::default()
             .public_advertise_address(args.public_advertise_address)
             .public_bind_address(format!("0.0.0.0:{}", args.public_bind_port))
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::<BLS, BLS, Tcp, Quic>::new(broker_config).await?;
+    let broker = Broker::<BrokerDef, UserDef>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     broker.start().await?;

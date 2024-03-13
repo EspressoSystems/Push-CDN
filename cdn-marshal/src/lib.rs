@@ -12,10 +12,9 @@ mod handlers;
 use cdn_proto::{
     bail,
     connection::protocols::{Listener, Protocol, UnfinalizedConnection},
-    crypto::signature::SignatureScheme,
     discovery::DiscoveryClient,
     error::{Error, Result},
-    DiscoveryClientType,
+    Def, DiscoveryClientType,
 };
 use derive_builder::Builder;
 use tokio::spawn;
@@ -42,19 +41,19 @@ pub struct Config {
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<Scheme: SignatureScheme, UserProtocol: Protocol> {
+pub struct Marshal<UserDef: Def> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<UserProtocol::Listener>,
+    listener: Arc<<UserDef::Protocol as Protocol>::Listener>,
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: DiscoveryClientType,
 
     /// We need this `PhantomData` to allow us to specify the signature scheme,
     /// protocol type, and authentication flow.
-    pd: PhantomData<Scheme>,
+    pd: PhantomData<UserDef::SignatureScheme>,
 }
 
-impl<Scheme: SignatureScheme, UserProtocol: Protocol> Marshal<Scheme, UserProtocol> {
+impl<UserDef: Def> Marshal<UserDef> {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
     ///
@@ -71,8 +70,7 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> Marshal<Scheme, UserProtoc
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            <UserProtocol as Protocol>::bind(bind_address.as_str(), tls_cert_path, tls_key_path)
-                .await,
+            UserDef::Protocol::bind(bind_address.as_str(), tls_cert_path, tls_key_path).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );

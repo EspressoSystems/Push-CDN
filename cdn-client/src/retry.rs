@@ -175,7 +175,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
                     if retries > 5 {
                         bail!(Err(err), Connection, "failed to connect after 5 retries");
                     }
-                    
+
                     // Sleep so we don't overload the server
                     sleep(Duration::from_secs(1)).await;
                 }

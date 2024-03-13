@@ -2,21 +2,13 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use cdn_proto::{
-    connection::protocols::Protocol, crypto::signature::SignatureScheme, discovery::DiscoveryClient,
-};
+use cdn_proto::{connection::protocols::Protocol, discovery::DiscoveryClient, Def};
 use tokio::{spawn, time::sleep};
 use tracing::{error, warn};
 
 use crate::Inner;
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<BrokerDef: Def, UserDef: Def> Inner<BrokerDef, UserDef> {
     /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
     /// the marshal to correctly choose the broker with the least amount of connections.
     pub async fn run_heartbeat_task(self: Arc<Self>) {
@@ -51,16 +43,17 @@ impl<
                         // Spawn task to connect to a broker we haven't seen
                         spawn(async move {
                             // Connect to the broker
-                            let connection =
-                                match <BrokerProtocol as Protocol>::connect(&to_connect_address)
-                                    .await
-                                {
-                                    Ok(connection) => connection,
-                                    Err(err) => {
-                                        warn!("failed to connect to broker: {err}");
-                                        return;
-                                    }
-                                };
+                            let connection = match <BrokerDef::Protocol as Protocol>::connect(
+                                &to_connect_address,
+                            )
+                            .await
+                            {
+                                Ok(connection) => connection,
+                                Err(err) => {
+                                    warn!("failed to connect to broker: {err}");
+                                    return;
+                                }
+                            };
 
                             inner.handle_broker_connection(connection, true).await;
                         });

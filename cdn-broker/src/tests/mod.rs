@@ -15,6 +15,7 @@ use cdn_proto::{
     crypto::{rng::DeterministicRng, signature::KeyPair},
     discovery::BrokerIdentifier,
     message::{Message, Topic},
+    MemoryDef,
 };
 use tokio::spawn;
 
@@ -27,7 +28,7 @@ mod direct;
 use crate::{connections::DirectMap, Broker as RealBroker, Config, ConfigBuilder};
 
 /// A little type alias to help readability
-type Broker = RealBroker<BLS, BLS, Memory, Memory>;
+type Broker = RealBroker<MemoryDef, MemoryDef>;
 
 /// An actor is a [user/broker] that we inject to test message send functionality.
 pub struct InjectedActor {
@@ -115,7 +116,7 @@ impl RunDefinition {
         let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
         // Build the broker's config
-        let broker_config: Config<BLS> = ConfigBuilder::default()
+        let broker_config: Config<MemoryDef> = ConfigBuilder::default()
             .public_advertise_address(String::new())
             .public_bind_address(String::new())
             .private_advertise_address(String::new())

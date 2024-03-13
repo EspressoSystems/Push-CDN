@@ -10,7 +10,7 @@ use cdn_proto::{
     },
     discovery::BrokerIdentifier,
     message::Topic,
-    mnemonic,
+    mnemonic, Def,
 };
 use dashmap::DashMap;
 pub use direct::DirectMap;
@@ -25,14 +25,14 @@ mod direct;
 mod versioned;
 
 /// Stores information about all current connections.
-pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
+pub struct Connections<BrokerDef: Def, UserDef: Def> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<UserPublicKey, UserProtocol::Sender>,
+    users: DashMap<UserPublicKey, <UserDef::Protocol as Protocol>::Sender>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, BrokerProtocol::Sender>,
+    brokers: DashMap<BrokerIdentifier, <BrokerDef::Protocol as Protocol>::Sender>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: RwLock<DirectMap>,
@@ -40,7 +40,7 @@ pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
     broadcast_map: BroadcastMap,
 }
 
-impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtocol, UserProtocol> {
+impl<BrokerDef: Def, UserDef: Def> Connections<BrokerDef, UserDef> {
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {
@@ -125,7 +125,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     pub fn add_broker(
         self: &Arc<Self>,
         broker_identifier: BrokerIdentifier,
-        connection: <BrokerProtocol as Protocol>::Sender,
+        connection: <BrokerDef::Protocol as Protocol>::Sender,
     ) {
         self.brokers.insert(broker_identifier, connection);
     }
@@ -135,7 +135,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     pub fn add_user(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
-        connection: <UserProtocol as Protocol>::Sender,
+        connection: <UserDef::Protocol as Protocol>::Sender,
     ) {
         // Add to our map
         self.users.insert(user_public_key.clone(), connection);

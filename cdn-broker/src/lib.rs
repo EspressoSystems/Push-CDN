@@ -16,17 +16,13 @@ mod tasks;
 mod tests;
 
 use std::{
-    marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 mod metrics;
-use cdn_proto::{
-    crypto::signature::{KeyPair, SignatureScheme},
-    metrics as proto_metrics,
-};
+use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics, Def};
 use derive_builder::Builder;
 
 // TODO: figure out if we should use Tokio's here
@@ -45,7 +41,7 @@ use crate::metrics::RUNNING_SINCE;
 
 /// The broker's configuration. We need this when we create a new one.
 #[derive(Builder)]
-pub struct Config<BrokerScheme: SignatureScheme> {
+pub struct Config<BrokerDef: Def> {
     /// The user (public) advertise address: what the marshals send to users upon authentication.
     /// Users connect to us with this address.
     pub public_advertise_address: String,
@@ -72,7 +68,7 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
-    pub keypair: KeyPair<BrokerScheme>,
+    pub keypair: KeyPair<BrokerDef::SignatureScheme>,
 
     /// An optional TLS cert path
     #[builder(default)]
@@ -84,12 +80,7 @@ pub struct Config<BrokerScheme: SignatureScheme> {
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
-struct Inner<
-    BrokerScheme: SignatureScheme,
-    UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol,
-    UserProtocol: Protocol,
-> {
+struct Inner<BrokerDef: Def, UserDef: Def> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
@@ -98,50 +89,36 @@ struct Inner<
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    keypair: KeyPair<BrokerScheme>,
+    keypair: KeyPair<BrokerDef::SignatureScheme>,
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<BrokerProtocol, UserProtocol>>,
-
-    /// The `PhantomData` that we need to be generic over protocol types.
-    pd: PhantomData<UserScheme>,
+    connections: Arc<Connections<BrokerDef, UserDef>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<
-    BrokerScheme: SignatureScheme,
-    UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol,
-    UserProtocol: Protocol,
-> {
+pub struct Broker<BrokerDef: Def, UserDef: Def> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>>,
+    inner: Arc<Inner<BrokerDef, UserDef>>,
 
     /// The public (user -> broker) listener
-    user_listener: UserProtocol::Listener,
+    user_listener: <UserDef::Protocol as Protocol>::Listener,
 
     /// The private (broker <-> broker) listener
-    broker_listener: BrokerProtocol::Listener,
+    broker_listener: <BrokerDef::Protocol as Protocol>::Listener,
 
     /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
     metrics_bind_address: Option<SocketAddr>,
 }
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
-    > Broker<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<BrokerDef: Def, UserDef: Def> Broker<BrokerDef, UserDef> {
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
     /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
-    pub async fn new(config: Config<BrokerScheme>) -> Result<Self> {
+    pub async fn new(config: Config<BrokerDef>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             public_advertise_address,
@@ -176,7 +153,7 @@ impl<
 
         // Create the user (public) listener
         let user_listener = bail!(
-            <UserProtocol as Protocol>::bind(
+            UserDef::Protocol::bind(
                 public_bind_address.as_str(),
                 tls_cert_path.clone(),
                 tls_key_path.clone(),
@@ -191,12 +168,8 @@ impl<
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            <BrokerProtocol as Protocol>::bind(
-                private_bind_address.as_str(),
-                tls_cert_path,
-                tls_key_path,
-            )
-            .await,
+            BrokerDef::Protocol::bind(private_bind_address.as_str(), tls_cert_path, tls_key_path,)
+                .await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",
@@ -222,7 +195,6 @@ impl<
                 identity: identity.clone(),
                 keypair,
                 connections: Arc::from(Connections::new(identity)),
-                pd: PhantomData,
             }),
             metrics_bind_address,
             user_listener,

@@ -16,7 +16,7 @@ use crate::{
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
-    DiscoveryClientType,
+    Def, DiscoveryClientType,
 };
 use crate::{
     connection::UserPublicKey,
@@ -24,12 +24,12 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<Scheme: SignatureScheme, UserProtocol: Protocol> {
+pub struct MarshalAuth<UserDef: Def> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
-    pub pd: PhantomData<(Scheme, UserProtocol)>,
+    pub pd: PhantomData<UserDef>,
 }
 
-impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserProtocol> {
+impl<UserDef: Def> MarshalAuth<UserDef> {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message
@@ -40,7 +40,10 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &(UserProtocol::Sender, UserProtocol::Receiver),
+        connection: &(
+            <UserDef::Protocol as Protocol>::Sender,
+            <UserDef::Protocol as Protocol>::Receiver,
+        ),
         discovery_client: &mut DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
@@ -57,12 +60,14 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserPr
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) = Scheme::PublicKey::deserialize(&auth_message.public_key) else {
+        let Ok(public_key) = <UserDef::SignatureScheme as SignatureScheme>::PublicKey::deserialize(
+            &auth_message.public_key,
+        ) else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !Scheme::verify(
+        if !UserDef::SignatureScheme::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,
