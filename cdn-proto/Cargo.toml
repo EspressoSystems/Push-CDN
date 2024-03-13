@@ -32,9 +32,10 @@ harness = false
 # TODO: make this optional if local not specified
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 
-sqlx = { version = "0.7.3", features = [
+sqlx = { version = "0.7.3", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
+    "macros",
     "migrate",
     "time",
 ], optional = true }
