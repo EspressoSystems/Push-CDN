@@ -107,8 +107,10 @@ impl Clone for MockReceiver {
 
 #[cfg(test)]
 pub mod tests {
+    use std::time::Duration;
+
     use anyhow::Result;
-    use tokio::{join, spawn, task::JoinHandle};
+    use tokio::{join, spawn, task::JoinHandle, time::sleep};
 
     use crate::message::{Direct, Message};
 
@@ -161,6 +163,8 @@ pub mod tests {
 
             // Send our message
             sender.send_message(new_connection_to_listener).await?;
+
+            sleep(Duration::from_millis(10)).await;
 
             Ok(())
         });

@@ -7,6 +7,7 @@ use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
+use tokio::task::AbortHandle;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
@@ -176,8 +177,7 @@ impl Protocol for Quic {
 #[derive(Clone)]
 pub struct QuicSender(Arc<QuicSenderRef>);
 
-#[derive(Clone)]
-pub struct QuicSenderRef(AsyncSender<Bytes>);
+pub struct QuicSenderRef(AsyncSender<Bytes>, AbortHandle);
 
 /// Convert a Quic `SendStream` and `RecvStream` to use dedicated tasks and channels
 /// under the hood.
@@ -193,7 +193,7 @@ fn into_channels(
     let (send_as_task, receive_from_task) = unbounded_async();
 
     // Start the sending task
-    spawn(async move {
+    let sending_handle = spawn(async move {
         loop {
             // Receive a message from our code
             let Ok(message): StdResult<Bytes, _> = receive_as_task.recv().await else {
@@ -208,7 +208,7 @@ fn into_channels(
     .abort_handle();
 
     // Start the receiving task
-    spawn(async move {
+    let receiving_handle = spawn(async move {
         loop {
             // Receive a message from the real connection
             let message = read_length_delimited!(read_half);
@@ -223,8 +223,11 @@ fn into_channels(
     .abort_handle();
 
     (
-        QuicSender(Arc::from(QuicSenderRef(send_to_task))),
-        QuicReceiver(Arc::from(QuicReceiverRef(receive_from_task))),
+        QuicSender(Arc::from(QuicSenderRef(send_to_task, receiving_handle))),
+        QuicReceiver(Arc::from(QuicReceiverRef(
+            receive_from_task,
+            sending_handle,
+        ))),
     )
 }
 
@@ -264,8 +267,7 @@ impl Sender for QuicSender {
 #[derive(Clone)]
 pub struct QuicReceiver(Arc<QuicReceiverRef>);
 
-#[derive(Clone)]
-pub struct QuicReceiverRef(AsyncReceiver<Bytes>);
+pub struct QuicReceiverRef(AsyncReceiver<Bytes>, AbortHandle);
 
 #[async_trait]
 impl Receiver for QuicReceiver {
@@ -369,8 +371,9 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
 /// to a stale connection)
 impl Drop for QuicSenderRef {
     fn drop(&mut self) {
-        // Close the connection with no reason
+        // Close the channel and abort the receiving task
         self.0.close();
+        self.1.abort();
     }
 }
 
@@ -378,8 +381,9 @@ impl Drop for QuicSenderRef {
 /// to a stale connection)
 impl Drop for QuicReceiverRef {
     fn drop(&mut self) {
-        // Close the connection with no reason
+        // Close the channel and abort the sending task
         self.0.close();
+        self.1.abort();
     }
 }
 

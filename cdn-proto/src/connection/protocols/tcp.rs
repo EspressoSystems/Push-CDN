@@ -10,6 +10,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
     spawn,
+    task::AbortHandle,
 };
 
 #[cfg(feature = "metrics")]
@@ -107,8 +108,7 @@ impl Protocol for Tcp {
 #[derive(Clone)]
 pub struct TcpSender(Arc<TcpSenderRef>);
 
-#[derive(Clone)]
-struct TcpSenderRef(AsyncSender<Bytes>);
+struct TcpSenderRef(AsyncSender<Bytes>, AbortHandle);
 
 fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task
@@ -121,7 +121,7 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     let (mut read_half, mut write_half) = connection.into_split();
 
     // Start the sending task
-    spawn(async move {
+    let sending_handle = spawn(async move {
         loop {
             // Receive a message from our code
             let Ok(message): StdResult<Bytes, _> = receive_as_task.recv().await else {
@@ -136,7 +136,7 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     .abort_handle();
 
     // Start the receiving task
-    spawn(async move {
+    let receiving_handle = spawn(async move {
         loop {
             // Receive a message from the real connection
             let message = read_length_delimited!(read_half);
@@ -151,8 +151,8 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     .abort_handle();
 
     (
-        TcpSender(Arc::from(TcpSenderRef(send_to_task))),
-        TcpReceiver(Arc::from(TcpReceiverRef(receive_from_task))),
+        TcpSender(Arc::from(TcpSenderRef(send_to_task, receiving_handle))),
+        TcpReceiver(Arc::from(TcpReceiverRef(receive_from_task, sending_handle))),
     )
 }
 
@@ -193,8 +193,7 @@ impl Sender for TcpSender {
 #[derive(Clone)]
 pub struct TcpReceiver(Arc<TcpReceiverRef>);
 
-#[derive(Clone)]
-struct TcpReceiverRef(AsyncReceiver<Bytes>);
+struct TcpReceiverRef(AsyncReceiver<Bytes>, AbortHandle);
 
 #[async_trait]
 impl Receiver for TcpReceiver {
@@ -279,18 +278,23 @@ impl Listener<UnfinalizedTcpConnection> for TcpListener {
     }
 }
 
-/// If we drop the sender, we want to shut down the receiver.
+/// If we drop the sender, we want to close the connection (to prevent us from sending data
+/// to a stale connection)
 impl Drop for TcpSenderRef {
     fn drop(&mut self) {
+        // Close the channel and abort the receiving task
         self.0.close();
+        self.1.abort();
     }
 }
 
-/// If we drop the receiver, we want to shut down the sender.
-/// TODO: check if we are already doing this
+/// If we drop the receiver, we want to close the connection (to prevent us from sending data
+/// to a stale connection)
 impl Drop for TcpReceiverRef {
     fn drop(&mut self) {
+        // Close the channel and abort the sending task
         self.0.close();
+        self.1.abort();
     }
 }
 
