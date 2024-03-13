@@ -152,6 +152,10 @@ impl Sender for MemorySender {
 
         Ok(())
     }
+
+    /// Finish the connection, sending any remaining data.
+    /// Is a no-op for memory connections.
+    async fn finish(&self) {}
 }
 
 #[derive(Clone)]

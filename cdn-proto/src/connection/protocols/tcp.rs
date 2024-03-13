@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 
-use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
+use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use std::{net::SocketAddr, result::Result as StdResult};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -112,10 +112,10 @@ struct TcpSenderRef(AsyncSender<Bytes>, AbortHandle);
 
 fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task
-    let (send_to_task, receive_as_task) = unbounded_async();
+    let (send_to_task, receive_as_task) = bounded_async(0);
 
     // Create a channel for receiving messages from the task
-    let (send_as_task, receive_from_task) = unbounded_async();
+    let (send_as_task, receive_from_task) = bounded_async(0);
 
     // Split the connection into owned halves
     let (mut read_half, mut write_half) = connection.into_split();
@@ -128,6 +128,13 @@ fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
                 // If the channel is closed, stop.
                 return;
             };
+
+            // If the message is empty, it's a signal to finish the connection
+            if message.len() == 0 {
+                // Finish the connection
+                let _ = write_half.flush().await;
+                return;
+            }
 
             // Send a message over the real connection
             write_length_delimited!(write_half, message);
@@ -187,6 +194,12 @@ impl Sender for TcpSender {
         );
 
         Ok(())
+    }
+
+    /// Gracefully finish the connection, sending any remaining data.
+    /// This is done by sending an empty message.
+    async fn finish(&self) {
+        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
     }
 }
 

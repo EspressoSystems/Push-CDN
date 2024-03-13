@@ -3,7 +3,7 @@
 //! logic.
 
 use async_trait::async_trait;
-use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
+use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
@@ -187,10 +187,10 @@ fn into_channels(
     mut read_half: quinn::RecvStream,
 ) -> (QuicSender, QuicReceiver) {
     // Create a channel for sending messages to the task
-    let (send_to_task, receive_as_task) = unbounded_async();
+    let (send_to_task, receive_as_task) = bounded_async(0);
 
     // Create a channel for receiving messages from the task
-    let (send_as_task, receive_from_task) = unbounded_async();
+    let (send_as_task, receive_from_task) = bounded_async(0);
 
     // Start the sending task
     let sending_handle = spawn(async move {
@@ -200,6 +200,12 @@ fn into_channels(
                 // If the channel is closed, stop.
                 return;
             };
+
+            // This is a shutdown message, and we should flush the stream
+            if message.len() == 0 {
+                let _ = write_half.finish().await;
+                return;
+            }
 
             // Send a message over the real connection
             write_length_delimited!(write_half, message);
@@ -261,6 +267,12 @@ impl Sender for QuicSender {
         );
 
         Ok(())
+    }
+
+    /// Gracefully finish the connection, sending any remaining data.
+    /// This is done by sending an empty message to the receiver.
+    async fn finish(&self) {
+        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
     }
 }
 

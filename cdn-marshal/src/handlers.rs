@@ -1,5 +1,5 @@
 use cdn_proto::{
-    connection::{auth::marshal::MarshalAuth, protocols::Protocol},
+    connection::{auth::marshal::MarshalAuth, protocols::Protocol, protocols::Sender},
     crypto::signature::SignatureScheme,
     mnemonic, DiscoveryClientType,
 };
@@ -20,5 +20,8 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol> Marshal<Scheme, UserProtoc
         {
             info!("user {} authenticated", mnemonic(&user_public_key));
         }
+
+        // Finish the connection to ensure all data is sent
+        connection.0.finish().await;
     }
 }

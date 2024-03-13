@@ -51,6 +51,9 @@ pub trait Sender {
     /// # Errors
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()>;
+
+    /// Gracefully finish the connection, sending any remaining data.
+    async fn finish(&self);
 }
 
 #[automock]
@@ -107,10 +110,8 @@ impl Clone for MockReceiver {
 
 #[cfg(test)]
 pub mod tests {
-    use std::time::Duration;
-
     use anyhow::Result;
-    use tokio::{join, spawn, task::JoinHandle, time::sleep};
+    use tokio::{join, spawn, task::JoinHandle};
 
     use crate::message::{Direct, Message};
 
@@ -149,6 +150,8 @@ pub mod tests {
             let message = receiver.recv_message().await?;
             assert!(message == new_connection_to_listener_);
 
+            sender.finish().await;
+
             Ok(())
         });
 
@@ -164,7 +167,7 @@ pub mod tests {
             // Send our message
             sender.send_message(new_connection_to_listener).await?;
 
-            sleep(Duration::from_millis(10)).await;
+            sender.finish().await;
 
             Ok(())
         });
