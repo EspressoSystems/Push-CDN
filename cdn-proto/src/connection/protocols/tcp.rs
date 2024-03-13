@@ -5,12 +5,13 @@
 use async_trait::async_trait;
 
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
-use std::{net::SocketAddr, result::Result as StdResult};
+use std::{net::SocketAddr, result::Result as StdResult, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
     spawn,
     task::AbortHandle,
+    time::timeout,
 };
 
 #[cfg(feature = "metrics")]

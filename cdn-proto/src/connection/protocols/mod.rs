@@ -223,12 +223,26 @@ macro_rules! write_length_delimited {
         let message_len = $message.len() as u32;
 
         // Write the message size to the stream
-        if $stream.write_u32(message_len).await.is_err() {
+        if let Ok(res) = timeout(Duration::from_secs(1), $stream.write_u32(message_len)).await {
+            // We didn't timeout
+            if res.is_err() {
+                // We failed to send
+                return;
+            }
+        } else {
+            // We timed out
             return;
         }
 
-        // Write the message to the stream
-        if $stream.write_all(&$message).await.is_err() {
+        // Write the message size to the stream
+        if let Ok(res) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await {
+            // We didn't timeout
+            if res.is_err() {
+                // We failed to send
+                return;
+            }
+        } else {
+            // We timed out
             return;
         }
 

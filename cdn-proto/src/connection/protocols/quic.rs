@@ -7,7 +7,8 @@ use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
-use tokio::task::AbortHandle;
+use tokio::{task::AbortHandle, time::timeout};
+use std::time::Duration;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
@@ -21,7 +22,6 @@ use crate::{
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
-use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     result::Result as StdResult,
