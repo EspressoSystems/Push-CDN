@@ -17,10 +17,7 @@ use cdn_proto::{
     message::{Message, Topic},
 };
 use derive_builder::Builder;
-use tokio::{
-    sync::RwLock,
-    time::{sleep},
-};
+use tokio::{sync::RwLock, time::sleep};
 use tracing::{error, info};
 
 use crate::bail;
@@ -154,17 +151,33 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
         // Wrap subscribed topics so we can use it now and later
         let subscribed_topics = RwLock::new(HashSet::from_iter(subscribed_topics));
 
-        // Perform the initial connection and authentication
-        let connection = bail!(
-            connect_and_authenticate::<Scheme, ProtocolType>(
+        // Perform the initial connection and authentication.
+        // Retry until we succeed or bail if we fail too many times.
+        let mut retries = 0;
+        let connection = loop {
+            // Try to connect and authenticate
+            match connect_and_authenticate::<Scheme, ProtocolType>(
                 &endpoint,
                 &keypair,
-                subscribed_topics.read().await.clone()
+                subscribed_topics.read().await.clone(),
             )
-            .await,
-            Connection,
-            "failed initial connection"
-        );
+            .await
+            {
+                // The connection was successful, break the loop
+                Ok(connection) => break connection,
+
+                // The connection failed, log the error and retry
+                Err(err) => {
+                    error!("failed connection: {err}");
+                    retries += 1;
+
+                    // If we fail too many times, bail
+                    if retries > 5 {
+                        bail!(Err(err), Connection, "failed to connect after 5 retries");
+                    }
+                }
+            }
+        };
 
         // Return the slightly transformed connection.
         Ok(Self {
