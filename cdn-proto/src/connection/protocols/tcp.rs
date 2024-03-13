@@ -198,8 +198,9 @@ impl Sender for TcpSender {
     }
 
     /// Gracefully finish the connection, sending any remaining data.
-    /// This is done by sending an empty message.
+    /// This is done by sending two empty messages.
     async fn finish(&self) {
+        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
         let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
     }
 }

@@ -5,10 +5,10 @@
 use async_trait::async_trait;
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
-use std::time::Duration;
 
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
@@ -270,8 +270,9 @@ impl Sender for QuicSender {
     }
 
     /// Gracefully finish the connection, sending any remaining data.
-    /// This is done by sending an empty message to the receiver.
+    /// This is done by sending two empty messages to the receiver.
     async fn finish(&self) {
+        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
         let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
     }
 }

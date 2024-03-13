@@ -38,7 +38,8 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Generate two random keypairs, one for each client
-    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
+    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
+    let (_, public_key_0) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
     // Build the config, the endpoint being where we expect the marshal to be
     let config = bail!(
@@ -61,7 +62,7 @@ async fn main() -> Result<()> {
         loop {
             let m = vec![0u8; 10000];
 
-            if let Err(err) = client.send_direct_message(&public_key, m).await {
+            if let Err(err) = client.send_direct_message(&public_key_0, m).await {
                 tracing::error!("failed to send message: {err}");
             };
             info!("sent message");
