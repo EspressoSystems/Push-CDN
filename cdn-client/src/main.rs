@@ -7,9 +7,9 @@ use std::time::Duration;
 use cdn_client::{Client, ConfigBuilder};
 use cdn_proto::{
     bail,
-    connection::protocols::quic::Quic,
     crypto::{rng::DeterministicRng, signature::KeyPair},
     error::{Error, Result},
+    UserDef,
 };
 use clap::Parser;
 
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         "failed to build client config"
     );
 
-    let client = Client::<BLS, Quic>::new(config).await?;
+    let client = Client::<UserDef>::new(config).await?;
 
     // We want the first node to send to the second
     if args.id != 0 {

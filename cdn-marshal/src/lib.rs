@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 mod handlers;
 
@@ -47,10 +47,6 @@ pub struct Marshal<UserDef: Def> {
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: DiscoveryClientType,
-
-    /// We need this `PhantomData` to allow us to specify the signature scheme,
-    /// protocol type, and authentication flow.
-    pd: PhantomData<UserDef::SignatureScheme>,
 }
 
 impl<UserDef: Def> Marshal<UserDef> {
@@ -86,7 +82,6 @@ impl<UserDef: Def> Marshal<UserDef> {
         Ok(Self {
             listener: Arc::from(listener),
             discovery_client,
-            pd: PhantomData,
         })
     }
 

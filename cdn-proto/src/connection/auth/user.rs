@@ -6,7 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::crypto::signature::Serializable;
 use crate::{
     bail,
     connection::protocols::{Protocol, Receiver, Sender},
@@ -14,15 +13,16 @@ use crate::{
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
+use crate::{crypto::signature::Serializable, Def};
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct UserAuth<UserDef: Def> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
-    pub pd: PhantomData<(Scheme, ProtocolType)>,
+    pub pd: PhantomData<UserDef>,
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolType> {
+impl<UserDef: Def> UserAuth<UserDef> {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message
@@ -32,8 +32,11 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolT
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
-        keypair: &KeyPair<Scheme>,
+        connection: &(
+            <UserDef::Protocol as Protocol>::Sender,
+            <UserDef::Protocol as Protocol>::Receiver,
+        ),
+        keypair: &KeyPair<UserDef::SignatureScheme>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -45,7 +48,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolT
 
         // Sign the timestamp from above
         let signature = bail!(
-            Scheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            UserDef::SignatureScheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
@@ -108,7 +111,10 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolT
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &(
+            <UserDef::Protocol as Protocol>::Sender,
+            <UserDef::Protocol as Protocol>::Receiver,
+        ),
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {

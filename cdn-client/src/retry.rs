@@ -5,16 +5,17 @@
 //! and where we can just return. Most of the errors already have
 //! enough context from previous bails.
 
-use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
         protocols::{Protocol, Receiver, Sender},
     },
-    crypto::signature::{KeyPair, SignatureScheme},
+    crypto::signature::KeyPair,
     error::{Error, Result},
     message::{Message, Topic},
+    Def,
 };
 use derive_builder::Builder;
 use tokio::{sync::RwLock, time::sleep};
@@ -27,54 +28,46 @@ use crate::bail;
 /// It employs synchronization as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Retry<Scheme: SignatureScheme, ProtocolType: Protocol> {
-    pub inner: Arc<Inner<Scheme, ProtocolType>>,
+pub struct Retry<UserDef: Def> {
+    pub inner: Arc<Inner<UserDef>>,
 }
 
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct Inner<UserDef: Def> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     endpoint: String,
 
     /// The send-side of the connection.
-    sender: Arc<RwLock<ProtocolType::Sender>>,
+    sender: Arc<RwLock<<UserDef::Protocol as Protocol>::Sender>>,
 
     /// The receive side of the connection.
-    receiver: Arc<RwLock<ProtocolType::Receiver>>,
+    receiver: Arc<RwLock<<UserDef::Protocol as Protocol>::Receiver>>,
 
     /// The keypair to use when authenticating
-    pub keypair: KeyPair<Scheme>,
+    pub keypair: KeyPair<UserDef::SignatureScheme>,
 
     /// The topics we're currently subscribed to. We need this so we can send our subscriptions
     /// when we connect to a new server.
     pub subscribed_topics: RwLock<HashSet<Topic>>,
-
-    /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
-    /// `SignatureScheme` downstream.
-    pd: PhantomData<(Scheme, ProtocolType)>,
 }
 
 /// The configuration needed to construct a `Retry` connection.
 #[derive(Builder, Clone)]
-pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct Config<UserDef: Def> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    pub keypair: KeyPair<Scheme>,
+    pub keypair: KeyPair<UserDef::SignatureScheme>,
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
     #[builder(default = "Vec::new()")]
     pub subscribed_topics: Vec<Topic>,
-
-    /// The phantom data we need to be able to make use of these types
-    #[builder(default)]
-    pub pd: PhantomData<ProtocolType>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -102,7 +95,7 @@ macro_rules! try_with_reconnect {
                         // Loop to connect and authenticate
                         let connection = loop {
                             // Create a connection
-                            match connect_and_authenticate::<Scheme, ProtocolType>(
+                            match connect_and_authenticate::<UserDef>(
                                 &inner.endpoint,
                                 &inner.keypair,
                                 inner.subscribed_topics.read().await.clone(),
@@ -130,7 +123,7 @@ macro_rules! try_with_reconnect {
     }};
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType> {
+impl<UserDef: Def> Retry<UserDef> {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
     /// This allows us to create elastic clients that always try to maintain a connection.
@@ -139,13 +132,12 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
     /// TODO: figure out if we want retries here
-    pub async fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
+    pub async fn from_config(config: Config<UserDef>) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
             keypair,
             subscribed_topics,
-            pd: _,
         } = config;
 
         // Wrap subscribed topics so we can use it now and later
@@ -156,7 +148,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
         let mut retries = 0;
         let connection = loop {
             // Try to connect and authenticate
-            match connect_and_authenticate::<Scheme, ProtocolType>(
+            match connect_and_authenticate::<UserDef>(
                 &endpoint,
                 &keypair,
                 subscribed_topics.read().await.clone(),
@@ -191,7 +183,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
                 receiver: Arc::from(RwLock::from(connection.1)),
                 keypair,
                 subscribed_topics,
-                pd: PhantomData,
             }),
         })
     }
@@ -241,40 +232,38 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
 ///
 /// # Errors
 /// If we failed to connect or authenticate to the marshal or broker.
-async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol>(
+async fn connect_and_authenticate<UserDef: Def>(
     marshal_endpoint: &str,
-    keypair: &KeyPair<Scheme>,
+    keypair: &KeyPair<UserDef::SignatureScheme>,
     subscribed_topics: HashSet<Topic>,
-) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)> {
+) -> Result<(
+    <UserDef::Protocol as Protocol>::Sender,
+    <UserDef::Protocol as Protocol>::Receiver,
+)> {
     // Make the connection to the marshal
     let connection = bail!(
-        ProtocolType::connect(marshal_endpoint).await,
+        UserDef::Protocol::connect(marshal_endpoint).await,
         Connection,
         "failed to connect to endpoint"
     );
 
     // Authenticate the connection to the marshal (if not provided)
     let (broker_address, permit) = bail!(
-        UserAuth::<Scheme, ProtocolType>::authenticate_with_marshal(&connection, keypair).await,
+        UserAuth::<UserDef>::authenticate_with_marshal(&connection, keypair).await,
         Authentication,
         "failed to authenticate to marshal"
     );
 
     // Make the connection to the broker
     let connection = bail!(
-        ProtocolType::connect(&broker_address).await,
+        UserDef::Protocol::connect(&broker_address).await,
         Connection,
         "failed to connect to broker"
     );
 
     // Authenticate the connection to the broker
     bail!(
-        UserAuth::<Scheme, ProtocolType>::authenticate_with_broker(
-            &connection,
-            permit,
-            subscribed_topics
-        )
-        .await,
+        UserAuth::<UserDef>::authenticate_with_broker(&connection, permit, subscribed_topics).await,
         Authentication,
         "failed to authenticate to broker"
     );
