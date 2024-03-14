@@ -15,7 +15,7 @@ impl<BrokerDef: Def, UserDef: Def> Inner<BrokerDef, UserDef> {
     // We run the user listener task in a loop, accepting and handling new connections as needed.
     pub async fn run_user_listener_task(
         self: Arc<Self>,
-        listener: <<UserDef as Def>::Protocol as Protocol>::Listener,
+        listener: <UserDef::Protocol as Protocol>::Listener,
     ) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
