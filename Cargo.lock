@@ -836,6 +836,7 @@ dependencies = [
  "lazy_static",
  "mnemonic",
  "mockall",
+ "parking_lot",
  "pem",
  "portpicker",
  "pprof",

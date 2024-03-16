@@ -6,6 +6,7 @@ use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
+        hooks::{Trusted, Untrusted},
         protocols::{Protocol, Receiver},
         UserPublicKey,
     },
@@ -22,8 +23,8 @@ use crate::{connections::DirectMap, metrics, Inner};
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     /// This function is the callback for handling a broker (private) connection.
@@ -101,7 +102,7 @@ impl<
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: <BrokerProtocol as Protocol>::Receiver,
+        receiver: BrokerProtocol::Receiver,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

@@ -28,7 +28,7 @@ pub type DiscoveryClientType = discovery::redis::Redis;
 
 /// The maximum message size to be received over a connection.
 /// After this, it will be automatically closed by the receiver.
-pub const MAX_MESSAGE_SIZE: u32 = u32::MAX;
+pub const MAX_MESSAGE_SIZE: u32 = u32::MAX / 4;
 
 /// Include the built `capnp-rust` bindings
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]

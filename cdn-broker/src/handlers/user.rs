@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use cdn_proto::connection::hooks::{Trusted, Untrusted};
 #[cfg(feature = "strong_consistency")]
 use cdn_proto::discovery::DiscoveryClient;
 
@@ -24,8 +25,8 @@ use crate::{metrics, Inner};
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     /// This function handles a user (public) connection.
@@ -101,7 +102,7 @@ impl<
     pub async fn user_receive_loop(
         &self,
         public_key: &UserPublicKey,
-        receiver: <UserProtocol as Protocol>::Receiver,
+        receiver: UserProtocol::Receiver,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

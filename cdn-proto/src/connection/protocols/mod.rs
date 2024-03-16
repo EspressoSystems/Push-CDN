@@ -5,7 +5,7 @@ use mockall::automock;
 
 use crate::{error::Result, message::Message};
 
-use super::Bytes;
+use super::{hooks::Hooks, Bytes};
 pub mod memory;
 pub mod quic;
 pub mod tcp;
@@ -13,7 +13,7 @@ pub mod tcp;
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
 #[automock(type Sender=MockSender; type Receiver=MockReceiver; type UnfinalizedConnection=MockUnfinalizedConnection<MockSender, MockReceiver>; type Listener=MockListener<MockUnfinalizedConnection<MockSender, MockReceiver>>;)]
 #[async_trait]
-pub trait Protocol: Send + Sync + 'static {
+pub trait Protocol<H: Hooks>: Send + Sync + 'static {
     type Sender: Sender + Send + Sync + Clone;
     type Receiver: Receiver + Send + Sync + Clone;
 
@@ -113,13 +113,16 @@ pub mod tests {
     use anyhow::Result;
     use tokio::{join, spawn, task::JoinHandle};
 
-    use crate::message::{Direct, Message};
+    use crate::{
+        connection::hooks::None,
+        message::{Direct, Message},
+    };
 
     use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
     /// Test connection establishment, listening for connections, and message
     /// sending and receiving. All protocols should be calling this test function
-    pub async fn test_connection<P: Protocol>(bind_address: String) -> Result<()> {
+    pub async fn test_connection<P: Protocol<None>>(bind_address: String) -> Result<()> {
         // Create listener
         let listener = P::bind(bind_address.as_str(), None, None).await?;
 
@@ -199,6 +202,9 @@ macro_rules! read_length_delimited {
             return;
         }
 
+        // Acquire the allocation, if necessary
+        let permit = H::allocate_before_read(message_size).await;
+
         // Create buffer of the proper size
         let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
@@ -211,7 +217,7 @@ macro_rules! read_length_delimited {
         #[cfg(feature = "metrics")]
         metrics::BYTES_RECV.add(message_size as f64);
 
-        Bytes::from(buffer)
+        Bytes::from(buffer, permit)
     }};
 }
 

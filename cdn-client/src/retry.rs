@@ -10,6 +10,7 @@ use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
+        hooks::None,
         protocols::{Protocol, Receiver, Sender},
     },
     crypto::signature::{KeyPair, SignatureScheme},
@@ -27,13 +28,13 @@ use crate::bail;
 /// It employs synchronization as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Retry<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct Retry<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     pub inner: Arc<Inner<Scheme, ProtocolType>>,
 }
 
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     endpoint: String,
@@ -58,7 +59,7 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol> {
 
 /// The configuration needed to construct a `Retry` connection.
 #[derive(Builder, Clone)]
-pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol> {
+pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
@@ -130,7 +131,7 @@ macro_rules! try_with_reconnect {
     }};
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType> {
+impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, ProtocolType> {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
     /// This allows us to create elastic clients that always try to maintain a connection.
@@ -175,7 +176,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
                     if retries > 5 {
                         bail!(Err(err), Connection, "failed to connect after 5 retries");
                     }
-                    
+
                     // Sleep so we don't overload the server
                     sleep(Duration::from_secs(1)).await;
                 }
@@ -241,7 +242,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol> Retry<Scheme, ProtocolType
 ///
 /// # Errors
 /// If we failed to connect or authenticate to the marshal or broker.
-async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol>(
+async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol<None>>(
     marshal_endpoint: &str,
     keypair: &KeyPair<Scheme>,
     subscribed_topics: HashSet<Topic>,

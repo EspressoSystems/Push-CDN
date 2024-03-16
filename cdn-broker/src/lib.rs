@@ -24,6 +24,7 @@ use std::{
 
 mod metrics;
 use cdn_proto::{
+    connection::hooks::{Trusted, Untrusted},
     crypto::signature::{KeyPair, SignatureScheme},
     metrics as proto_metrics,
 };
@@ -87,8 +88,8 @@ pub struct Config<BrokerScheme: SignatureScheme> {
 struct Inner<
     BrokerScheme: SignatureScheme,
     UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol,
-    UserProtocol: Protocol,
+    BrokerProtocol: Protocol<Trusted>,
+    UserProtocol: Protocol<Untrusted>,
 > {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
@@ -112,8 +113,8 @@ struct Inner<
 pub struct Broker<
     BrokerScheme: SignatureScheme,
     UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol,
-    UserProtocol: Protocol,
+    BrokerProtocol: Protocol<Trusted>,
+    UserProtocol: Protocol<Untrusted>,
 > {
     /// The broker's `Inner`. We clone this and pass it around when needed.
     inner: Arc<Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>>,
@@ -131,8 +132,8 @@ pub struct Broker<
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Broker<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     /// Create a new `Broker` from a `Config`
@@ -176,7 +177,7 @@ impl<
 
         // Create the user (public) listener
         let user_listener = bail!(
-            <UserProtocol as Protocol>::bind(
+            UserProtocol::bind(
                 public_bind_address.as_str(),
                 tls_cert_path.clone(),
                 tls_key_path.clone(),
@@ -191,12 +192,7 @@ impl<
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            <BrokerProtocol as Protocol>::bind(
-                private_bind_address.as_str(),
-                tls_cert_path,
-                tls_key_path,
-            )
-            .await,
+            BrokerProtocol::bind(private_bind_address.as_str(), tls_cert_path, tls_key_path,).await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",

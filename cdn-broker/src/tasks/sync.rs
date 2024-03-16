@@ -4,7 +4,11 @@ use std::{sync::Arc, time::Duration};
 
 use cdn_proto::{
     bail,
-    connection::{protocols::Protocol, Bytes},
+    connection::{
+        hooks::{Trusted, Untrusted},
+        protocols::Protocol,
+        Bytes,
+    },
     crypto::signature::SignatureScheme,
     discovery::BrokerIdentifier,
     error::{Error, Result},
@@ -25,7 +29,7 @@ macro_rules! prepare_sync_message {
         );
 
         // Wrap the message in `UserSync` and serialize it
-        Bytes::from(bail!(
+        Bytes::from_unchecked(bail!(
             Message::UserSync(message.to_vec()).serialize(),
             Serialize,
             "failed to serialize full user sync map"
@@ -36,8 +40,8 @@ macro_rules! prepare_sync_message {
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     /// Perform a full user sync, sending our entire list of users to a remote broker. The broker is
@@ -91,7 +95,7 @@ impl<
         // Serialize and send the message
         self.connections.send_to_broker(
             broker,
-            Bytes::from(bail!(
+            Bytes::from_unchecked(bail!(
                 Message::Subscribe(topics).serialize(),
                 Serialize,
                 "failed to serialize topics"
@@ -113,7 +117,7 @@ impl<
         // If we have some additions,
         if !additions.is_empty() {
             // Serialize the subscribe message
-            let raw_subscribe_message = Bytes::from(bail!(
+            let raw_subscribe_message = Bytes::from_unchecked(bail!(
                 Message::Subscribe(additions).serialize(),
                 Serialize,
                 "failed to serialize topics"
@@ -124,7 +128,7 @@ impl<
         // If we have some removals,
         if !removals.is_empty() {
             // Serialize the unsubscribe message
-            let raw_unsubscribe_message = Bytes::from(bail!(
+            let raw_unsubscribe_message = Bytes::from_unchecked(bail!(
                 Message::Unsubscribe(removals).serialize(),
                 Serialize,
                 "failed to serialize topics"

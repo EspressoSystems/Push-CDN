@@ -10,7 +10,7 @@ capnpc = "0.19.0"
 [features]
 default = ["local_discovery", "insecure", "runtime-tokio"]
 
-metrics = ["dep:prometheus", "dep:lazy_static"]
+metrics = ["dep:prometheus"]
 local_discovery = ["dep:sqlx"]
 insecure = ["rustls/dangerous_configuration"]
 
@@ -41,7 +41,7 @@ sqlx = { version = "0.7.3", default-features = false, features = [
 ], optional = true }
 
 prometheus = { workspace = true, optional = true }
-lazy_static = { workspace = true, optional = true }
+lazy_static = { workspace = true }
 
 tokio = { workspace = true }
 async-std = { version = "1.12.0", features = [
@@ -68,3 +68,4 @@ kanal = "0.1.0-pre8"
 rkyv.workspace = true
 mnemonic = "1.0.1"
 derivative.workspace = true
+parking_lot.workspace = true
