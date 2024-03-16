@@ -8,7 +8,7 @@ mod retry;
 
 use cdn_proto::{
     bail,
-    connection::protocols::Protocol,
+    connection::{hooks::None, protocols::Protocol},
     crypto::signature::{Serializable, SignatureScheme},
     error::{Error, Result},
     message::{Broadcast, Direct, Message, Topic},
@@ -19,12 +19,14 @@ use retry::Retry;
 /// for common operations to and from a server. Mostly just used to make the API
 /// more ergonomic. Also keeps track of subscriptions.
 #[derive(Clone)]
-pub struct Client<Scheme: SignatureScheme, ProtocolType: Protocol>(Retry<Scheme, ProtocolType>);
+pub struct Client<Scheme: SignatureScheme, ProtocolType: Protocol<None>>(
+    Retry<Scheme, ProtocolType>,
+);
 
 pub type Config<Scheme, ProtocolType> = retry::Config<Scheme, ProtocolType>;
 pub type ConfigBuilder<Scheme, ProtocolType> = retry::ConfigBuilder<Scheme, ProtocolType>;
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol> Client<Scheme, ProtocolType> {
+impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Client<Scheme, ProtocolType> {
     /// Creates a new `Retry` from a configuration.
     ///
     /// # Errors

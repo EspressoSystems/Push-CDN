@@ -11,7 +11,10 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Protocol, Receiver, Sender},
+    connection::{
+        hooks::Untrusted,
+        protocols::{Protocol, Receiver, Sender},
+    },
     discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
@@ -24,12 +27,12 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<Scheme: SignatureScheme, UserProtocol: Protocol> {
+pub struct MarshalAuth<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     pub pd: PhantomData<(Scheme, UserProtocol)>,
 }
 
-impl<Scheme: SignatureScheme, UserProtocol: Protocol> MarshalAuth<Scheme, UserProtocol> {
+impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> MarshalAuth<Scheme, UserProtocol> {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message

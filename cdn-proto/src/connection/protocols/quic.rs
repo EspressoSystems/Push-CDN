@@ -5,11 +5,13 @@
 use async_trait::async_trait;
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
+use std::marker::PhantomData;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
 
+use crate::connection::hooks::Hooks;
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
 
@@ -36,11 +38,11 @@ use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 pub struct Quic;
 
 #[async_trait]
-impl Protocol for Quic {
+impl<H: Hooks> Protocol<H> for Quic {
     type Sender = QuicSender;
     type Receiver = QuicReceiver;
 
-    type UnfinalizedConnection = UnfinalizedQuicConnection;
+    type UnfinalizedConnection = UnfinalizedQuicConnection<H>;
     type Listener = QuicListener;
 
     async fn connect(remote_endpoint: &str) -> Result<(QuicSender, QuicReceiver)> {
@@ -120,7 +122,7 @@ impl Protocol for Quic {
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels(sender, receiver);
+        let (sender, receiver) = into_channels::<H>(sender, receiver);
 
         Ok((sender, receiver))
     }
@@ -182,7 +184,7 @@ pub struct QuicSenderRef(AsyncSender<Bytes>, AbortHandle);
 /// Convert a Quic `SendStream` and `RecvStream` to use dedicated tasks and channels
 /// under the hood.
 /// TODO: this is almost the same as with TCP, figure out how to combine them
-fn into_channels(
+fn into_channels<H: Hooks>(
     mut write_half: quinn::SendStream,
     mut read_half: quinn::RecvStream,
 ) -> (QuicSender, QuicReceiver) {
@@ -245,7 +247,7 @@ impl Sender for QuicSender {
     /// If we fail to send or serialize the message
     async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize our message
-        let raw_message = Bytes::from(bail!(
+        let raw_message = Bytes::from_unchecked(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
@@ -272,8 +274,8 @@ impl Sender for QuicSender {
     /// Gracefully finish the connection, sending any remaining data.
     /// This is done by sending two empty messages to the receiver.
     async fn finish(&self) {
-        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
-        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
+        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
+        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
     }
 }
 
@@ -321,10 +323,10 @@ impl Receiver for QuicReceiver {
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedQuicConnection(Connecting);
+pub struct UnfinalizedQuicConnection<H: Hooks>(Connecting, PhantomData<H>);
 
 #[async_trait]
-impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection {
+impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection<H> {
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
@@ -348,7 +350,7 @@ impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnecti
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels(sender, receiver);
+        let (sender, receiver) = into_channels::<H>(sender, receiver);
 
         // Clone and return the connection
         Ok((sender, receiver))
@@ -360,7 +362,7 @@ impl UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnecti
 pub struct QuicListener(pub quinn::Endpoint);
 
 #[async_trait]
-impl Listener<UnfinalizedQuicConnection> for QuicListener {
+impl<H: Hooks> Listener<UnfinalizedQuicConnection<H>> for QuicListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
@@ -368,7 +370,7 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
     /// TODO: be more descriptive with this
     /// TODO: match on whether the endpoint is closed, return a different error
     /// TODO: I think we should exit the program here, it should be a failure.
-    async fn accept(&self) -> Result<UnfinalizedQuicConnection> {
+    async fn accept(&self) -> Result<UnfinalizedQuicConnection<H>> {
         // Try to accept a connection from the QUIC endpoint
         let connection = bail_option!(
             self.0.accept().await,
@@ -376,7 +378,7 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
             "failed to accept connection"
         );
 
-        Ok(UnfinalizedQuicConnection(connection))
+        Ok(UnfinalizedQuicConnection(connection, PhantomData))
     }
 }
 

@@ -78,7 +78,7 @@ macro_rules! assert_received {
         // Assert the message is the correct one
         assert!(
             message
-                == Ok(Bytes::from(
+                == Ok(Bytes::from_unchecked(
                     $message
                         .serialize()
                         .expect("failed to re-serialize message")

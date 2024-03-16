@@ -6,7 +6,10 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Protocol, Receiver, Sender},
+    connection::{
+        hooks::{Trusted, Untrusted},
+        protocols::{Protocol, Receiver, Sender},
+    },
     crypto::signature::SignatureScheme,
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
@@ -70,7 +73,7 @@ impl BrokerAuth {
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    pub async fn verify_user<UserScheme: SignatureScheme, UserProtocol: Protocol>(
+    pub async fn verify_user<UserScheme: SignatureScheme, UserProtocol: Protocol<Untrusted>>(
         connection: &(UserProtocol::Sender, UserProtocol::Receiver),
         broker_identifier: &BrokerIdentifier,
         discovery_client: &mut DiscoveryClientType,
@@ -152,7 +155,7 @@ impl BrokerAuth {
     /// - If we have a connection failure
     pub async fn authenticate_with_broker<
         BrokerScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
     >(
         connection: &(BrokerProtocol::Sender, BrokerProtocol::Receiver),
         keypair: &KeyPair<BrokerScheme>,
@@ -232,7 +235,7 @@ impl BrokerAuth {
     ///
     /// # Errors
     /// - If verification has failed
-    pub async fn verify_broker<BrokerScheme: SignatureScheme, BrokerProtocol: Protocol>(
+    pub async fn verify_broker<BrokerScheme: SignatureScheme, BrokerProtocol: Protocol<Trusted>>(
         connection: &(BrokerProtocol::Sender, BrokerProtocol::Receiver),
         our_identifier: &BrokerIdentifier,
         our_public_key: &BrokerScheme::PublicKey,

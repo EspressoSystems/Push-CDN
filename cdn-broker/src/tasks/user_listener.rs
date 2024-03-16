@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use cdn_proto::{
-    connection::protocols::{Listener, Protocol, UnfinalizedConnection},
+    connection::{
+        hooks::{Trusted, Untrusted},
+        protocols::{Listener, Protocol, UnfinalizedConnection},
+    },
     crypto::signature::SignatureScheme,
 };
 use tokio::spawn;
@@ -14,15 +17,12 @@ use crate::Inner;
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     // We run the user listener task in a loop, accepting and handling new connections as needed.
-    pub async fn run_user_listener_task(
-        self: Arc<Self>,
-        listener: <UserProtocol as Protocol>::Listener,
-    ) {
+    pub async fn run_user_listener_task(self: Arc<Self>, listener: UserProtocol::Listener) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
             //

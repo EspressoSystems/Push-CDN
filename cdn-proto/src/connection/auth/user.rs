@@ -9,20 +9,23 @@ use std::{
 use crate::crypto::signature::Serializable;
 use crate::{
     bail,
-    connection::protocols::{Protocol, Receiver, Sender},
+    connection::{
+        hooks::None,
+        protocols::{Protocol, Receiver, Sender},
+    },
     crypto::signature::{KeyPair, SignatureScheme},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
-/// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<Scheme: SignatureScheme, ProtocolType: Protocol> {
+/// This is the `UserAuth` struct that we define methods to for authentication purposes.
+pub struct UserAuth<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
     /// and protocol type
     pub pd: PhantomData<(Scheme, ProtocolType)>,
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol> UserAuth<Scheme, ProtocolType> {
+impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, ProtocolType> {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message

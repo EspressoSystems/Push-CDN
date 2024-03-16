@@ -3,7 +3,12 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use cdn_proto::{
-    connection::protocols::Protocol, crypto::signature::SignatureScheme, discovery::DiscoveryClient,
+    connection::{
+        hooks::{Trusted, Untrusted},
+        protocols::Protocol,
+    },
+    crypto::signature::SignatureScheme,
+    discovery::DiscoveryClient,
 };
 use tokio::{spawn, time::sleep};
 use tracing::{error, warn};
@@ -13,8 +18,8 @@ use crate::Inner;
 impl<
         BrokerScheme: SignatureScheme,
         UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol,
-        UserProtocol: Protocol,
+        BrokerProtocol: Protocol<Trusted>,
+        UserProtocol: Protocol<Untrusted>,
     > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
 {
     /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
@@ -52,9 +57,7 @@ impl<
                         spawn(async move {
                             // Connect to the broker
                             let connection =
-                                match <BrokerProtocol as Protocol>::connect(&to_connect_address)
-                                    .await
-                                {
+                                match BrokerProtocol::connect(&to_connect_address).await {
                                     Ok(connection) => connection,
                                     Err(err) => {
                                         warn!("failed to connect to broker: {err}");

@@ -5,6 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use cdn_proto::{
     connection::{
+        hooks::{Trusted, Untrusted},
         protocols::{Protocol, Sender},
         Bytes, UserPublicKey,
     },
@@ -25,7 +26,7 @@ mod direct;
 mod versioned;
 
 /// Stores information about all current connections.
-pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
+pub struct Connections<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
@@ -40,7 +41,9 @@ pub struct Connections<BrokerProtocol: Protocol, UserProtocol: Protocol> {
     broadcast_map: BroadcastMap,
 }
 
-impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtocol, UserProtocol> {
+impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
+    Connections<BrokerProtocol, UserProtocol>
+{
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {
@@ -125,7 +128,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     pub fn add_broker(
         self: &Arc<Self>,
         broker_identifier: BrokerIdentifier,
-        connection: <BrokerProtocol as Protocol>::Sender,
+        connection: BrokerProtocol::Sender,
     ) {
         self.brokers.insert(broker_identifier, connection);
     }
@@ -135,7 +138,7 @@ impl<BrokerProtocol: Protocol, UserProtocol: Protocol> Connections<BrokerProtoco
     pub fn add_user(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
-        connection: <UserProtocol as Protocol>::Sender,
+        connection: UserProtocol::Sender,
     ) {
         // Add to our map
         self.users.insert(user_public_key.clone(), connection);

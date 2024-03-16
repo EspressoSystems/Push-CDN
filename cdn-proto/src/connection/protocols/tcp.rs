@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
-use std::{net::SocketAddr, result::Result as StdResult, time::Duration};
+use std::{marker::PhantomData, net::SocketAddr, result::Result as StdResult, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
@@ -19,7 +19,7 @@ use crate::connection::metrics;
 
 use crate::{
     bail, bail_option,
-    connection::Bytes,
+    connection::{hooks::Hooks, Bytes},
     error::{Error, Result},
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
@@ -34,12 +34,12 @@ use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 pub struct Tcp;
 
 #[async_trait]
-impl Protocol for Tcp {
+impl<H: Hooks> Protocol<H> for Tcp {
     type Sender = TcpSender;
     type Receiver = TcpReceiver;
 
     type Listener = TcpListener;
-    type UnfinalizedConnection = UnfinalizedTcpConnection;
+    type UnfinalizedConnection = UnfinalizedTcpConnection<H>;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     /// With TCP, this requires just connecting to the remote endpoint.
@@ -78,7 +78,7 @@ impl Protocol for Tcp {
 
         // Split the connection into a `ReadHalf` and `WriteHalf`, spawning tasks so we can operate
         // concurrently over both
-        let (sender, receiver) = into_split(stream);
+        let (sender, receiver) = into_split::<H>(stream);
 
         // Return the sender and receiver
         Ok((sender, receiver))
@@ -111,7 +111,7 @@ pub struct TcpSender(Arc<TcpSenderRef>);
 
 struct TcpSenderRef(AsyncSender<Bytes>, AbortHandle);
 
-fn into_split(connection: TcpStream) -> (TcpSender, TcpReceiver) {
+fn into_split<H: Hooks>(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task
     let (send_to_task, receive_as_task) = bounded_async(0);
 
@@ -172,7 +172,7 @@ impl Sender for TcpSender {
     /// If we fail to send or serialize the message
     async fn send_message(&self, message: Message) -> Result<()> {
         // Serialize our message
-        let raw_message = Bytes::from(bail!(
+        let raw_message = Bytes::from_unchecked(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
@@ -200,8 +200,8 @@ impl Sender for TcpSender {
     /// Gracefully finish the connection, sending any remaining data.
     /// This is done by sending two empty messages.
     async fn finish(&self) {
-        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
-        let _ = self.0 .0.send(Bytes::from(Vec::new())).await;
+        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
+        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
     }
 }
 
@@ -249,10 +249,10 @@ impl Receiver for TcpReceiver {
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedTcpConnection(TcpStream);
+pub struct UnfinalizedTcpConnection<H: Hooks>(TcpStream, PhantomData<H>);
 
 #[async_trait]
-impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection {
+impl<H: Hooks> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection<H> {
     /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
     ///
@@ -260,7 +260,7 @@ impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection 
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
         // Split the connection and start the sending and receiving tasks
-        let (sender, receiver) = into_split(self.0);
+        let (sender, receiver) = into_split::<H>(self.0);
 
         // Wrap and return the finalized connection
         Ok((sender, receiver))
@@ -272,14 +272,14 @@ impl UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection 
 pub struct TcpListener(pub tokio::net::TcpListener);
 
 #[async_trait]
-impl Listener<UnfinalizedTcpConnection> for TcpListener {
+impl<H: Hooks> Listener<UnfinalizedTcpConnection<H>> for TcpListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
     /// TODO: match on whether the endpoint is closed, return a different error
-    async fn accept(&self) -> Result<UnfinalizedTcpConnection> {
+    async fn accept(&self) -> Result<UnfinalizedTcpConnection<H>> {
         // Try to accept a connection from the underlying endpoint
         // Split into reader and writer half
         let connection = bail!(
@@ -289,7 +289,7 @@ impl Listener<UnfinalizedTcpConnection> for TcpListener {
         );
 
         // Return the unfinalized connection
-        Ok(UnfinalizedTcpConnection(connection.0))
+        Ok(UnfinalizedTcpConnection(connection.0, PhantomData))
     }
 }
 

@@ -7,7 +7,7 @@ use tokio::{sync::RwLock, task::spawn_blocking};
 
 use crate::{
     bail,
-    connection::Bytes,
+    connection::{hooks::Hooks, Bytes},
     error::{Error, Result},
     message::Message,
 };
@@ -35,7 +35,7 @@ static LISTENERS: OnceLock<RwLock<HashMap<String, ChannelExchange>>> = OnceLock:
 pub struct Memory;
 
 #[async_trait]
-impl Protocol for Memory {
+impl<H: Hooks> Protocol<H> for Memory {
     type Sender = MemorySender;
     type Receiver = MemoryReceiver;
 
@@ -124,7 +124,7 @@ impl Sender for MemorySender {
     async fn send_message(&self, message: Message) -> Result<()> {
         // TODO: TRAIT DEFAULT FOR THIS. IT'S THE SAME
         // Serialize the message
-        let raw_message = Bytes::from(bail!(
+        let raw_message = Bytes::from_unchecked(bail!(
             message.serialize(),
             Serialize,
             "failed to serialize message"
