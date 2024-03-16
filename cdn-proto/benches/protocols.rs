@@ -2,7 +2,7 @@
 
 use cdn_proto::{
     connection::{
-        hooks::None,
+        hooks::Untrusted,
         protocols::{
             quic::Quic, tcp::Tcp, Listener, Protocol, Receiver, Sender, UnfinalizedConnection,
         },
@@ -16,7 +16,7 @@ use tokio::{join, runtime::Runtime, spawn};
 
 /// Transfer a message `raw_message` from `conn1` to `conn2.` This is the primary
 /// function used for testing network protocol speed.
-async fn transfer<Proto: Protocol<None>>(
+async fn transfer<Proto: Protocol<Untrusted>>(
     conn1: (Proto::Sender, Proto::Receiver),
     conn2: (Proto::Sender, Proto::Receiver),
     raw_message: Bytes,
@@ -45,7 +45,7 @@ async fn transfer<Proto: Protocol<None>>(
 
 /// Set up our protocol benchmarks, including async runtime, given the message size
 /// to test.
-fn set_up_bench<Proto: Protocol<None>>(
+fn set_up_bench<Proto: Protocol<Untrusted>>(
     message_size: usize,
 ) -> (
     Runtime,
