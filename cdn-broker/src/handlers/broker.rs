@@ -49,6 +49,11 @@ impl<
         // Create new batch sender
         let (sender, receiver) = connection;
 
+        // If we are already connected, ignore the new connection
+        if self.connections.all_brokers().contains(&broker_identifier) {
+            return;
+        }
+
         // Add to our brokers
         self.connections
             .add_broker(broker_identifier.clone(), sender);
