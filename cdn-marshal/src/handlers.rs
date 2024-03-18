@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use cdn_proto::{
     connection::{
         auth::marshal::MarshalAuth,
@@ -7,6 +9,7 @@ use cdn_proto::{
     crypto::signature::SignatureScheme,
     mnemonic, DiscoveryClientType,
 };
+use tokio::time::timeout;
 use tracing::info;
 
 use crate::Marshal;
@@ -18,9 +21,11 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> Marshal<Scheme,
         mut discovery_client: DiscoveryClientType,
     ) {
         // Verify (authenticate) the connection
-        if let Ok(user_public_key) =
-            MarshalAuth::<Scheme, UserProtocol>::verify_user(&connection, &mut discovery_client)
-                .await
+        if let Ok(Ok(user_public_key)) = timeout(
+            Duration::from_secs(5),
+            MarshalAuth::<Scheme, UserProtocol>::verify_user(&connection, &mut discovery_client),
+        )
+        .await
         {
             info!("user {} authenticated", mnemonic(&user_public_key));
         }

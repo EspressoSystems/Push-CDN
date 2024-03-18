@@ -2,6 +2,7 @@
 //! `Arc<Inner>`.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cdn_proto::connection::hooks::{Trusted, Untrusted};
 #[cfg(feature = "strong_consistency")]
@@ -18,6 +19,7 @@ use cdn_proto::{
     message::Message,
     mnemonic,
 };
+use tokio::time::timeout;
 use tracing::info;
 
 use crate::{metrics, Inner};
@@ -34,11 +36,14 @@ impl<
         self: Arc<Self>,
         connection: (UserProtocol::Sender, UserProtocol::Receiver),
     ) {
-        // Verify (authenticate) the connection
-        let Ok((public_key, topics)) = BrokerAuth::verify_user::<UserScheme, UserProtocol>(
-            &connection,
-            &self.identity,
-            &mut self.discovery_client.clone(),
+        // Verify (authenticate) the connection. Needs to happen within 5 seconds
+        let Ok(Ok((public_key, topics))) = timeout(
+            Duration::from_secs(5),
+            BrokerAuth::verify_user::<UserScheme, UserProtocol>(
+                &connection,
+                &self.identity,
+                &mut self.discovery_client.clone(),
+            ),
         )
         .await
         else {
