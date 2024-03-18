@@ -13,6 +13,7 @@ use redis::aio::ConnectionManager;
 
 use crate::{
     bail,
+    connection::UserPublicKey,
     error::{Error, Result},
 };
 
@@ -242,6 +243,65 @@ impl DiscoveryClient for Redis {
         Ok(bail!(
             redis::cmd("GETDEL")
                 .arg(format!("{broker}/permits/{permit}"))
+                .query_async(&mut self.underlying_connection)
+                .await,
+            Connection,
+            "failed to connect to Redis"
+        ))
+    }
+
+    /// Atomically set the list of whitelisted users
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn set_whitelist(&mut self, users: Vec<UserPublicKey>) -> Result<()> {
+        let mut pipeline = redis::pipe();
+
+        pipeline
+            .atomic()
+            // Delete the current whitelist, if it exists
+            .cmd("DEL")
+            .arg(&["whitelist"]);
+
+        for user in users {
+            pipeline
+                // Add the user
+                .cmd("SADD")
+                .arg("whitelist")
+                .arg(user.as_ref());
+        }
+
+        bail!(
+            pipeline.query_async(&mut self.underlying_connection).await,
+            Connection,
+            "failed to query whitelist"
+        );
+
+        Ok(())
+    }
+
+    // (As a marshal) check Redis for the whitelist status of the key.
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn check_whitelist(&mut self, user: &UserPublicKey) -> Result<bool> {
+        // If the set does not exist, return true. The whitelist is not yet initialized
+        if !bail!(
+            redis::cmd("SCARD")
+                .arg("whitelist")
+                .query_async(&mut self.underlying_connection)
+                .await,
+            Connection,
+            "failed to connect to Redis"
+        ) {
+            return Ok(true);
+        };
+
+        // Check if the user is a member
+        Ok(bail!(
+            redis::cmd("SISMEMBER")
+                .arg("whitelist")
+                .arg(user.as_ref())
                 .query_async(&mut self.underlying_connection)
                 .await,
             Connection,

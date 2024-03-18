@@ -1,14 +1,16 @@
 use std::{
     collections::HashSet,
+    ops::Deref,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use sqlx::{query, query_as, sqlite::SqliteConnectOptions, Row, SqlitePool};
+use sqlx::{query, query_as, sqlite::SqliteConnectOptions, QueryBuilder, Row, SqlitePool};
 
 use crate::{
     bail,
+    connection::UserPublicKey,
     error::{Error, Result},
 };
 
@@ -287,6 +289,83 @@ impl DiscoveryClient for Embedded {
         );
 
         Ok(res.map(|row| row.get("user_pubkey")))
+    }
+
+    /// Atomically set the list of whitelisted users
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn set_whitelist(&mut self, users: Vec<UserPublicKey>) -> Result<()> {
+        // Create a query builder to atomically set the whitelist
+        let mut query_builder = QueryBuilder::new(
+            "
+        DROP TABLE IF EXISTS whitelist;     
+
+        CREATE TABLE IF NOT EXISTS whitelist (
+            user_public_key BYTEA PRIMARY KEY NOT NULL
+        );
+
+        INSERT INTO whitelist (user_public_key) ",
+        );
+
+        // Push each value into `user_public_key`
+        query_builder.push_values(users, |mut b, user_public_key| {
+            b.push_bind(user_public_key.deref().clone());
+        });
+
+        // Build the query
+        let query = query_builder.build();
+
+        // Execute the query
+        bail!(
+            query.execute(&self.pool).await,
+            File,
+            "failed to set whitelist"
+        );
+
+        Ok(())
+    }
+
+    // (As a marshal) check Redis for the whitelist status of the key.
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn check_whitelist(&mut self, user: &UserPublicKey) -> Result<bool> {
+        // Insert into permits
+        let res = bail!(
+            query("SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND name='whitelist';",)
+                .fetch_one(&self.pool)
+                .await,
+            File,
+            "failed to check if table exists"
+        )
+        .get::<u32, usize>(0);
+
+        // If the table does not exist (whitelist is not initialized), allow everyone through
+        if res == 0 {
+            return Ok(true);
+        }
+
+        // See if the user's public key is in the table
+        let exists: u64 = u64::from(
+            bail!(
+                query("SELECT COUNT(user_public_key) as count FROM whitelist WHERE user_public_key = ?;")
+                    .bind(&user.deref())
+                    .fetch_one(&self.pool)
+                    .await,
+                File,
+                "failed to get user's whitelist status"
+            )
+            .get::<u32, usize>(0),
+        );
+
+        if exists == 0 {
+            // The user did not exist
+            Ok(false)
+        } else {
+            // The user existed
+            Ok(true)
+        }
     }
 }
 

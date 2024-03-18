@@ -83,9 +83,24 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> MarshalAuth<Sch
             fail_verification_with_message!(connection, "timestamp is too old");
         }
 
-        // Serialize the public key so we can get its mnemonic
+        // Serialize the public key so we can get its mnemonic and whitelist status
         let Ok(public_key) = public_key.serialize() else {
             fail_verification_with_message!(connection, "failed to serialize public key");
+        };
+
+        // Check if the user is in the whitelist
+        match discovery_client
+            .check_whitelist(&UserPublicKey::from(public_key.clone()))
+            .await
+        {
+            Ok(false) => {
+                fail_verification_with_message!(connection, "not in whitelist");
+            }
+            Err(err) => {
+                error!("failed to get the get user whitelist status: {err}");
+                fail_verification_with_message!(connection, "internal server error");
+            }
+            _ => {}
         };
 
         // Get the broker with the least amount of connections

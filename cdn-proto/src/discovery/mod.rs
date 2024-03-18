@@ -8,7 +8,10 @@ use async_trait::async_trait;
 use rkyv::{Archive, Deserialize, Serialize};
 use std::result::Result as StdResult;
 
-use crate::error::{Error, Result};
+use crate::{
+    connection::UserPublicKey,
+    error::{Error, Result},
+};
 
 // If local discovery is enabled, use the embedded db
 #[cfg(feature = "local_discovery")]
@@ -56,6 +59,18 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
         broker: &BrokerIdentifier,
         permit: u64,
     ) -> Result<Option<Vec<u8>>>;
+
+    /// (As a marshal)
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn set_whitelist(&mut self, users: Vec<UserPublicKey>) -> Result<()>;
+
+    /// (As a marshal) check Redis for the whitelist status of the key.
+    ///
+    /// # Errors
+    /// - If the connection fails
+    async fn check_whitelist(&mut self, user: &UserPublicKey) -> Result<bool>;
 }
 
 /// Used as a unique identifier for a broker. Defines both public and private addresses.
