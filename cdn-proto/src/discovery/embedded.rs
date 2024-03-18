@@ -350,7 +350,7 @@ impl DiscoveryClient for Embedded {
         let exists: u64 = u64::from(
             bail!(
                 query("SELECT COUNT(user_public_key) as count FROM whitelist WHERE user_public_key = ?;")
-                    .bind(&user.deref())
+                    .bind(user.deref())
                     .fetch_one(&self.pool)
                     .await,
                 File,

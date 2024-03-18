@@ -209,9 +209,10 @@ macro_rules! read_length_delimited {
         let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
         // Read the message from the stream
-        if $stream.read_exact(&mut buffer).await.is_err() {
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await
+        else {
             return;
-        }
+        };
 
         // Add to our metrics, if desired
         #[cfg(feature = "metrics")]
@@ -229,28 +230,17 @@ macro_rules! write_length_delimited {
         let message_len = $message.len() as u32;
 
         // Write the message size to the stream
-        if let Ok(res) = timeout(Duration::from_secs(1), $stream.write_u32(message_len)).await {
-            // We didn't timeout
-            if res.is_err() {
-                // We failed to send
-                return;
-            }
-        } else {
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await
+        else {
             // We timed out
             return;
-        }
+        };
 
         // Write the message size to the stream
-        if let Ok(res) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await {
-            // We didn't timeout
-            if res.is_err() {
-                // We failed to send
-                return;
-            }
-        } else {
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await else {
             // We timed out
             return;
-        }
+        };
 
         // Increment the number of bytes we've sent by this amount
         #[cfg(feature = "metrics")]

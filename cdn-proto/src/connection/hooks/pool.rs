@@ -76,7 +76,7 @@ impl<T> Allocation<T> {
     pub fn from(value: T, permit: Option<AllocationPermit>) -> Self {
         Self {
             ptr: Arc::from(value),
-            _permit: permit.map(|p| Arc::from(p)),
+            _permit: permit.map(Arc::from),
         }
     }
 
