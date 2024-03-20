@@ -11,13 +11,12 @@ use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use redis::aio::ConnectionManager;
 
+use super::{BrokerIdentifier, DiscoveryClient};
 use crate::{
     bail,
     connection::UserPublicKey,
     error::{Error, Result},
 };
-
-use super::{BrokerIdentifier, DiscoveryClient};
 
 /// This struct is a light wrapper around a managed `Redis` connection which encpasulates
 /// an operator identifier for common operations

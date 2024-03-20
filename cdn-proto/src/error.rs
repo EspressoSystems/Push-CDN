@@ -1,6 +1,7 @@
 //! This file defines common errors used by CDN clients and servers.
 
 use core::result::Result as StdResult;
+
 use thiserror::Error;
 
 /// A wrapper around Result<T, E> that pins this error type.

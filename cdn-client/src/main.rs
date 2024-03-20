@@ -12,7 +12,6 @@ use cdn_proto::{
     error::{Error, Result},
 };
 use clap::Parser;
-
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };

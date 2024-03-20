@@ -16,29 +16,28 @@ mod tasks;
 mod tests;
 
 use std::{
-    marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 mod metrics;
-use cdn_proto::{
-    connection::hooks::{Trusted, Untrusted},
-    crypto::signature::{KeyPair, SignatureScheme},
-    metrics as proto_metrics,
-};
-use derive_builder::Builder;
-
 // TODO: figure out if we should use Tokio's here
 use cdn_proto::{
     bail,
     connection::protocols::Protocol,
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
-    parse_socket_address, DiscoveryClientType,
+    parse_socket_address,
+};
+use cdn_proto::{
+    connection::hooks::{Trusted, Untrusted},
+    crypto::signature::{KeyPair, SignatureScheme},
+    def::RunDef,
+    metrics as proto_metrics,
 };
 use connections::Connections;
+use derive_builder::Builder;
 use tokio::{select, spawn};
 use tracing::info;
 
@@ -85,64 +84,45 @@ pub struct Config<BrokerScheme: SignatureScheme> {
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
-struct Inner<
-    BrokerScheme: SignatureScheme,
-    UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol<Trusted>,
-    UserProtocol: Protocol<Untrusted>,
-> {
+struct Inner<Def: RunDef> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
     /// The (clonable) `Discovery` client that we will use to maintain consistency between brokers and marshals
-    discovery_client: DiscoveryClientType,
+    discovery_client: Def::DiscoveryClientType,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    keypair: KeyPair<BrokerScheme>,
+    keypair: KeyPair<Def::BrokerScheme>,
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<BrokerProtocol, UserProtocol>>,
-
-    /// The `PhantomData` that we need to be generic over protocol types.
-    pd: PhantomData<UserScheme>,
+    connections: Arc<Connections<Def::BrokerProtocol, Def::UserProtocol>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<
-    BrokerScheme: SignatureScheme,
-    UserScheme: SignatureScheme,
-    BrokerProtocol: Protocol<Trusted>,
-    UserProtocol: Protocol<Untrusted>,
-> {
+pub struct Broker<Def: RunDef> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>>,
+    inner: Arc<Inner<Def>>,
 
     /// The public (user -> broker) listener
-    user_listener: UserProtocol::Listener,
+    user_listener: <Def::UserProtocol as Protocol<Untrusted>>::Listener,
 
     /// The private (broker <-> broker) listener
-    broker_listener: BrokerProtocol::Listener,
+    broker_listener: <Def::BrokerProtocol as Protocol<Trusted>>::Listener,
 
     /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
     metrics_bind_address: Option<SocketAddr>,
 }
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-        UserProtocol: Protocol<Untrusted>,
-    > Broker<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Broker<Def> {
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
     /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
-    pub async fn new(config: Config<BrokerScheme>) -> Result<Self> {
+    pub async fn new(config: Config<Def::BrokerScheme>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             public_advertise_address,
@@ -170,14 +150,14 @@ impl<
 
         // Create the `Discovery` client we will use to maintain consistency
         let discovery_client = bail!(
-            DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
+            Def::DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
             Parse,
             "failed to create discovery client"
         );
 
         // Create the user (public) listener
         let user_listener = bail!(
-            UserProtocol::bind(
+            Def::UserProtocol::bind(
                 public_bind_address.as_str(),
                 tls_cert_path.clone(),
                 tls_key_path.clone(),
@@ -192,7 +172,8 @@ impl<
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            BrokerProtocol::bind(private_bind_address.as_str(), tls_cert_path, tls_key_path,).await,
+            Def::BrokerProtocol::bind(private_bind_address.as_str(), tls_cert_path, tls_key_path,)
+                .await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",
@@ -218,7 +199,6 @@ impl<
                 identity: identity.clone(),
                 keypair,
                 connections: Arc::from(Connections::new(identity)),
-                pd: PhantomData,
             }),
             metrics_bind_address,
             user_listener,

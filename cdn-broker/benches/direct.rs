@@ -1,17 +1,17 @@
 //! Benchmarks for allocating and sending direct messages.
 //! If run with `--profile-time=N seconds`, it will output a flamegraph.
 
-use cdn_proto::connection::{protocols::Sender, Bytes};
 use std::time::Duration;
 
-use cdn_broker::reexports::tests::{Run, RunDefinition};
+use cdn_broker::reexports::tests::{TestDefinition, TestRun};
 use cdn_broker::{assert_received, send_message_as};
+use cdn_proto::connection::{protocols::Sender, Bytes};
 use cdn_proto::message::{Direct, Message, Topic};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 /// The function under bench for direct messaging a user to itself.
-async fn direct_user_to_self(run: &Run) {
+async fn direct_user_to_self(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
         recipient: vec![0],
@@ -25,7 +25,7 @@ async fn direct_user_to_self(run: &Run) {
 
 /// The function under bench for direct messaging a user to another user on
 /// the same broker.
-async fn direct_user_to_user(run: &Run) {
+async fn direct_user_to_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
         recipient: vec![1],
@@ -39,7 +39,7 @@ async fn direct_user_to_user(run: &Run) {
 
 /// The function under bench for direct messaging a user to another user on
 /// a different broker.
-async fn direct_user_to_broker(run: &Run) {
+async fn direct_user_to_broker(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
         recipient: vec![2],
@@ -53,7 +53,7 @@ async fn direct_user_to_broker(run: &Run) {
 
 /// The function under bench for direct messaging (as a broker) a user to a broker
 /// with a particular user.
-async fn direct_broker_to_user(run: &Run) {
+async fn direct_broker_to_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
         recipient: vec![0],
@@ -74,7 +74,7 @@ fn bench_direct_user_to_self(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![Topic::Global]],
             connected_brokers: vec![],
         };
@@ -99,7 +99,7 @@ fn bench_direct_user_to_user(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
             connected_brokers: vec![],
         };
@@ -124,7 +124,7 @@ fn bench_direct_user_to_broker(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
             connected_brokers: vec![(vec![2], vec![Topic::Global])],
         };
@@ -149,7 +149,7 @@ fn bench_direct_broker_to_user(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
             connected_brokers: vec![(vec![2], vec![Topic::Global])],
         };

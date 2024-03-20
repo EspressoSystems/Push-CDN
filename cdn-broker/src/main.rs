@@ -4,8 +4,8 @@
 use cdn_broker::{Broker, Config, ConfigBuilder};
 use cdn_proto::{
     bail,
-    connection::protocols::{quic::Quic, tcp::Tcp},
     crypto::{rng::DeterministicRng, signature::KeyPair},
+    def::ProductionDef,
     error::{Error, Result},
 };
 use clap::Parser;
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::<BLS, BLS, Tcp, Quic>::new(broker_config).await?;
+    let broker = Broker::<ProductionDef>::new(broker_config).await?;
 
     // Start the main loop, consuming it
     broker.start().await?;

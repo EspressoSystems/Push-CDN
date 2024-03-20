@@ -2,12 +2,12 @@
 //! messages sent to/from a broker or user.
 //! TODO: clean up. Maybe use Cap'n'Proto messages directly.
 
+use std::{fmt::Display, result::Result as StdResult};
+
 use capnp::{
     message::ReaderOptions,
     serialize::{self, write_message_segments_to_words},
 };
-
-use std::{fmt::Display, result::Result as StdResult};
 
 use crate::{
     bail, bail_option,

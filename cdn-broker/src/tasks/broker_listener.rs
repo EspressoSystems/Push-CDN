@@ -4,26 +4,23 @@ use std::sync::Arc;
 
 use cdn_proto::{
     connection::{
-        hooks::{Trusted, Untrusted},
+        hooks::Trusted,
         protocols::{Listener, Protocol, UnfinalizedConnection},
     },
-    crypto::signature::SignatureScheme,
+    def::RunDef,
 };
 use tokio::spawn;
 use tracing::error;
-// TODO: change connection to be named struct instead of tuple for readability purposes
 
+// TODO: change connection to be named struct instead of tuple for readability purposes
 use crate::Inner;
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-        UserProtocol: Protocol<Untrusted>,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Inner<Def> {
     /// Runs the broker listener task in a loop.
-    pub async fn run_broker_listener_task(self: Arc<Self>, listener: BrokerProtocol::Listener) {
+    pub async fn run_broker_listener_task(
+        self: Arc<Self>,
+        listener: <Def::BrokerProtocol as Protocol<Trusted>>::Listener,
+    ) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
             //

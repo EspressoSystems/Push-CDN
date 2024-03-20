@@ -4,12 +4,8 @@ use std::{sync::Arc, time::Duration};
 
 use cdn_proto::{
     bail,
-    connection::{
-        hooks::{Trusted, Untrusted},
-        protocols::Protocol,
-        Bytes,
-    },
-    crypto::signature::SignatureScheme,
+    connection::Bytes,
+    def::RunDef,
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
@@ -37,13 +33,7 @@ macro_rules! prepare_sync_message {
     }};
 }
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-        UserProtocol: Protocol<Untrusted>,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Inner<Def> {
     /// Perform a full user sync, sending our entire list of users to a remote broker. The broker is
     /// removed if we could not send it.
     ///

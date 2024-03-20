@@ -3,9 +3,8 @@
 use async_trait::async_trait;
 use mockall::automock;
 
-use crate::{error::Result, message::Message};
-
 use super::{hooks::Hooks, Bytes};
+use crate::{error::Result, message::Message};
 pub mod memory;
 pub mod quic;
 pub mod tcp;
@@ -113,12 +112,11 @@ pub mod tests {
     use anyhow::Result;
     use tokio::{join, spawn, task::JoinHandle};
 
+    use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
     use crate::{
         connection::hooks::None,
         message::{Direct, Message},
     };
-
-    use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
     /// Test connection establishment, listening for connections, and message
     /// sending and receiving. All protocols should be calling this test function

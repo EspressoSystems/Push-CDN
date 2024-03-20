@@ -1,6 +1,9 @@
 //! In this crate we deal with the authentication flow as a broker.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    marker::PhantomData,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use tracing::error;
 
@@ -11,11 +14,11 @@ use crate::{
         protocols::{Protocol, Receiver, Sender},
     },
     crypto::signature::SignatureScheme,
+    def::RunDef,
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
-    DiscoveryClientType,
 };
 use crate::{
     connection::UserPublicKey,
@@ -23,7 +26,9 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct BrokerAuth {}
+pub struct BrokerAuth<Def: RunDef> {
+    pd: PhantomData<Def>,
+}
 
 /// We  use this macro upstream to conditionally order broker authentication flows
 /// TODO: do something else with these macros
@@ -31,7 +36,7 @@ pub struct BrokerAuth {}
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
         // Authenticate with the other broker, returning their reconnect address
-        match BrokerAuth::authenticate_with_broker::<BrokerScheme, BrokerProtocol>(
+        match BrokerAuth::<Def>::authenticate_with_broker::<Def::BrokerScheme, Def::BrokerProtocol>(
             &mut $connection,
             &$inner.keypair,
         )
@@ -51,12 +56,13 @@ macro_rules! authenticate_with_broker {
 macro_rules! verify_broker {
     ($connection: expr, $inner: expr) => {
         // Verify the other broker's authentication
-        if let Err(err) = BrokerAuth::verify_broker::<BrokerScheme, BrokerProtocol>(
-            &mut $connection,
-            &$inner.identity,
-            &$inner.keypair.public_key,
-        )
-        .await
+        if let Err(err) =
+            BrokerAuth::<Def>::verify_broker::<Def::BrokerScheme, Def::BrokerProtocol>(
+                &mut $connection,
+                &$inner.identity,
+                &$inner.keypair.public_key,
+            )
+            .await
         {
             error!("failed to verify broker: {err}");
             return;
@@ -64,7 +70,7 @@ macro_rules! verify_broker {
     };
 }
 
-impl BrokerAuth {
+impl<Def: RunDef> BrokerAuth<Def> {
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
     /// 2. Validate and remove the permit from `Redis`
@@ -73,10 +79,13 @@ impl BrokerAuth {
     /// # Errors
     /// - If authentication fails
     /// - If our connection fails
-    pub async fn verify_user<UserScheme: SignatureScheme, UserProtocol: Protocol<Untrusted>>(
-        connection: &(UserProtocol::Sender, UserProtocol::Receiver),
+    pub async fn verify_user(
+        connection: &(
+            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
+            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
+        ),
         broker_identifier: &BrokerIdentifier,
-        discovery_client: &mut DiscoveryClientType,
+        discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
@@ -121,7 +130,7 @@ impl BrokerAuth {
 
         // Try to serialize the public key
         bail!(
-            UserScheme::PublicKey::deserialize(&serialized_public_key),
+            <Def::UserScheme as SignatureScheme>::PublicKey::deserialize(&serialized_public_key),
             Crypto,
             "failed to deserialize public key"
         );

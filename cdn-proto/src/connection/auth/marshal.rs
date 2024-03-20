@@ -15,11 +15,11 @@ use crate::{
         hooks::Untrusted,
         protocols::{Protocol, Receiver, Sender},
     },
+    def::RunDef,
     discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
-    DiscoveryClientType,
 };
 use crate::{
     connection::UserPublicKey,
@@ -27,12 +27,12 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> {
+pub struct MarshalAuth<Def: RunDef> {
     /// We use `PhantomData` here so we can be generic over a signature scheme
-    pub pd: PhantomData<(Scheme, UserProtocol)>,
+    pub pd: PhantomData<Def>,
 }
 
-impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> MarshalAuth<Scheme, UserProtocol> {
+impl<Def: RunDef> MarshalAuth<Def> {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message
@@ -43,8 +43,11 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> MarshalAuth<Sch
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &(UserProtocol::Sender, UserProtocol::Receiver),
-        discovery_client: &mut DiscoveryClientType,
+        connection: &(
+            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
+            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
+        ),
+        discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -60,12 +63,14 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> MarshalAuth<Sch
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) = Scheme::PublicKey::deserialize(&auth_message.public_key) else {
+        let Ok(public_key) =
+            <Def::UserScheme as SignatureScheme>::PublicKey::deserialize(&auth_message.public_key)
+        else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !Scheme::verify(
+        if !Def::UserScheme::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,

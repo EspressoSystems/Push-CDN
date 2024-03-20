@@ -2,9 +2,6 @@
 //! This is not guarded by `![cfg(test)]` because we use the same functions
 //! when running benchmarks.
 
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
-};
 use std::sync::Arc;
 
 use cdn_proto::{
@@ -13,8 +10,12 @@ use cdn_proto::{
         Sender,
     },
     crypto::{rng::DeterministicRng, signature::KeyPair},
+    def::TestingDef,
     discovery::BrokerIdentifier,
     message::{Message, Topic},
+};
+use jf_primitives::signatures::{
+    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use tokio::spawn;
 
@@ -24,10 +25,7 @@ mod broadcast;
 #[cfg(test)]
 mod direct;
 
-use crate::{connections::DirectMap, Broker as RealBroker, Config, ConfigBuilder};
-
-/// A little type alias to help readability
-type Broker = RealBroker<BLS, BLS, Memory, Memory>;
+use crate::{connections::DirectMap, Broker, Config, ConfigBuilder};
 
 /// An actor is a [user/broker] that we inject to test message send functionality.
 pub struct InjectedActor {
@@ -92,14 +90,14 @@ macro_rules! assert_received {
 /// _DIRECTLY_ to the broker under test, along with the topics they're subscribed to,
 /// and the user index they are responsible for. A connected user has the same "identity"
 /// as its index in the `connected_users` vector.
-pub struct RunDefinition {
+pub struct TestDefinition {
     pub connected_brokers: Vec<(Vec<u8>, Vec<Topic>)>,
     pub connected_users: Vec<Vec<Topic>>,
 }
 
-/// A `Run` is converted from a `RunDefinition`. It contains actors with their
+/// A `TestRun` is converted from a `TestDefinition`. It contains actors with their
 /// sending and receiving channels so we can pretend to be talking to the broker.
-pub struct Run {
+pub struct TestRun {
     /// The connected brokers and their handles
     pub connected_brokers: Vec<InjectedActor>,
 
@@ -107,10 +105,10 @@ pub struct Run {
     pub connected_users: Vec<InjectedActor>,
 }
 
-impl RunDefinition {
+impl TestDefinition {
     /// Creates a new broker under test. This configures and starts a local broker
     /// who will be deterministically tested.
-    async fn new_broker_under_test() -> Broker {
+    async fn new_broker_under_test() -> Broker<TestingDef> {
         // Create a key for our broker [under test]
         let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
@@ -134,13 +132,13 @@ impl RunDefinition {
             .expect("failed to create broker")
     }
 
-    /// This is a helper function to inject users from our `RunDefinition` into the broker under test.
+    /// This is a helper function to inject users from our `TestDefinition` into the broker under test.
     /// It creates sending and receiving channels, spawns a receive loop on the broker,
     /// and adds the user to the internal state.
     ///
-    /// Then, it sends subscription messages to the broker for the topics described in `RunDefinition`
+    /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`
     async fn inject_users(
-        broker_under_test: &Broker,
+        broker_under_test: &Broker<TestingDef>,
         users: Vec<Vec<Topic>>,
     ) -> Vec<InjectedActor> {
         // Return this at the end, our running list of users
@@ -182,14 +180,14 @@ impl RunDefinition {
         injected_users
     }
 
-    /// This is a helper function to inject brokers from our `RunDefinition` into the broker under test.
+    /// This is a helper function to inject brokers from our `TestDefinition` into the broker under test.
     /// It creates sending and receiving channels, spawns a receive loop on the broker,
     /// and adds the broker to the internal state.
     ///
-    /// Then, it sends subscription messages to the broker for the topics described in `RunDefinition`,
+    /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`,
     /// and syncs the users up so the broker knows where to send messages.
     async fn inject_brokers(
-        broker_under_test: &Broker,
+        broker_under_test: &Broker<TestingDef>,
         brokers: Vec<(Vec<u8>, Vec<Topic>)>,
     ) -> Vec<InjectedActor> {
         // Return this at the end, our running list of brokers
@@ -254,11 +252,11 @@ impl RunDefinition {
         injected_brokers
     }
 
-    /// This is the conversion from a `RunDefinition` into a `Run`. Implicitly, the broker is started
+    /// This is the conversion from a `TestDefinition` into a `Run`. Implicitly, the broker is started
     /// and all sending and receiving operations on that broker start.
-    pub async fn into_run(self) -> Run {
+    pub async fn into_run(self) -> TestRun {
         // Create a new `Run`, which we will be returning
-        let mut run = Run {
+        let mut run = TestRun {
             connected_users: vec![],
             connected_brokers: vec![],
         };

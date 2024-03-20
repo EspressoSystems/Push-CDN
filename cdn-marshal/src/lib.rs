@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 mod handlers;
 
@@ -15,10 +15,9 @@ use cdn_proto::{
         hooks::Untrusted,
         protocols::{Listener, Protocol, UnfinalizedConnection},
     },
-    crypto::signature::SignatureScheme,
+    def::RunDef,
     discovery::DiscoveryClient,
     error::{Error, Result},
-    DiscoveryClientType,
 };
 use derive_builder::Builder;
 use tokio::spawn;
@@ -45,19 +44,15 @@ pub struct Config {
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> {
+pub struct Marshal<Def: RunDef> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<UserProtocol::Listener>,
+    listener: Arc<<Def::UserProtocol as Protocol<Untrusted>>::Listener>,
 
     /// The client we use to issue permits and check for brokers that are up
-    discovery_client: DiscoveryClientType,
-
-    /// We need this `PhantomData` to allow us to specify the signature scheme,
-    /// protocol type, and authentication flow.
-    pd: PhantomData<Scheme>,
+    discovery_client: Def::DiscoveryClientType,
 }
 
-impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> Marshal<Scheme, UserProtocol> {
+impl<Def: RunDef> Marshal<Def> {
     /// Create and return a new marshal from a bind address, and an optional
     /// TLS cert and key path.
     ///
@@ -74,14 +69,14 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> Marshal<Scheme,
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            UserProtocol::bind(bind_address.as_str(), tls_cert_path, tls_key_path).await,
+            Def::UserProtocol::bind(bind_address.as_str(), tls_cert_path, tls_key_path).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );
 
         // Create the discovery client
         let discovery_client = bail!(
-            DiscoveryClientType::new(discovery_endpoint, None).await,
+            Def::DiscoveryClientType::new(discovery_endpoint, None).await,
             Connection,
             "failed to create discovery client"
         );
@@ -90,7 +85,6 @@ impl<Scheme: SignatureScheme, UserProtocol: Protocol<Untrusted>> Marshal<Scheme,
         Ok(Self {
             listener: Arc::from(listener),
             discovery_client,
-            pd: PhantomData,
         })
     }
 

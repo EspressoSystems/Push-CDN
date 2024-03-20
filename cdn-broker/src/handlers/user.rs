@@ -4,18 +4,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdn_proto::connection::hooks::{Trusted, Untrusted};
+use cdn_proto::connection::hooks::Untrusted;
+use cdn_proto::connection::protocols::Protocol;
+use cdn_proto::connection::UserPublicKey;
+use cdn_proto::def::RunDef;
 #[cfg(feature = "strong_consistency")]
 use cdn_proto::discovery::DiscoveryClient;
-
-use cdn_proto::connection::UserPublicKey;
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{
-    connection::{
-        auth::broker::BrokerAuth,
-        protocols::{Protocol, Receiver},
-    },
-    crypto::signature::SignatureScheme,
+    connection::{auth::broker::BrokerAuth, protocols::Receiver},
     message::Message,
     mnemonic,
 };
@@ -24,22 +21,19 @@ use tracing::info;
 
 use crate::{metrics, Inner};
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-        UserProtocol: Protocol<Untrusted>,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        connection: (UserProtocol::Sender, UserProtocol::Receiver),
+        connection: (
+            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
+            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
+        ),
     ) {
         // Verify (authenticate) the connection. Needs to happen within 5 seconds
         let Ok(Ok((public_key, topics))) = timeout(
             Duration::from_secs(5),
-            BrokerAuth::verify_user::<UserScheme, UserProtocol>(
+            BrokerAuth::<Def>::verify_user(
                 &connection,
                 &self.identity,
                 &mut self.discovery_client.clone(),
@@ -107,7 +101,7 @@ impl<
     pub async fn user_receive_loop(
         &self,
         public_key: &UserPublicKey,
-        receiver: UserProtocol::Receiver,
+        receiver: <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

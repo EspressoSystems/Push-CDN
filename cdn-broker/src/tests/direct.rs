@@ -3,13 +3,14 @@
 
 use std::time::Duration;
 
-use super::RunDefinition;
-use crate::{assert_received, send_message_as};
 use cdn_proto::{
     connection::{protocols::Sender, Bytes},
     message::{Direct, Message, Topic},
 };
 use tokio::time::{sleep, timeout};
+
+use super::TestDefinition;
+use crate::{assert_received, send_message_as};
 
 /// This test tests that:
 /// 1. A user sending a message to itself on a broker has it delivered
@@ -19,7 +20,7 @@ use tokio::time::{sleep, timeout};
 #[tokio::test]
 async fn test_direct_user_to_user() {
     // This run definition: 3 brokers, 6 users
-    let run_definition = RunDefinition {
+    let run_definition = TestDefinition {
         connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
         connected_brokers: vec![
             (vec![2], vec![Topic::DA]),
@@ -71,7 +72,7 @@ async fn test_direct_user_to_user() {
 #[tokio::test]
 async fn test_direct_user_to_broker() {
     // This run definition: 3 brokers, 6 users
-    let run_definition = RunDefinition {
+    let run_definition = TestDefinition {
         connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
         connected_brokers: vec![
             (vec![3], vec![Topic::DA]),
@@ -107,7 +108,7 @@ async fn test_direct_user_to_broker() {
 #[tokio::test]
 async fn test_direct_broker_to_user() {
     // This run definition: 3 brokers, 6 users
-    let run_definition = RunDefinition {
+    let run_definition = TestDefinition {
         connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
         connected_brokers: vec![
             (vec![3], vec![Topic::DA]),

@@ -2,10 +2,11 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use async_trait::async_trait;
-
-use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use std::{marker::PhantomData, net::SocketAddr, result::Result as StdResult, time::Duration};
+use std::{net::ToSocketAddrs, sync::Arc};
+
+use async_trait::async_trait;
+use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
@@ -14,9 +15,9 @@ use tokio::{
     time::timeout,
 };
 
+use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
-
 use crate::{
     bail, bail_option,
     connection::{hooks::Hooks, Bytes},
@@ -24,9 +25,6 @@ use crate::{
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
-use std::{net::ToSocketAddrs, sync::Arc};
-
-use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
@@ -315,9 +313,10 @@ impl Drop for TcpReceiverRef {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::{anyhow, Result};
+
     use super::super::tests::test_connection as super_test_connection;
     use super::Tcp;
-    use anyhow::{anyhow, Result};
 
     #[tokio::test]
     /// Test connection establishment, listening for connections, and message

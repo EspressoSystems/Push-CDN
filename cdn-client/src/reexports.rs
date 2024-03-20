@@ -8,6 +8,14 @@ pub mod connection {
     }
 }
 
+pub mod discovery {
+    pub use cdn_proto::discovery::{embedded::Embedded, redis::Redis, DiscoveryClient};
+}
+
+pub mod def {
+    pub use cdn_proto::def::RunDef;
+}
+
 pub mod crypto {
     pub mod signature {
         pub use cdn_proto::crypto::signature::{KeyPair, Serializable, SignatureScheme};

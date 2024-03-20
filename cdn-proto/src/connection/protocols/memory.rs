@@ -1,25 +1,24 @@
 //! The memory protocol is a completely in-memory channel-based protocol.
 //! It can only be used intra-process.
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
+
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use tokio::{sync::RwLock, task::spawn_blocking};
 
+use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
+#[cfg(feature = "metrics")]
+use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 use crate::{
     bail,
     connection::{hooks::Hooks, Bytes},
     error::{Error, Result},
     message::Message,
 };
-use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock},
-};
-
-use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
-
-#[cfg(feature = "metrics")]
-use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 
 type SenderChannel = AsyncSender<Bytes>;
 type ReceiverChannel = AsyncReceiver<Bytes>;
@@ -310,9 +309,10 @@ impl Memory {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+
     use super::super::tests::test_connection as super_test_connection;
     use super::Memory;
-    use anyhow::Result;
 
     #[tokio::test]
     /// Test connection establishment, listening for connections, and message
