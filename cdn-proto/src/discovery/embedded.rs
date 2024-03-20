@@ -330,7 +330,7 @@ impl DiscoveryClient for Embedded {
     /// # Errors
     /// - If the connection fails
     async fn check_whitelist(&mut self, user: &UserPublicKey) -> Result<bool> {
-        // Insert into permits
+        // Check if the table exists. If it doesn't, allow everyone through
         let res = bail!(
             query("SELECT COUNT(name) FROM sqlite_master WHERE type='table' AND name='whitelist';",)
                 .fetch_one(&self.pool)
