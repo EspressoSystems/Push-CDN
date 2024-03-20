@@ -1,6 +1,7 @@
 //! In this module we define rng-related items.
 
 use core::result::Result as StdResult;
+
 use rand::{CryptoRng, RngCore};
 
 /// The oxymoron function. Used mostly with crypto key generation to generate

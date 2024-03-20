@@ -6,11 +6,11 @@ use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{
         auth::broker::BrokerAuth,
-        hooks::{Trusted, Untrusted},
+        hooks::Trusted,
         protocols::{Protocol, Receiver},
         UserPublicKey,
     },
-    crypto::signature::SignatureScheme,
+    def::RunDef,
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
@@ -20,17 +20,14 @@ use tracing::{error, info};
 
 use crate::{connections::DirectMap, metrics, Inner};
 
-impl<
-        BrokerScheme: SignatureScheme,
-        UserScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-        UserProtocol: Protocol<Untrusted>,
-    > Inner<BrokerScheme, UserScheme, BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (BrokerProtocol::Sender, BrokerProtocol::Receiver),
+        mut connection: (
+            <Def::BrokerProtocol as Protocol<Trusted>>::Sender,
+            <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
+        ),
         is_outbound: bool,
     ) {
         // Depending on which way the direction came in, we will want to authenticate with a different
@@ -107,7 +104,7 @@ impl<
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: BrokerProtocol::Receiver,
+        receiver: <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

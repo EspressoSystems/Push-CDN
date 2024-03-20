@@ -8,13 +8,12 @@ use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sqlx::{query, query_as, sqlite::SqliteConnectOptions, QueryBuilder, Row, SqlitePool};
 
+use super::{BrokerIdentifier, DiscoveryClient};
 use crate::{
     bail,
     connection::UserPublicKey,
     error::{Error, Result},
 };
-
-use super::{BrokerIdentifier, DiscoveryClient};
 
 #[derive(Clone)]
 pub struct Embedded {

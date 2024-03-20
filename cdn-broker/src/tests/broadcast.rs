@@ -3,13 +3,14 @@
 
 use std::time::Duration;
 
-use super::RunDefinition;
-use crate::{assert_received, send_message_as};
 use cdn_proto::{
     connection::{protocols::Sender, Bytes},
     message::{Broadcast, Message, Topic},
 };
 use tokio::time::{sleep, timeout};
+
+use super::TestDefinition;
+use crate::{assert_received, send_message_as};
 
 /// Test sending a broadcast message from a user.
 /// This test makes sure that:
@@ -18,7 +19,7 @@ use tokio::time::{sleep, timeout};
 #[tokio::test]
 async fn test_broadcast_user() {
     // This run definition: 3 brokers, 6 users
-    let run_definition = RunDefinition {
+    let run_definition = TestDefinition {
         connected_users: vec![
             vec![Topic::Global, Topic::DA],
             vec![Topic::DA],
@@ -84,7 +85,7 @@ async fn test_broadcast_user() {
 #[tokio::test]
 async fn test_broadcast_broker() {
     // This run definition: 3 brokers, 6 users
-    let run_definition = RunDefinition {
+    let run_definition = TestDefinition {
         connected_users: vec![
             vec![Topic::Global, Topic::DA],
             vec![Topic::DA],

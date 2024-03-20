@@ -2,19 +2,25 @@
 //! connection that implements our message framing and connection
 //! logic.
 
+use std::marker::PhantomData;
+use std::time::Duration;
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    result::Result as StdResult,
+    sync::Arc,
+};
+
 use async_trait::async_trait;
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
-use std::marker::PhantomData;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
 
+use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 use crate::connection::hooks::Hooks;
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
-
 use crate::connection::Bytes;
 #[cfg(feature = "insecure")]
 use crate::crypto::tls::SkipServerVerification;
@@ -24,13 +30,6 @@ use crate::{
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
-use std::{
-    net::{SocketAddr, ToSocketAddrs},
-    result::Result as StdResult,
-    sync::Arc,
-};
-
-use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
 /// listeners, connections, etc.
@@ -404,9 +403,10 @@ impl Drop for QuicReceiverRef {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::{anyhow, Result};
+
     use super::super::tests::test_connection as super_test_connection;
     use super::Quic;
-    use anyhow::{anyhow, Result};
 
     #[tokio::test]
     /// Test connection establishment, listening for connections, and message

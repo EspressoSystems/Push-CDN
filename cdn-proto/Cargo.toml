@@ -8,10 +8,9 @@ description = "Contains the common protocol definition and common code for the b
 capnpc = "0.19.0"
 
 [features]
-default = ["local_discovery", "insecure", "runtime-tokio"]
+default = ["insecure", "runtime-tokio"]
 
 metrics = ["dep:prometheus"]
-local_discovery = ["dep:sqlx"]
 insecure = ["rustls/dangerous_configuration"]
 
 runtime-tokio = []
@@ -38,7 +37,7 @@ sqlx = { version = "0.7.3", default-features = false, features = [
     "macros",
     "migrate",
     "time",
-], optional = true }
+] }
 
 prometheus = { workspace = true, optional = true }
 lazy_static = { workspace = true }

@@ -1,17 +1,18 @@
 //! In this module we define TLS-related items, such as an optional
 //! way to skip server verification.
 
+#[cfg(feature = "insecure")]
+use std::sync::Arc;
+
+use rcgen::generate_simple_self_signed;
+// TODO: have `SkipServerVerify` as a separate module
+#[cfg(feature = "insecure")]
+use rustls::ClientConfig;
+
 use crate::{
     bail,
     error::{Error, Result},
 };
-use rcgen::generate_simple_self_signed;
-
-// TODO: have `SkipServerVerify` as a separate module
-#[cfg(feature = "insecure")]
-use rustls::ClientConfig;
-#[cfg(feature = "insecure")]
-use std::sync::Arc;
 
 /// This lets us, while using `rustls` skip server verification
 /// for when we test locally. This way we don't require a self-signed

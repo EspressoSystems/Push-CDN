@@ -8,6 +8,14 @@ pub mod connection {
     }
 }
 
+pub mod discovery {
+    pub use cdn_proto::discovery::{embedded::Embedded, redis::Redis, DiscoveryClient};
+}
+
+pub mod def {
+    pub use cdn_proto::def::RunDef;
+}
+
 pub mod crypto {
     pub mod signature {
         pub use cdn_proto::crypto::signature::{KeyPair, Serializable, SignatureScheme};
@@ -25,5 +33,5 @@ pub mod error {
 /// This is not guarded by `![cfg(test)]` because we use the same functions
 /// when doing benchmarks.
 pub mod tests {
-    pub use crate::tests::{Run, RunDefinition};
+    pub use crate::tests::{TestDefinition, TestRun};
 }

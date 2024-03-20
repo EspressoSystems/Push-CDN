@@ -1,17 +1,17 @@
 //! Benchmarks for allocating and sending broadcast messages.
 //! If run with `--profile-time=N seconds`, it will output a flamegraph.
 
-use cdn_proto::connection::{protocols::Sender, Bytes};
 use std::time::Duration;
 
-use cdn_broker::reexports::tests::{Run, RunDefinition};
+use cdn_broker::reexports::tests::{TestDefinition, TestRun};
 use cdn_broker::{assert_received, send_message_as};
+use cdn_proto::connection::{protocols::Sender, Bytes};
 use cdn_proto::message::{Broadcast, Message, Topic};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 /// The function under bench for broadcasting a message to two users.
-async fn broadcast_user(run: &Run) {
+async fn broadcast_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::Global],
@@ -25,7 +25,7 @@ async fn broadcast_user(run: &Run) {
 }
 
 /// The function under bench for broadcasting a message to two brokers.
-async fn broadcast_broker(run: &Run) {
+async fn broadcast_broker(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Broadcast(Broadcast {
         topics: vec![Topic::Global],
@@ -47,7 +47,7 @@ fn bench_broadcast_user(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
             connected_brokers: vec![],
         };
@@ -71,7 +71,7 @@ fn bench_broadcast_broker(c: &mut Criterion) {
 
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
-        let run_definition = RunDefinition {
+        let run_definition = TestDefinition {
             connected_users: vec![vec![]],
             connected_brokers: vec![(vec![], vec![Topic::Global]), (vec![], vec![Topic::Global])],
         };

@@ -2,23 +2,18 @@
 //! us to derive a source of truth for the number of brokers, permits issued, and the
 //! number of users connected per broker.
 
+use std::result::Result as StdResult;
 use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use rkyv::{Archive, Deserialize, Serialize};
-use std::result::Result as StdResult;
 
 use crate::{
     connection::UserPublicKey,
     error::{Error, Result},
 };
 
-// If local discovery is enabled, use the embedded db
-#[cfg(feature = "local_discovery")]
 pub mod embedded;
-
-// If local discovery is disabled, use Redis
-#[cfg(not(feature = "local_discovery"))]
 pub mod redis;
 
 #[async_trait]

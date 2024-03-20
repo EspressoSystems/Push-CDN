@@ -4,11 +4,10 @@
 use cdn_marshal::{ConfigBuilder, Marshal};
 use cdn_proto::{
     bail,
-    connection::protocols::quic::Quic,
+    def::ProductionDef,
     error::{Error, Result},
 };
 use clap::Parser;
-use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 
 //TODO: for both client and marshal, clean up and comment `main.rs`
 // TODO: forall, add logging where we need it
@@ -45,7 +44,7 @@ async fn main() -> Result<()> {
     );
 
     // Create new `Marshal` from the config
-    let marshal = Marshal::<BLS, Quic>::new(config).await?;
+    let marshal = Marshal::<ProductionDef>::new(config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;
