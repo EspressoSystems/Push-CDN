@@ -33,6 +33,7 @@ impl MemoryPool {
 
 /// An acquired permit that allows for allocation of a memory region
 /// of a particular size.
+#[allow(dead_code)]
 pub struct AllocationPermit(OwnedSemaphorePermit);
 
 impl MemoryPool {

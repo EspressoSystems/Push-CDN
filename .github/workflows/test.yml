@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install capnproto
-      - run: cargo fmt
+      - run: cargo fmt --check
 
       # run clippy for each feature flag configuration
       # TODO: make this better
