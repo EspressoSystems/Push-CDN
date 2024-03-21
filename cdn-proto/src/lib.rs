@@ -24,7 +24,7 @@ pub const MAX_MESSAGE_SIZE: u32 = u32::MAX / 4;
 /// Include the built `capnp-rust` bindings
 #[allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]
 pub mod messages_capnp {
-    include!(concat!(env!("OUT_DIR"), "/messages_capnp.rs"));
+    include!("../schema/messages_capnp.rs");
 }
 
 /// A function for generating a cute little user mnemonic from a hash
