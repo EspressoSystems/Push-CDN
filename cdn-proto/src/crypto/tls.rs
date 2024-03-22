@@ -9,60 +9,8 @@ use crate::{
     error::{Error, Result},
 };
 
-/// The local CA certificate for testing purposes
-pub static LOCAL_CA_CERT: &'static str = "
------BEGIN CERTIFICATE-----
-MIIC/TCCAeWgAwIBAgIUN676Be3OYql08WXJqSCQT84a0GUwDQYJKoZIhvcNAQEL
-BQAwDTELMAkGA1UEBhMCVVMwIBcNMjQwMzIyMTkyNTM2WhgPMjEyNDAyMjcxOTI1
-MzZaMA0xCzAJBgNVBAYTAlVTMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC
-AQEAlIi84Slsv1kc61GAXlLcGNMzPbHbLVVhV/9dPVIAQ4nXBbLakxB8/5yZX0wg
-oqibAY4MVfWlC3WBj63wcSIEtJmSn8pCsXvvf6X3LcKD+xuhicBiydw7hvYIlqnm
-LwXaRBmV9v/XMlr65ghxCsUsQ4UzgatGAegwTPbzaErSC5FsUNh5oRIcI12QSsvH
-QWSdb/yhVqxWgv0V5PbQt70Kjjp0PIYdqG0jnMOkC0vZbH0SWykWL8Qf63SuXMZa
-4TRJLVSqZBjiwrSzrF1ZExgBe35TYLfExDvOU+VuqZCTGen1ZgS77OY3ZKo+wqNu
-BvfbzlHzrqPIYi2SWDbBGK3A0wIDAQABo1MwUTAdBgNVHQ4EFgQUk3KEFFpbONNc
-XrrgE6e8fW+5TL0wHwYDVR0jBBgwFoAUk3KEFFpbONNcXrrgE6e8fW+5TL0wDwYD
-VR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAL+s11IqudjyeK1vzYJMZ
-sb3EVZ48Vi1KFnx7I2oB5R6Xqy4wg2qbc+lZ22XLV2WUgukfUeMN9VORdDbe2rz4
-N9MmjMQcZ7iEP7/REsLLl5ku5m/6wXrli8XD3LnDyWImsjxqnGiuW4k2GekOjtax
-atk/ZUFzqiwjqjgrYg22szjY877p4rhBWP+1+sEXxRsusWCCpuLpr71xkb/Y+aM9
-rbufU03weYYDxVGEkgiYUGzIGHqQg9VLSrSLTZAegjfWFjSeWFfco2+lo+hfwoHE
-eRRd8p99H8sOMJk5VIYed7ak+PXRYiBf92ofgxfuGlUgnaddmd4o1+0y5W+Y4JOF
-bA==
------END CERTIFICATE-----
-";
-
-/// The local CA key for testing purposes
-pub static LOCAL_CA_KEY: &'static str = "
------BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCUiLzhKWy/WRzr
-UYBeUtwY0zM9sdstVWFX/109UgBDidcFstqTEHz/nJlfTCCiqJsBjgxV9aULdYGP
-rfBxIgS0mZKfykKxe+9/pfctwoP7G6GJwGLJ3DuG9giWqeYvBdpEGZX2/9cyWvrm
-CHEKxSxDhTOBq0YB6DBM9vNoStILkWxQ2HmhEhwjXZBKy8dBZJ1v/KFWrFaC/RXk
-9tC3vQqOOnQ8hh2obSOcw6QLS9lsfRJbKRYvxB/rdK5cxlrhNEktVKpkGOLCtLOs
-XVkTGAF7flNgt8TEO85T5W6pkJMZ6fVmBLvs5jdkqj7Co24G99vOUfOuo8hiLZJY
-NsEYrcDTAgMBAAECggEAJ7W60XOSuEFpwtvCNvVuFFD6hQb0stT9tln2Inu2yFek
-nchoOSMSWAAU3O5sVzA+aJcCY0TOABdFMRVuj8Bpg6L/GSso02xv5i+HursjL9H+
-SOafQppXa8iBGU6I1I96//PbLPLPJI5AP5mIJzn5kH+e+o7Ao6fgqeLnxj0ilKa+
-82SVx3VeZ9Vsek3LtuAGj9Y+6cLwoIhxHFjmb57Sa2+ngajA3gXGSs5aZbjVby47
-/Wb8A4bjM24bPNTJGX/4a6nGBYWqNuTrk0T5kVS5SW2CIWIz/fFZTlQMLqXoWu2j
-Q/y6CHFjAJ64/jhd3gTATy7Ppz7TaSGDmFwrvsr74QKBgQDLdkRdH0c9R21FlXX4
-yEB+3wt45e5mwKfoaBcnfcP78QmpVv7CH2YZKbtNch9dPrfzoSDxeCS77VDkdV/f
-D3pYcVJm/NSB4dvu2gEpuyQny5mycgVHwO/2ap/hTj/5ptn/4WRXPEANXDzxFeaX
-eIKfBcTVDlOIODHobd6L8K+k8QKBgQC643+B3PaS+yZ6yFrRXvn9SMQsmrx4Q1ye
-sns+FzlcE/Zv2cNXwRhk5dYwsjpzcPEYxUwbnypJf49UrjKhTpdbcbV455m180Ez
-oQowru2DxZ9ocp2Lk/SGMkcjJ0xY+S1ah5e6isGrlsHRvqj+uzAbmkp7KDfmKR9C
-ngFbq+PyAwKBgB45ACixB70DiijG7dI5tNLjwOmBhis/PPHZ3G6iUOVwxZWg9ZDS
-ZzEfsNHtPNl2Ao8vBRy5UwOTWevFv6r7upm+o5Xmwo5UhX3yZi/Tu6gppzgJld01
-vK9m4T7vh7NG5KUMzwHiUkVpySeqsCkZ3pVOnxFi4meeqVM0VtWEuCKRAoGBAKxZ
-16JUu9Tq5x6+nPqPY26RZ9FW1k72mHkGUp/9XPmss02NfxfzzOJoD7MS+tKxqrbU
-ZQ7oJ2Bm0jEfATQ/vVgosloRBHGHJ29MqZAiEoq+evchFGe/h/cmcPJbcI5xJcFi
-YKw5AMiUnKQo98MLsB8UmHGhsoOBEwIlo0z+ZZYvAoGAXMmdQYdO/hvS8HWvc0I9
-uXJDyO47R60qpaCXVx0as9oYzA958gzPRbD/PuUkWVZbpF1hlauq+WVgaDVQ3qYl
-nymFiogQaM7Bbp8NpMpI+7xmccefBfu5lhiTQdyETvIWsds0RUekK5aQzfFqtMoW
-VI3tO/7cIXpdObDJsn6pZ7A=
------END PRIVATE KEY-----
-";
+// Include the build-generated testing certificates
+include!(concat!(env!("OUT_DIR"), "/testing_certs.rs"));
 
 /// The production CA cert
 pub static PROD_CA_CERT: &'static str = "

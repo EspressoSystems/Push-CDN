@@ -6,6 +6,7 @@ description = "Contains the common protocol definition and common code for the b
 
 [build-dependencies]
 capnpc = "0.19.0"
+rcgen.workspace = true
 
 [features]
 default = ["runtime-tokio"]
@@ -63,7 +64,7 @@ warp = "0.3.6"
 anyhow = "1.0.79"
 kanal = "0.1.0-pre8"
 rkyv.workspace = true
-rcgen = { version = "0.12.1", features = ["x509-parser", "pem"] }
 mnemonic = "1.0.1"
+rcgen.workspace = true
 derivative.workspace = true
 parking_lot.workspace = true
