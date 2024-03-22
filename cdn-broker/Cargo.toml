@@ -6,10 +6,9 @@ edition = "2021"
 description = "Defines the broker server, which is responsible for routing messages from clients"
 
 [features]
-default = ["insecure", "runtime-tokio", "strong_consistency"]
+default = ["runtime-tokio", "strong_consistency"]
 
 strong_consistency = []
-insecure = ["cdn-proto/insecure"]
 
 runtime-tokio = ["cdn-proto/runtime-tokio"]
 runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]

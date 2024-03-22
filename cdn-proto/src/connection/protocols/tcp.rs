@@ -7,6 +7,7 @@ use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
+use rustls::{Certificate, PrivateKey};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
@@ -44,7 +45,10 @@ impl<H: Hooks> Protocol<H> for Tcp {
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: &str) -> Result<(Self::Sender, Self::Receiver)>
+    async fn connect(
+        remote_endpoint: &str,
+        _use_local_authority: bool,
+    ) -> Result<(Self::Sender, Self::Receiver)>
     where
         Self: Sized,
     {
@@ -89,8 +93,8 @@ impl<H: Hooks> Protocol<H> for Tcp {
     /// - If we cannot parse the bind address
     async fn bind(
         bind_address: &str,
-        _maybe_tls_cert_path: Option<String>,
-        _maybe_tls_key_path: Option<String>,
+        _certificate: Certificate,
+        _key: PrivateKey,
     ) -> Result<Self::Listener> {
         // Parse the bind address
         let bind_address: SocketAddr = parse_socket_address!(bind_address);

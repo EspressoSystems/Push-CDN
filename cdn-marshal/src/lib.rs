@@ -15,6 +15,7 @@ use cdn_proto::{
         hooks::Untrusted,
         protocols::{Listener, Protocol, UnfinalizedConnection},
     },
+    crypto::tls::{generate_cert_from_ca, load_ca},
     def::RunDef,
     discovery::DiscoveryClient,
     error::{Error, Result},
@@ -32,13 +33,13 @@ pub struct Config {
     /// The discovery client endpoint (either Redis or local depending on feature)
     discovery_endpoint: String,
 
-    /// The optional TLS cert path. If one is not specified, it will be self-signed
+    /// An optional TLS CA cert path. If not specified, will use the local one.
     #[builder(default)]
-    tls_cert_path: Option<String>,
+    pub ca_cert_path: Option<String>,
 
-    /// The optional TLS key path. If one is not specified, it will be self-signed
+    /// An optional TLS CA key path. If not specified, will use the local one.
     #[builder(default)]
-    tls_key_path: Option<String>,
+    pub ca_key_path: Option<String>,
 }
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
@@ -63,13 +64,19 @@ impl<Def: RunDef> Marshal<Def> {
         let Config {
             bind_address,
             discovery_endpoint,
-            tls_cert_path,
-            tls_key_path,
+            ca_cert_path,
+            ca_key_path,
         } = config;
+
+        // Conditionally load CA cert and key in
+        let (ca_cert, ca_key) = load_ca(ca_cert_path, ca_key_path)?;
+
+        // Generate a cert from the provided CA cert and key
+        let (tls_cert, tls_key) = generate_cert_from_ca(&ca_cert, &ca_key)?;
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            Def::UserProtocol::bind(bind_address.as_str(), tls_cert_path, tls_key_path).await,
+            Def::UserProtocol::bind(bind_address.as_str(), tls_cert, tls_key).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );

@@ -6,9 +6,7 @@ edition = "2021"
 description = "Defines client interactions for both marshals and brokers"
 
 [features]
-default = ["insecure", "runtime-tokio"]
-
-insecure = ["cdn-proto/insecure"]
+default = ["runtime-tokio"]
 
 runtime-tokio = ["cdn-proto/runtime-tokio"]
 runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
