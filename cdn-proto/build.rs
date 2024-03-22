@@ -19,11 +19,11 @@ fn main() {
 
     // Write the testing certificate information to the file
     fs::write(
-        &dest_path,
+        dest_path,
         format!(
             "
-            pub static LOCAL_CA_CERT: &'static str = \"{}\";
-            pub static LOCAL_CA_KEY: &'static str = \"{}\";
+            pub static LOCAL_CA_CERT: &str = \"{}\";
+            pub static LOCAL_CA_KEY: &str = \"{}\";
             ",
             ca_cert.serialize_pem().expect("failed to serialize cert"),
             ca_cert.serialize_private_key_pem()

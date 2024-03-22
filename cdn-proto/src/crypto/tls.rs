@@ -13,7 +13,7 @@ use crate::{
 include!(concat!(env!("OUT_DIR"), "/testing_certs.rs"));
 
 /// The production CA cert
-pub static PROD_CA_CERT: &'static str = "
+pub static PROD_CA_CERT: &str = "
 -----BEGIN CERTIFICATE-----
 MIIC/TCCAeWgAwIBAgIUWZANCdQpMOjl2frhwHg8GCaZMAUwDQYJKoZIhvcNAQEL
 BQAwDTELMAkGA1UEBhMCVVMwIBcNMjQwMzIyMTkzNTI5WhgPMjEyNDAyMjcxOTM1
