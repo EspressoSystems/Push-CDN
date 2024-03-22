@@ -32,5 +32,5 @@ fn main() {
     .expect("failed to write to ");
 
     // Only re-run if this build script changes
-    println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=build.rs");
 }
