@@ -8,6 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
+use rustls::{Certificate, PrivateKey};
 use tokio::{sync::RwLock, task::spawn_blocking};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
@@ -45,7 +46,10 @@ impl<H: Hooks> Protocol<H> for Memory {
     ///
     /// # Errors
     /// - If the listener is not listening
-    async fn connect(remote_endpoint: &str) -> Result<(MemorySender, MemoryReceiver)> {
+    async fn connect(
+        remote_endpoint: &str,
+        _use_local_authority: bool,
+    ) -> Result<(MemorySender, MemoryReceiver)> {
         // If the peer is not listening, return an error
         // Get or initialize the channels as a static value
         let listeners = LISTENERS.get_or_init(RwLock::default).read().await;
@@ -88,8 +92,8 @@ impl<H: Hooks> Protocol<H> for Memory {
     /// - If we fail to bind to the local address
     async fn bind(
         bind_address: &str,
-        _maybe_tls_cert_path: Option<String>,
-        _maybe_tls_key_path: Option<String>,
+        _certificate: Certificate,
+        _key: PrivateKey,
     ) -> Result<Self::Listener> {
         // Create our channels
         let (send_to_us, receive_from_them) = unbounded_async();

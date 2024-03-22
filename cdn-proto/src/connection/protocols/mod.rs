@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use mockall::automock;
+use rustls::{Certificate, PrivateKey};
 
 use super::{hooks::Hooks, Bytes};
 use crate::{error::Result, message::Message};
@@ -23,7 +24,10 @@ pub trait Protocol<H: Hooks>: Send + Sync + 'static {
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: &str) -> Result<(Self::Sender, Self::Receiver)>;
+    async fn connect(
+        remote_endpoint: &str,
+        use_local_authority: bool,
+    ) -> Result<(Self::Sender, Self::Receiver)>;
 
     /// Bind to the local address, returning an instance of `Listener`.
     ///
@@ -31,8 +35,8 @@ pub trait Protocol<H: Hooks>: Send + Sync + 'static {
     /// If we fail to bind to the given socket address
     async fn bind(
         bind_address: &str,
-        maybe_tls_cert_path: Option<String>,
-        maybe_tls_key_path: Option<String>,
+        certificate: Certificate,
+        key: PrivateKey,
     ) -> Result<Self::Listener>;
 }
 
@@ -115,14 +119,18 @@ pub mod tests {
     use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
     use crate::{
         connection::hooks::None,
+        crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
         message::{Direct, Message},
     };
 
     /// Test connection establishment, listening for connections, and message
     /// sending and receiving. All protocols should be calling this test function
     pub async fn test_connection<P: Protocol<None>>(bind_address: String) -> Result<()> {
+        // Generate cert signed by local CA
+        let (cert, key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)?;
+
         // Create listener
-        let listener = P::bind(bind_address.as_str(), None, None).await?;
+        let listener = P::bind(bind_address.as_str(), cert, key).await?;
 
         // The messages we will send and receive
         let new_connection_to_listener = Message::Direct(Direct {
@@ -159,7 +167,7 @@ pub mod tests {
         // Spawn a task to connect and send and receive the message
         let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
             // Connect to the remote
-            let (sender, receiver) = P::connect(bind_address.as_str()).await?;
+            let (sender, receiver) = P::connect(bind_address.as_str(), true).await?;
 
             // Receive a message, assert it's the correct one
             let message = receiver.recv_message().await?;

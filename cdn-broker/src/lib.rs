@@ -26,6 +26,7 @@ mod metrics;
 use cdn_proto::{
     bail,
     connection::protocols::Protocol,
+    crypto::tls::{generate_cert_from_ca, load_ca},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     parse_socket_address,
@@ -74,13 +75,13 @@ pub struct Config<BrokerScheme: SignatureScheme> {
 
     pub keypair: KeyPair<BrokerScheme>,
 
-    /// An optional TLS cert path
+    /// An optional TLS CA cert path. If not specified, will use the local one.
     #[builder(default)]
-    pub tls_cert_path: Option<String>,
+    pub ca_cert_path: Option<String>,
 
-    /// An optional TLS key path
+    /// An optional TLS CA key path. If not specified, will use the local one.
     #[builder(default)]
-    pub tls_key_path: Option<String>,
+    pub ca_key_path: Option<String>,
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
@@ -138,8 +139,8 @@ impl<Def: RunDef> Broker<Def> {
             keypair,
 
             discovery_endpoint,
-            tls_cert_path,
-            tls_key_path,
+            ca_cert_path,
+            ca_key_path,
         } = config;
 
         // Create a unique broker identifier
@@ -155,12 +156,18 @@ impl<Def: RunDef> Broker<Def> {
             "failed to create discovery client"
         );
 
+        // Conditionally load CA cert and key in
+        let (ca_cert, ca_key) = load_ca(ca_cert_path, ca_key_path)?;
+
+        // Generate a cert from the provided CA cert and key
+        let (tls_cert, tls_key) = generate_cert_from_ca(&ca_cert, &ca_key)?;
+
         // Create the user (public) listener
         let user_listener = bail!(
             Def::UserProtocol::bind(
                 public_bind_address.as_str(),
-                tls_cert_path.clone(),
-                tls_key_path.clone(),
+                tls_cert.clone(),
+                tls_key.clone()
             )
             .await,
             Connection,
@@ -172,8 +179,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            Def::BrokerProtocol::bind(private_bind_address.as_str(), tls_cert_path, tls_key_path,)
-                .await,
+            Def::BrokerProtocol::bind(private_bind_address.as_str(), tls_cert, tls_key).await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",
