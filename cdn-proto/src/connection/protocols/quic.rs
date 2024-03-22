@@ -72,7 +72,7 @@ impl<H: Hooks> Protocol<H> for Quic {
             "failed to bind to local address"
         );
 
-        // Pick which authority to trust whether or not we have requested
+        // Pick which authority to trust based on whether or not we have requested
         // to use the local one
         let root_ca = if use_local_authority {
             LOCAL_CA_CERT
