@@ -8,7 +8,6 @@ use cdn_proto::{
         },
         Bytes,
     },
-    crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
     message::{Broadcast, Message},
 };
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -62,12 +61,8 @@ fn set_up_bench<Proto: Protocol<Untrusted>>(
         // Find random, open port to use
         let port = portpicker::pick_unused_port().expect("no ports available");
 
-        // Generate cert from local CA for testing
-        let (tls_cert, tls_key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)
-            .expect("failed to generate TLS cert from CA");
-
         // Create listener, bind to port
-        let listener = Proto::bind(&format!("127.0.0.1:{}", port), tls_cert, tls_key)
+        let listener = Proto::bind(&format!("127.0.0.1:{}", port), None, None)
             .await
             .expect("failed to listen on port");
 
@@ -85,7 +80,7 @@ fn set_up_bench<Proto: Protocol<Untrusted>>(
         });
 
         // Attempt to connect
-        let conn1 = Proto::connect(&format!("127.0.0.1:{}", port), true)
+        let conn1 = Proto::connect(&format!("127.0.0.1:{}", port))
             .await
             .expect("failed to connect to listener");
 

@@ -39,10 +39,6 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// or a marshal.
     endpoint: String,
 
-    /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
-    /// a production environment.
-    use_local_authority: bool,
-
     /// The send-side of the connection.
     sender: Arc<RwLock<ProtocolType::Sender>>,
 
@@ -67,11 +63,6 @@ pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// This is the remote address that we authenticate to. It can either be a broker
     /// or a marshal.
     pub endpoint: String,
-
-    /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
-    /// a production environment.
-    #[builder(default = "true")]
-    pub use_local_authority: bool,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
@@ -114,7 +105,6 @@ macro_rules! try_with_reconnect {
                             // Create a connection
                             match connect_and_authenticate::<Scheme, ProtocolType>(
                                 &inner.endpoint,
-                                inner.use_local_authority,
                                 &inner.keypair,
                                 inner.subscribed_topics.read().await.clone(),
                             )
@@ -154,7 +144,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
-            use_local_authority,
             keypair,
             subscribed_topics,
             pd: _,
@@ -170,7 +159,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
             // Try to connect and authenticate
             match connect_and_authenticate::<Scheme, ProtocolType>(
                 &endpoint,
-                use_local_authority,
                 &keypair,
                 subscribed_topics.read().await.clone(),
             )
@@ -199,7 +187,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         Ok(Self {
             inner: Arc::from(Inner {
                 endpoint,
-                use_local_authority,
                 // TODO: parameterize batch params
                 sender: Arc::from(RwLock::from(connection.0)),
                 receiver: Arc::from(RwLock::from(connection.1)),
@@ -257,13 +244,12 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
 /// If we failed to connect or authenticate to the marshal or broker.
 async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protocol<None>>(
     marshal_endpoint: &str,
-    use_local_authority: bool,
     keypair: &KeyPair<Scheme>,
     subscribed_topics: HashSet<Topic>,
 ) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)> {
     // Make the connection to the marshal
     let connection = bail!(
-        ProtocolType::connect(marshal_endpoint, use_local_authority).await,
+        ProtocolType::connect(marshal_endpoint).await,
         Connection,
         "failed to connect to endpoint"
     );
@@ -277,7 +263,7 @@ async fn connect_and_authenticate<Scheme: SignatureScheme, ProtocolType: Protoco
 
     // Make the connection to the broker
     let connection = bail!(
-        ProtocolType::connect(&broker_address, use_local_authority).await,
+        ProtocolType::connect(&broker_address).await,
         Connection,
         "failed to connect to broker"
     );

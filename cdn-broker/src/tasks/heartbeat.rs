@@ -44,9 +44,7 @@ impl<Def: RunDef> Inner<Def> {
                         spawn(async move {
                             // Connect to the broker
                             let connection =
-                                // Our TCP protocol is unsecured, so the cert we use does not matter.
-                                match Def::BrokerProtocol::connect(&to_connect_address, true).await
-                                {
+                                match Def::BrokerProtocol::connect(&to_connect_address).await {
                                     Ok(connection) => connection,
                                     Err(err) => {
                                         warn!("failed to connect to broker: {err}");

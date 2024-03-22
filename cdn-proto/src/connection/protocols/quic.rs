@@ -13,7 +13,6 @@ use std::{
 use async_trait::async_trait;
 use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
-use rustls::{Certificate, PrivateKey, RootCertStore};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
@@ -23,13 +22,13 @@ use crate::connection::hooks::Hooks;
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
 use crate::connection::Bytes;
-use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
-use crate::parse_socket_address;
+#[cfg(feature = "insecure")]
+use crate::crypto::tls::SkipServerVerification;
 use crate::{
-    bail, bail_option,
+    bail, bail_option, crypto,
     error::{Error, Result},
     message::Message,
-    read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
@@ -45,10 +44,7 @@ impl<H: Hooks> Protocol<H> for Quic {
     type UnfinalizedConnection = UnfinalizedQuicConnection<H>;
     type Listener = QuicListener;
 
-    async fn connect(
-        remote_endpoint: &str,
-        use_local_authority: bool,
-    ) -> Result<(QuicSender, QuicReceiver)> {
+    async fn connect(remote_endpoint: &str) -> Result<(QuicSender, QuicReceiver)> {
         // Parse the socket address
         let remote_address = bail_option!(
             bail!(
@@ -59,6 +55,14 @@ impl<H: Hooks> Protocol<H> for Quic {
             .next(),
             Connection,
             "did not find suitable address for endpoint"
+        );
+
+        // Parse host for certificate. We need this to ensure that the
+        // TLS cert matches what the server is providing.
+        let domain_name = bail_option!(
+            remote_endpoint.split(':').next(),
+            Parse,
+            "failed to parse suitable host from provided endpoint"
         );
 
         // Create QUIC endpoint
@@ -72,27 +76,14 @@ impl<H: Hooks> Protocol<H> for Quic {
             "failed to bind to local address"
         );
 
-        // Pick which authority to trust based on whether or not we have requested
-        // to use the local one
-        let root_ca = if use_local_authority {
-            LOCAL_CA_CERT
-        } else {
-            PROD_CA_CERT
-        };
+        // Set up TLS configuration
+        #[cfg(not(feature = "insecure"))]
+        // Production mode: native certs
+        let mut config = ClientConfig::with_native_roots();
 
-        // Parse the provided CA in `.PEM` format
-        let root_ca = bail!(pem::parse(root_ca), Parse, "failed to parse PEM file").into_contents();
-
-        // Create root certificate store and add our CA
-        let mut root_cert_store = RootCertStore::empty();
-        bail!(
-            root_cert_store.add(&Certificate(root_ca)),
-            File,
-            "failed to add certificate to root store"
-        );
-
-        // Create config from the root store
-        let mut config: ClientConfig = ClientConfig::with_root_certificates(root_cert_store);
+        // Local testing mode: skip server verification, insecure
+        #[cfg(feature = "insecure")]
+        let mut config = ClientConfig::new(SkipServerVerification::new_config());
 
         // Enable sending of keep-alives
         let mut transport_config = TransportConfig::default();
@@ -105,7 +96,7 @@ impl<H: Hooks> Protocol<H> for Quic {
         // Connect with QUIC endpoint to remote address
         let connection = bail!(
             bail!(
-                endpoint.connect(remote_address, "espresso"),
+                endpoint.connect(remote_address, domain_name),
                 Connection,
                 "failed quic connect to remote address"
             )
@@ -144,15 +135,25 @@ impl<H: Hooks> Protocol<H> for Quic {
     /// - If we cannot bind to the local interface
     async fn bind(
         bind_address: &str,
-        certificate: Certificate,
-        key: PrivateKey,
+        maybe_tls_cert_path: Option<String>,
+        maybe_tls_key_path: Option<String>,
     ) -> Result<Self::Listener> {
         // Parse the bind address
         let bind_address: SocketAddr = parse_socket_address!(bind_address);
 
+        // Conditionally load or generate a certificate and key
+        let (certificates, key) = bail!(
+            crypto::tls::load_or_self_sign_tls_certificate_and_key(
+                maybe_tls_cert_path,
+                maybe_tls_key_path,
+            ),
+            Crypto,
+            "failed to load or self-sign TLS certificate"
+        );
+
         // Create server configuration from the loaded certificate
         let mut server_config = bail!(
-            ServerConfig::with_single_cert(vec![certificate], key),
+            ServerConfig::with_single_cert(certificates, key),
             Crypto,
             "failed to load TLS certificate"
         );

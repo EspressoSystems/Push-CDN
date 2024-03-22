@@ -18,7 +18,6 @@ async-std = { version = "1.12.0", features = ["tokio1", "attributes"] }
 rkyv = { version = "0.7.44", features = ["validation"] }
 derivative = "2.2.0"
 parking_lot = "0.12.1"
-rcgen = { version = "0.12.1", features = ["x509-parser", "pem"] }
 
 # Dev dependencies (can't be defined explicitly in the workspace)
 # TODO: figure out if this actually builds on non-test targets
