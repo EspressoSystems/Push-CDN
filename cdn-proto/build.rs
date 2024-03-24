@@ -29,7 +29,7 @@ fn main() {
             ca_cert.serialize_private_key_pem()
         ),
     )
-    .expect("failed to write to ");
+    .expect("failed to write to build directory");
 
     // Only re-run if this build script changes
     println!("cargo:rerun-if-changed=build.rs");
