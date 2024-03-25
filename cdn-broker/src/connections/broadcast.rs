@@ -145,7 +145,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn test_relational_map() {
+    fn test_relational_map() {
         let mut map: RelationalMap<&str, u64> = RelationalMap::new();
 
         // Associate "user0" with 0 and "user1" with 1

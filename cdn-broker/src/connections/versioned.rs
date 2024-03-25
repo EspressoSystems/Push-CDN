@@ -233,3 +233,80 @@ impl<
         changes
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::VersionedMap;
+
+    #[test]
+    fn test_insert_remove() {
+        // Create the map under test
+        let mut map: VersionedMap<&str, &str, u64> = VersionedMap::new(0);
+
+        // Insert "user0" as having "broker0" value
+        map.insert("user0", "broker0");
+        assert!(map.get(&"user0") == Some(&"broker0"));
+
+        // Remove "user0"
+        map.remove("user0");
+        assert!(map.get(&"user0") == None);
+    }
+
+    #[test]
+    fn test_conflict() {
+        // Create the maps under test
+        let mut map_0: VersionedMap<&str, &str, u64> = VersionedMap::new(0);
+        let mut map_1: VersionedMap<&str, &str, u64> = VersionedMap::new(1);
+
+        // Insert "user0" as having "broker0" value
+        map_0.insert("user0", "broker0");
+
+        // Insert "user0" as having "broker1" value (on map 1)
+        map_1.insert("user0", "broker1");
+
+        // Merge the maps, expect higher conflict identity to win
+        map_0.merge(map_1.get_full());
+        map_1.merge(map_0.get_full());
+        assert!(map_0.get(&"user0") == Some(&"broker1"));
+        assert!(map_1.get(&"user0") == Some(&"broker1"));
+    }
+
+    #[test]
+    fn test_partial() {
+        // Create the maps under test
+        let mut map_0: VersionedMap<&str, &str, u64> = VersionedMap::new(0);
+        let mut map_1: VersionedMap<&str, &str, u64> = VersionedMap::new(1);
+
+        // Insert user0 as belonging to broker0
+        map_0.insert("user0", "broker0");
+
+        // Get diff, discarding current
+        map_0.diff();
+
+        // Insert user1 as belonging to broker0
+        map_0.insert("user1", "broker0");
+
+        // Get new diff
+        let new_diff = map_0.diff();
+
+        // Merge map_1 with new_diff, expecting user0 to have a value but not user1
+        map_1.merge(new_diff);
+        assert!(map_1.get(&"user0") == None);
+        assert!(map_1.get(&"user1") == Some(&"broker0"));
+
+        // Full sync, expect now to be present
+        map_1.merge(map_0.get_full());
+        assert!(map_1.get(&"user0") == Some(&"broker0"));
+
+        // Map 1 removes value, syncs
+        map_1.remove(&"user0");
+
+        // Merge map0 with map 1's diff
+        map_0.merge(map_1.diff());
+
+        // Expect user0 to be gone from map0
+        assert!(map_0.get(&"user0") == None);
+    }
+
+    // TODO: fuzzy tests for this
+}
