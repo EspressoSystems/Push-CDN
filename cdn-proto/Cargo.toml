@@ -12,8 +12,8 @@ default = ["runtime-tokio"]
 
 metrics = ["dep:prometheus"]
 
-runtime-tokio = []
-runtime-async-std = ["dep:async-std"]
+runtime-tokio = ["sqlx/runtime-tokio"]
+runtime-async-std = ["dep:async-std", "sqlx/runtime-async-std"]
 
 [dev-dependencies]
 portpicker = "0.1.1"
@@ -31,7 +31,6 @@ harness = false
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 
 sqlx = { version = "0.7.3", default-features = false, features = [
-    "runtime-tokio",
     "sqlite",
     "macros",
     "migrate",
