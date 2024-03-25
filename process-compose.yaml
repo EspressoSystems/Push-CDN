@@ -14,13 +14,13 @@ processes:
     command: cargo run --package cdn-broker --release -- --metrics-port=9091 --public-advertise-address 127.0.0.1:8085 --private-bind-port 8084 --public-bind-port 8085 -d "redis://:changeme!@localhost:6379"
 
   client_0:
-    command: cargo run --bin cdn-client --release -- --id 0
+    command: cargo run --bin cdn-client --release
     depends_on:
       marshal_0:
         condition: process_started
   
   client_1:
-    command: cargo run --bin cdn-client --release -- --id 1
+    command: cargo run --bin cdn-client --release
     depends_on:
       marshal_0:
         condition: process_started

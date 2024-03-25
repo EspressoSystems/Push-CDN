@@ -92,6 +92,13 @@ async fn main() {
 ```
 Full example available [here](./cdn-client/src/main.rs)
 
+## Running locally
+Running locally can be achieved via the supplied `process-compose.yaml`:
+```bash
+process-compose up
+```
+
+It requires installation of `KeyDB` or `Redis`.
 
 ## License
 ### Copyright
