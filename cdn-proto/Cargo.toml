@@ -5,7 +5,6 @@ edition = "2021"
 description = "Contains the common protocol definition and common code for the broker, client, and marshal"
 
 [build-dependencies]
-capnpc = "0.19.0"
 rcgen.workspace = true
 
 [features]
