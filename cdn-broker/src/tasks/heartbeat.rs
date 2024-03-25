@@ -65,8 +65,8 @@ impl<Def: RunDef> Inner<Def> {
                 }
             }
 
-            // Sleep for 20 seconds
-            sleep(Duration::from_secs(20)).await;
+            // Sleep for 10 seconds
+            sleep(Duration::from_secs(10)).await;
         }
     }
 }

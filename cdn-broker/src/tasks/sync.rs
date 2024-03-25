@@ -147,7 +147,7 @@ impl<Def: RunDef> Inner<Def> {
 
             // Sleep
             // TODO: parameterize this
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(10)).await;
         }
     }
 }
