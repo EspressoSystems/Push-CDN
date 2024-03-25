@@ -808,6 +808,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "prometheus",
+ "rand",
  "rkyv",
  "tokio",
  "tracing",

@@ -43,3 +43,4 @@ rkyv.workspace = true
 derivative.workspace = true
 dashmap = "5.5.3"
 parking_lot.workspace = true
+rand.workspace = true

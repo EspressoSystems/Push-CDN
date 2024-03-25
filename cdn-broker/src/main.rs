@@ -4,7 +4,7 @@
 use cdn_broker::{Broker, Config, ConfigBuilder};
 use cdn_proto::{
     bail,
-    crypto::{rng::DeterministicRng, signature::KeyPair},
+    crypto::signature::KeyPair,
     def::ProductionDef,
     error::{Error, Result},
 };
@@ -13,6 +13,7 @@ use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use local_ip_address::local_ip;
+use rand::{rngs::StdRng, SeedableRng};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -45,6 +46,10 @@ struct Args {
     /// The (private) port to bind to for connections from other brokers
     #[arg(long, default_value_t = 1739)]
     private_bind_port: u16,
+
+    /// The seed for broker key generation
+    #[arg(long, default_value_t = 0)]
+    key_seed: u64,
 }
 
 #[tokio::main]
@@ -59,8 +64,9 @@ async fn main() -> Result<()> {
     let private_ip_address = bail!(local_ip(), Connection, "failed to get local IP address");
     let private_address = format!("{}:{}", private_ip_address, args.private_bind_port);
 
-    // Create deterministic keys for brokers (for now, obviously)
-    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
+    // Generate the broker key from the supplied seed
+    let (private_key, public_key) =
+        BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
 
     let broker_config: Config<BLS> = bail!(
         ConfigBuilder::default()
