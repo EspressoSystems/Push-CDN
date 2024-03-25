@@ -5,15 +5,15 @@ members = ["cdn-proto", "cdn-broker", "cdn-marshal", "cdn-client"]
 package.description = "The PushCDN is a distributed, scalable, and fault-tolerant pub/sub messaging system"
 
 [workspace.dependencies]
-tokio = { version = "1.35.1", features = ["full"] }
+tokio = { version = "1.36.0", features = ["full"] }
 jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "0.4.2" }
 rand = "0.8.5"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-clap = { version = "4.4.18", features = ["derive"] }
+clap = { version = "4.5.3", features = ["derive"] }
 prometheus = { version = "0.13.3" }
 lazy_static = "1.4.0"
-derive_builder = "0.13.1"
+derive_builder = "0.20.0"
 async-std = { version = "1.12.0", features = ["tokio1", "attributes"] }
 rkyv = { version = "0.7.44", features = ["validation"] }
 derivative = "2.2.0"
