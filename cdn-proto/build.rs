@@ -1,6 +1,16 @@
 use std::{env, fs, path::Path};
 
-use rcgen::{Certificate, CertificateParams, IsCa};
+use rcgen::{Certificate, CertificateParams, IsCa, KeyPair};
+
+pub static KEYPAIR: [u8; 138] = [
+    48, 129, 135, 2, 1, 0, 48, 19, 6, 7, 42, 134, 72, 206, 61, 2, 1, 6, 8, 42, 134, 72, 206, 61, 3,
+    1, 7, 4, 109, 48, 107, 2, 1, 1, 4, 32, 189, 107, 193, 211, 25, 222, 92, 186, 228, 174, 92, 9,
+    80, 243, 67, 83, 170, 46, 39, 112, 242, 110, 109, 25, 183, 26, 250, 229, 154, 43, 53, 71, 161,
+    68, 3, 66, 0, 4, 145, 35, 243, 152, 127, 62, 24, 32, 139, 61, 24, 90, 203, 2, 130, 209, 207,
+    227, 83, 246, 46, 145, 214, 34, 167, 151, 109, 230, 165, 206, 4, 33, 1, 151, 129, 52, 181, 66,
+    117, 112, 126, 197, 74, 238, 65, 51, 83, 106, 245, 177, 241, 133, 123, 101, 251, 159, 22, 33,
+    138, 138, 139, 13, 114, 48,
+];
 
 fn main() {
     // Get out directory
@@ -9,6 +19,8 @@ fn main() {
     // Create CA certificate generation parameters
     let mut ca_cert_params = CertificateParams::default();
     ca_cert_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    ca_cert_params.key_pair =
+        Some(KeyPair::from_der(&KEYPAIR).expect("failed to read pinned keypair"));
 
     // Generate the CA certificate
     let ca_cert = Certificate::from_params(ca_cert_params)
