@@ -1,81 +1,82 @@
 //! The following is an example of a Push CDN client implementation.
-//! We spawn two clients. In a single-broker run, this lets them connect
-//! cross-broker.
-
-use std::time::Duration;
+//! In this example, we send messages to ourselves via broadcast and direct
+//! systems.
 
 use cdn_client::{Client, ConfigBuilder};
 use cdn_proto::{
-    bail,
     connection::protocols::quic::Quic,
-    crypto::{rng::DeterministicRng, signature::KeyPair},
-    error::{Error, Result},
+    crypto::signature::{KeyPair, Serializable},
+    message::{Broadcast, Direct, Message, Topic},
 };
-use clap::Parser;
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
-use tokio::time::sleep;
-use tracing::info;
+use rand::{rngs::StdRng, SeedableRng};
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-/// The main component of the push CDN.
-struct Args {
-    /// The node's identifier (for deterministically creating keys)
-    #[arg(short, long)]
-    id: u64,
-}
-
-#[cfg_attr(feature = "runtime-tokio", tokio::main)]
-#[cfg_attr(feature = "runtime-async-std", async_std::main)]
-async fn main() -> Result<()> {
-    // Get command-line args
-    let args = Args::parse();
-
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
-
-    // Generate two random keypairs, one for each client
-    let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(args.id)).unwrap();
-    let (_, public_key_0) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
+#[tokio::main]
+async fn main() {
+    // Generate a random keypair
+    let (private_key, public_key) =
+        BLS::key_gen(&(), &mut StdRng::from_entropy()).expect("failed to generate key");
 
     // Build the config, the endpoint being where we expect the marshal to be
-    let config = bail!(
-        ConfigBuilder::default()
-            .endpoint("127.0.0.1:8082".to_string())
-            .keypair(KeyPair {
-                public_key,
-                private_key,
+    let config = ConfigBuilder::default()
+        .endpoint("127.0.0.1:8082".to_string())
+        // Private key is only used for signing authentication messages
+        .keypair(KeyPair {
+            public_key,
+            private_key,
+        })
+        // Subscribe to the global consensus topic
+        .subscribed_topics(vec![Topic::Global])
+        .build()
+        .expect("failed to build client config");
+
+    // Create a client, specifying the BLS signature algorithm
+    // and the `QUIC` protocol.
+    let client = Client::<BLS, Quic>::new(config)
+        .await
+        .expect("failed to create client");
+
+    // Send a direct message to ourselves
+    client
+        .send_direct_message(&public_key, b"hello direct".to_vec())
+        .await
+        .expect("failed to send message");
+
+    // Receive the direct message
+    let message = client
+        .receive_message()
+        .await
+        .expect("failed to receive message");
+
+    // Assert we've received the proper direct message
+    assert!(
+        message
+            == Message::Direct(Direct {
+                recipient: public_key.serialize().unwrap(),
+                message: b"hello direct".to_vec()
             })
-            .build(),
-        Parse,
-        "failed to build client config"
     );
 
-    let client = Client::<BLS, Quic>::new(config).await?;
+    // Send a broadcast message to the global topic
+    client
+        .send_broadcast_message(vec![Topic::Global], b"hello broadcast".to_vec())
+        .await
+        .expect("failed to send message");
 
-    // We want the first node to send to the second
-    if args.id != 0 {
-        // This client sends a message of a random size every second.
-        loop {
-            let m = vec![0u8; 10000];
+    // Receive the broadcast message
+    let message = client
+        .receive_message()
+        .await
+        .expect("failed to receive message");
 
-            if let Err(err) = client.send_direct_message(&public_key_0, m).await {
-                tracing::error!("failed to send message: {err}");
-            };
-            info!("sent message");
-
-            sleep(Duration::from_secs(1)).await;
-        }
-    } else {
-        // This client receives a direct message and prints the size.
-        loop {
-            if let Err(err) = client.receive_message().await {
-                tracing::error!("failed to receive message: {err}");
-            };
-
-            info!("received message");
-        }
-    }
+    // Assert we've received the proper broadcast message
+    assert!(
+        message
+            == Message::Broadcast(Broadcast {
+                topics: vec![Topic::Global],
+                message: b"hello broadcast".to_vec()
+            })
+    );
 }
