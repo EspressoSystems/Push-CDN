@@ -300,6 +300,7 @@ impl Drop for MemoryReceiverRef {
 impl Memory {
     /// Generate a testing pair of channels for sending and receiving in memory.
     /// This is particularly useful for tests.
+    #[must_use]
     pub fn gen_testing_pair() -> (MemorySender, MemoryReceiver) {
         // Create channels
         let (sender, receiver) = unbounded_async();

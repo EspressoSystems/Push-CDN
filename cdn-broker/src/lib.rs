@@ -18,7 +18,6 @@ mod tests;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 mod metrics;
@@ -41,8 +40,6 @@ use connections::Connections;
 use derive_builder::Builder;
 use tokio::{select, spawn};
 use tracing::info;
-
-use crate::metrics::RUNNING_SINCE;
 
 /// The broker's configuration. We need this when we create a new one.
 #[derive(Builder)]
@@ -247,16 +244,6 @@ impl<Def: RunDef> Broker<Def> {
 
         // Serve the (possible) metrics task
         if let Some(metrics_bind_address) = self.metrics_bind_address {
-            // Set that we are running for timekeeping purposes
-            RUNNING_SINCE.set(
-                bail!(
-                    SystemTime::now().duration_since(UNIX_EPOCH),
-                    Time,
-                    "time went backwards"
-                )
-                .as_secs() as i64,
-            );
-
             // Spawn the serving task
             spawn(proto_metrics::serve_metrics(metrics_bind_address));
         }

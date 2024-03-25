@@ -167,7 +167,12 @@ impl DiscoveryClient for Embedded {
                 .get::<u32, usize>(0),
             );
 
-            let total_broker_connections = num_permits + broker.num_connections as u64;
+            let total_broker_connections = num_permits
+                + bail!(
+                    u64::try_from(broker.num_connections),
+                    Parse,
+                    "failed to cast number of connections to u64"
+                );
             if total_broker_connections < least_connections {
                 least_connections = total_broker_connections;
                 broker_with_least_connections = broker.identifier;
@@ -248,7 +253,7 @@ impl DiscoveryClient for Embedded {
             "failed to issue permit"
         );
 
-        Ok(permit as u64)
+        Ok(u64::from(permit))
     }
 
     /// Validate and remove a permit belonging to a particular broker.
@@ -349,7 +354,7 @@ impl DiscoveryClient for Embedded {
         let exists: u64 = u64::from(
             bail!(
                 query("SELECT COUNT(user_public_key) as count FROM whitelist WHERE user_public_key = ?;")
-                    .bind(user.deref())
+                    .bind(&**user)
                     .fetch_one(&self.pool)
                     .await,
                 File,

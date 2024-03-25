@@ -26,7 +26,7 @@ pub struct MemoryPool(Arc<Semaphore>);
 
 impl MemoryPool {
     /// Create a new `MemoryPool` from the number of bytes to
-    pub fn new(n: usize) -> Self {
+    fn new(n: usize) -> Self {
         Self(Arc::from(Semaphore::const_new(n)))
     }
 }

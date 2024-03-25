@@ -147,6 +147,7 @@ impl TestDefinition {
         // For each user,
         for (i, topics) in users.iter().enumerate() {
             // Extrapolate identifier
+            #[allow(clippy::cast_possible_truncation)]
             let identifier: Arc<Vec<u8>> = Arc::from(vec![i as u8]);
 
             // Generate a testing pair of memory network channels

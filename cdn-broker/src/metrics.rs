@@ -12,8 +12,4 @@ lazy_static! {
     // The number of brokers connected
     pub static ref NUM_BROKERS_CONNECTED: IntGauge =
         register_int_gauge!("num_brokers_connected", "the number of brokers connected").unwrap();
-
-    // The timestamp (unix epoch time) when we started
-    pub static ref RUNNING_SINCE: IntGauge =
-        register_int_gauge!("running_since", "the timestamp at which we were started").unwrap();
 }

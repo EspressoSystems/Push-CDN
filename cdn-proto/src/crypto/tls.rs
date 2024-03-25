@@ -44,7 +44,7 @@ pub fn generate_cert_from_ca(ca_cert: &str, ca_key: &str) -> Result<(Certificate
     // Load in the CA cert from the provided cert and key
     let ca_cert_params = bail!(
         CertificateParams::from_ca_cert_pem(
-            &ca_cert,
+            ca_cert,
             bail!(
                 KeyPair::from_pem(ca_key),
                 File,
