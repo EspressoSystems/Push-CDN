@@ -366,8 +366,6 @@ impl<H: Hooks> Listener<UnfinalizedQuicConnection<H>> for QuicListener {
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
-    /// TODO: match on whether the endpoint is closed, return a different error
-    /// TODO: I think we should exit the program here, it should be a failure.
     async fn accept(&self) -> Result<UnfinalizedQuicConnection<H>> {
         // Try to accept a connection from the QUIC endpoint
         let connection = bail_option!(

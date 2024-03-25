@@ -1,7 +1,5 @@
 //! This file defines all authentication flows that the Push CDN implements.
 
-// TODO IN GENERAL: figure out if connection dropping on big messages is working
-
 pub mod broker;
 pub mod marshal;
 pub mod user;

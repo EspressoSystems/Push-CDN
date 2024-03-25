@@ -1,5 +1,4 @@
 //! This is where we define routing for broadcast messages.
-// TODO: write tests for this
 
 use std::{
     collections::{HashMap, HashSet},
@@ -132,5 +131,85 @@ impl<K: Hash + PartialEq + Eq + Clone, V: Hash + PartialEq + Eq + Clone> Relatio
                 self.value_to_keys.remove(v);
             }
         }
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::RelationalMap;
+
+    macro_rules! vec_equal {
+        ($a: expr, $b: expr) => {
+            assert!($b.iter().all(|item| $a.contains(item)));
+        };
+    }
+
+    #[test]
+    pub fn test_relational_map() {
+        let mut map: RelationalMap<&str, u64> = RelationalMap::new();
+
+        // Associate "user0" with 0 and "user1" with 1
+        map.associate_key_with_values(&"user0", vec![0, 1]);
+        map.associate_key_with_values(&"user1", vec![1]);
+
+        // Check that "user0" is only user associated with 0
+        assert!(
+            map.get_keys_by_value(&0) == vec!["user0"],
+            "expected only user0 to be associated with value 0"
+        );
+
+        // Check that both users are associated with 1
+        vec_equal!(map.get_keys_by_value(&1), vec!["user0", "user1"]);
+
+        // Dissociate "user0" from 1
+        map.dissociate_keys_from_value(&"user0", &[1]);
+
+        // Check that only "user1" is now associated with 1
+        assert!(
+            map.get_keys_by_value(&1) == vec!["user1"],
+            "expected user1 to be singularly associated with value 1"
+        );
+
+        // Remove "user1"
+        map.remove_key(&"user1");
+
+        // Check that nobody is associated with 1
+        assert!(
+            map.get_keys_by_value(&1).len() == 0,
+            "expected no user to be associated with value 1"
+        );
+
+        // Check that there is no longer a value 1
+        assert!(
+            !map.get_values().contains(&1),
+            "expected values to no longer contain 1"
+        );
+
+        // Assert only one key to value
+        assert!(
+            map.key_to_values.len() == 1,
+            "expected `key_to_values` to be equal to length 1"
+        );
+
+        // Assert only one value to key
+        assert!(
+            map.value_to_keys.len() == 1,
+            "expected `value_to_keys` to be equal to length 1"
+        );
+
+        // Dissociate "user1" from 1
+        map.dissociate_keys_from_value(&"user0", &[0]);
+
+        // Assert zero keys to value
+        assert!(
+            map.key_to_values.len() == 0,
+            "expected `key_to_values` to be empty"
+        );
+
+        // Assert zero values to key
+        assert!(
+            map.value_to_keys.len() == 0,
+            "expected `value_to_keys` to be empty"
+        );
     }
 }

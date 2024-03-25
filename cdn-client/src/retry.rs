@@ -149,7 +149,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
     /// # Errors
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
-    /// TODO: figure out if we want retries here
     pub async fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {

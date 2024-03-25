@@ -1,7 +1,5 @@
 //! In this crate we deal with the authentication flow as a marshal.
 
-// TODO: make scheme stuff per function if it makes sense
-
 use std::{
     marker::PhantomData,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -58,7 +56,6 @@ impl<Def: RunDef> MarshalAuth<Def> {
 
         // See if we're the right type of message
         let Message::AuthenticateWithKey(auth_message) = auth_message else {
-            // TODO: macro for this error thing
             fail_verification_with_message!(connection, "wrong message type");
         };
 
@@ -122,8 +119,6 @@ impl<Def: RunDef> MarshalAuth<Def> {
         };
 
         // Generate and issue a permit for said broker
-        // TODO: add bounds check for public key. There's the possibility it could be too big, if
-        // verify does not check that.
         let permit = match discovery_client
             .issue_permit(
                 &broker_with_least_connections,

@@ -1,9 +1,6 @@
 //! This file contains the implementation of the `Broker`, which routes messages
 //! for the Push CDN.
 
-// TODO: split out this file into multiple files.
-// TODO: logging
-
 #![forbid(unsafe_code)]
 
 mod connections;
@@ -21,7 +18,6 @@ use std::{
 };
 
 mod metrics;
-// TODO: figure out if we should use Tokio's here
 use cdn_proto::{
     bail,
     connection::protocols::Protocol,

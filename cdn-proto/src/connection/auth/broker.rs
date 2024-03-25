@@ -144,7 +144,6 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // See if we're the right type of message
         let Message::Subscribe(subscribed_topics_message) = subscribed_topics_message else {
-            // TODO: macro for this error thing
             fail_verification_with_message!(connection, "wrong message type");
         };
 

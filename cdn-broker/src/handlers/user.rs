@@ -105,7 +105,6 @@ impl<Def: RunDef> Inner<Def> {
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message
-            // TODO: FIXED SIZE RECIPIENT FOR DESERIALIZATION
             let message = Message::deserialize(&raw_message)?;
 
             match message {

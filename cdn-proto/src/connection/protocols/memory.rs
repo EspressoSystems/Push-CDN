@@ -125,7 +125,6 @@ impl Sender for MemorySender {
     /// # Errors
     /// If we fail to send or serialize the message
     async fn send_message(&self, message: Message) -> Result<()> {
-        // TODO: TRAIT DEFAULT FOR THIS. IT'S THE SAME
         // Serialize the message
         let raw_message = Bytes::from_unchecked(bail!(
             message.serialize(),

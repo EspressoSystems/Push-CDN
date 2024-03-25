@@ -9,7 +9,6 @@ use cdn_proto::{
 };
 use clap::Parser;
 
-//TODO: for both client and marshal, clean up and comment `main.rs`
 // TODO: forall, add logging where we need it
 
 #[derive(Parser, Debug)]

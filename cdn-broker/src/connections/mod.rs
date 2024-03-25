@@ -17,7 +17,7 @@ use dashmap::DashMap;
 pub use direct::DirectMap;
 use parking_lot::RwLock;
 use tokio::spawn;
-use tracing::{error, warn};
+use tracing::{debug, error};
 
 use self::{broadcast::BroadcastMap, versioned::VersionedMap};
 
@@ -301,9 +301,8 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
                 }
             }
         } else {
-            // Warn if the recipient user did not exist.
-            // TODO: remove this
-            warn!("user {} did not exist in map", mnemonic(&user_public_key));
+            // Debug warning if the recipient user did not exist.
+            debug!("user {} did not exist in map", mnemonic(&user_public_key));
         }
     }
 

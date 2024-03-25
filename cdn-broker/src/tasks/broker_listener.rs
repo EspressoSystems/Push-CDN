@@ -23,9 +23,6 @@ impl<Def: RunDef> Inner<Def> {
     ) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
-            //
-            // TODO: figure out when an endpoint closes, should I be looping on it? What are the criteria
-            // for closing? It would error but what does that actually _mean_? Is it recoverable?
             let unfinalized_connection = match listener.accept().await {
                 Ok(connection) => connection,
                 Err(err) => {

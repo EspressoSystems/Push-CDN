@@ -111,10 +111,6 @@ impl DiscoveryClient for Redis {
     /// Get the broker with the least number of connections (and permits).
     /// We use this to figure out which broker gets our permit issued
     ///
-    /// TODO: document that this MIGHT cause a race condition where multiple locks
-    /// are acquired when brokers are close in `num_connected`. But probably not,
-    /// and probably not to where it matters.
-    ///
     /// # Errors
     /// - If the `Redis` connection fails
     async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {

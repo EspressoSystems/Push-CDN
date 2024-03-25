@@ -89,7 +89,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
                 Ok((response.context, response.permit))
             } else {
                 // We haven't, we failed authentication :(
-                // TODO: fix these error types
                 Err(Error::Authentication(format!(
                     "failed authentication: {}",
                     response.context
@@ -102,7 +101,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
         }
     }
 
-    /// TODO: clean up comments
     /// The authentication implementation for a user to a broker. We take the following steps:
     /// 1. Send the permit to the broker
     /// 2. Wait for a response
