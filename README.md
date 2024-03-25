@@ -26,7 +26,7 @@ The Push-CDN is a distributed and fault tolerant messaging system purpose-built 
 async fn main() {
     // Generate a random keypair
     let (private_key, public_key) =
-        BLS::key_gen(&(), &mut StdRng::from_entropy()).expect("failed to generate key");
+        BLS::key_gen(&(), &mut StdRng::from_entropy()).unwrap();
 
     // Build the config, the endpoint being where we expect the marshal to be
     let config = ConfigBuilder::default()
@@ -39,25 +39,25 @@ async fn main() {
         // Subscribe to the global consensus topic
         .subscribed_topics(vec![Topic::Global])
         .build()
-        .expect("failed to build client config");
+        .unwrap();
 
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.
     let client = Client::<BLS, Quic>::new(config)
         .await
-        .expect("failed to create client");
+        .unwrap();
 
     // Send a direct message to ourselves
     client
         .send_direct_message(&public_key, b"hello direct".to_vec())
         .await
-        .expect("failed to send message");
+        .unwrap();
 
     // Receive the direct message
     let message = client
         .receive_message()
         .await
-        .expect("failed to receive message");
+        .unwrap();
 
     // Assert we've received the proper direct message
     assert!(
@@ -72,13 +72,13 @@ async fn main() {
     client
         .send_broadcast_message(vec![Topic::Global], b"hello broadcast".to_vec())
         .await
-        .expect("failed to send message");
+        .unwrap();
 
     // Receive the broadcast message
     let message = client
         .receive_message()
         .await
-        .expect("failed to receive message");
+        .unwrap();
 
     // Assert we've received the proper broadcast message
     assert!(
