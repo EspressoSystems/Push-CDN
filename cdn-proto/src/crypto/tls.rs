@@ -42,18 +42,39 @@ hQ==
 /// - If we fail to parse the local certificate
 pub fn generate_cert_from_ca(ca_cert: &str, ca_key: &str) -> Result<(Certificate, PrivateKey)> {
     // Load in the CA cert from the provided cert and key
-    let ca_cert_params =
-        CertificateParams::from_ca_cert_pem(&ca_cert, KeyPair::from_pem(ca_key).expect("from"))
-            .expect("parammies");
+    let ca_cert_params = bail!(
+        CertificateParams::from_ca_cert_pem(
+            &ca_cert,
+            bail!(
+                KeyPair::from_pem(ca_key),
+                File,
+                "failed to load key from PEM"
+            )
+        ),
+        File,
+        "failed to create certificate from supplied CA"
+    );
 
     // Convert the parameters to their cert representation
-    let ca_cert = rcgen::Certificate::from_params(ca_cert_params).expect("meow");
+    let ca_cert = bail!(
+        rcgen::Certificate::from_params(ca_cert_params),
+        Crypto,
+        "failed to generate certificate from parameters"
+    );
 
     // Create a new self-signed certificate
-    let new_cert = generate_simple_self_signed(vec!["espresso".to_string()]).expect("no");
+    let new_cert = bail!(
+        generate_simple_self_signed(vec!["espresso".to_string()]),
+        Crypto,
+        "failed to generate self-signed certificate"
+    );
 
     // Sign the certificate chain with the CA pair and return the certificate
-    let certificate = new_cert.serialize_der_with_signer(&ca_cert).expect("meow");
+    let certificate = bail!(
+        new_cert.serialize_der_with_signer(&ca_cert),
+        Crypto,
+        "failed to sign self-signed certificate"
+    );
 
     // Extrapolate the certificate's key in binary format
     let key = new_cert.serialize_private_key_der();
