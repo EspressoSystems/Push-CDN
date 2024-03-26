@@ -8,7 +8,7 @@ services:
   # will likely not require any changes here, unless compose routing does not route
   # keydb -> keydb or there is a connection issue.
   marshal-0:
-    image: marshal:latest
+    image: ghcr.io/espressosystems/push-cdn/marshal:latest
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
 
   # note: for brokers, I will likely have to make a code change to allow
@@ -17,9 +17,9 @@ services:
   # also likely that the advertise addresses will need to be changed (but with `--public_advertise_address`) to 
   # 0.0.0.0 as well.
   broker-0:
-    image: broker:latest
+    image: ghcr.io/espressosystems/push-cdn/broker:latest
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
 
   broker-1:
-    image: broker:latest
+    image: ghcr.io/espressosystems/push-cdn/broker:latest
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]

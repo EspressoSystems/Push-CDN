@@ -5,8 +5,8 @@ FROM docker.io/rust:1.76-bookworm as BUILDER
 WORKDIR /build
 COPY . .
 
-# Build our example
-RUN cargo build --profile release --package cdn-broker
+# Build our example (all of them for caching)
+RUN cargo build --profile release -p cdn-broker -p cdn-client -p cdn-marshal
 
 # Use a minimal image for the final build
 FROM debian:bookworm as RUNNER

@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install libcurl4 -y
 ENV RUST_LOG=info
 
 # Copy the built binary from the builder image
-COPY --from=BUILDER ./build/target/release/cdn-marshal /bin/cdn-marshal
+COPY --from=BUILDER ./build/target/release/cdn-client /bin/cdn-client
 
 # Set the entrypoint
-ENTRYPOINT ["cdn-marshal"]
+ENTRYPOINT ["cdn-client"]
