@@ -5,6 +5,8 @@ services:
     image: docker.io/eqalpha/keydb:latest
     command: ["--requirepass", "changemeplease!!"]
 
+  # will likely not require any changes here, unless compose routing does not route
+  # keydb -> keydb or there is a connection issue.
   marshal-0:
     image: marshal:latest
     environment:
@@ -12,6 +14,11 @@ services:
       - RUST_LOG_FORMAT
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
 
+  # note: for brokers, I will likely have to make a code change to allow
+  # private addresses to be specified. Right now it's pinned to the locally acquired ip, which
+  # does not work for docker (but it might)
+  # also likely that the advertise addresses will need to be changed (but with `--public_advertise_address`) to 
+  # 0.0.0.0 as well.
   broker-0:
     image: broker:latest
     environment:
