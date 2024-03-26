@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  keydb:
+    image: docker.io/eqalpha/keydb:latest
+    command: ["--requirepass", "changemeplease!!"]
+
+  marshal-0:
+    image: marshal:latest
+    environment:
+      - RUST_LOG=info
+      - RUST_LOG_FORMAT
+    command: ["-d", "redis://:changemeplease!!@keydb:6379"]
+
+  broker-0:
+    image: broker:latest
+    environment:
+      - RUST_LOG=info
+      - RUST_LOG_FORMAT
+    command: ["-d", "redis://:changemeplease!!@keydb:6379"]
+
+  broker-1:
+    image: broker:latest
+    environment:
+      - RUST_LOG=info
+      - RUST_LOG_FORMAT
+    command: ["-d", "redis://:changemeplease!!@keydb:6379"]
