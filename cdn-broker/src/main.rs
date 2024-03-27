@@ -27,7 +27,7 @@ struct Args {
     #[arg(long, default_value_t = true)]
     metrics_enabled: bool,
 
-    /// The port to bind to for externalizing metrics
+    /// The IP to bind to for externalizing metrics
     #[arg(long, default_value = "127.0.0.1")]
     metrics_ip: String,
 
