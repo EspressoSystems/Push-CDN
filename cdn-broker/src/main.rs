@@ -19,7 +19,9 @@ use rand::{rngs::StdRng, SeedableRng};
 #[command(author, version, about, long_about = None)]
 /// The main component of the push CDN.
 struct Args {
-    /// The discovery client endpoint (including scheme) to connect to
+    /// The discovery client endpoint (including scheme) to connect to.
+    /// With the local discovery feature, this is a file path.
+    /// With the remote (redis) discovery feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
     #[arg(short, long)]
     discovery_endpoint: String,
 
