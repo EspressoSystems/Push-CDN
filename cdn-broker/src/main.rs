@@ -74,6 +74,8 @@ async fn main() -> Result<()> {
             .public_bind_address(format!("0.0.0.0:{}", args.public_bind_port))
             .private_advertise_address(private_address.clone())
             .private_bind_address(private_address)
+            .metrics_enabled(args.metrics_enabled)
+            .metrics_ip(args.metrics_ip)
             .discovery_endpoint(args.discovery_endpoint)
             .metrics_port(args.metrics_port)
             .keypair(KeyPair {
