@@ -6,13 +6,17 @@ services:
     command: ["--requirepass", "changemeplease!!"]
 
   marshal-0:
-    image: ghcr.io/espressosystems/push-cdn/marshal:latest
+    image: ghcr.io/espressosystems/push-cdn/marshal:master
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
 
   broker-0:
-    image: ghcr.io/espressosystems/push-cdn/broker:latest
+    image: ghcr.io/espressosystems/push-cdn/broker:master
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
 
   broker-1:
-    image: ghcr.io/espressosystems/push-cdn/broker:latest
+    image: ghcr.io/espressosystems/push-cdn/broker:master
     command: ["-d", "redis://:changemeplease!!@keydb:6379"]
+
+  # client-0:
+  #   image: ghcr.io/espressosystems/push-cdn/client:master
+  #   command: ["-m", "marshal:8082"]

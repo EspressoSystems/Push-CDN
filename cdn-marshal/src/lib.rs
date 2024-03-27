@@ -22,6 +22,7 @@ use cdn_proto::{
 };
 use derive_builder::Builder;
 use tokio::spawn;
+use tracing::info;
 
 /// The `Marshal's` configuration (with a Builder), to help with usability.
 /// We need this to construct a `Marshal`
@@ -80,6 +81,8 @@ impl<Def: RunDef> Marshal<Def> {
             Connection,
             format!("failed to listen to address {}", bind_address)
         );
+
+        info!("listening for users on {bind_address}");
 
         // Create the discovery client
         let discovery_client = bail!(
