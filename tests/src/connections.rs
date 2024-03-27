@@ -12,10 +12,9 @@ use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::{spawn};
+use tokio::spawn;
 
-
-/// Generate a deterministic keypair from a seed 
+/// Generate a deterministic keypair from a seed
 macro_rules! keypair_from_seed {
     ($seed: expr) => {{
         BLS::key_gen(&(), &mut StdRng::seed_from_u64($seed)).expect("failed to generate key")
@@ -23,7 +22,7 @@ macro_rules! keypair_from_seed {
 }
 
 /// Create a new broker for testing purposes that uses the memory network.
-/// Parameters include the key (as a u64), the public endpoint, 
+/// Parameters include the key (as a u64), the public endpoint,
 /// and the private endpoint.
 macro_rules! new_broker {
     ($key: expr, $public_ep: expr, $private_ep: expr) => {{
