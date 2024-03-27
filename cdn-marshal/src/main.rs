@@ -19,8 +19,20 @@ struct Args {
     #[arg(short, long)]
     discovery_endpoint: String,
 
+    /// Whether or not metric collection and serving is enabled
+    #[arg(long, default_value_t = true)]
+    metrics_enabled: bool,
+
+    /// The IP to bind to for externalizing metrics
+    #[arg(long, default_value = "127.0.0.1")]
+    metrics_ip: String,
+
+    /// The port to bind to for externalizing metrics
+    #[arg(long, default_value_t = 9090)]
+    metrics_port: u16,
+
     /// The port to bind to for connections (from users)
-    #[arg(short, long, default_value_t = 8082)]
+    #[arg(short, long, default_value_t = 1737)]
     bind_port: u16,
 }
 
@@ -36,6 +48,9 @@ async fn main() -> Result<()> {
     let config = bail!(
         ConfigBuilder::default()
             .bind_address(format!("0.0.0.0:{}", args.bind_port))
+            .metrics_enabled(args.metrics_enabled)
+            .metrics_ip(args.metrics_ip)
+            .metrics_port(args.metrics_port)
             .discovery_endpoint(args.discovery_endpoint)
             .build(),
         Parse,

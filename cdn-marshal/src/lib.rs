@@ -5,7 +5,10 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
 mod handlers;
 
@@ -19,6 +22,7 @@ use cdn_proto::{
     def::RunDef,
     discovery::DiscoveryClient,
     error::{Error, Result},
+    metrics as proto_metrics, parse_socket_address,
 };
 use derive_builder::Builder;
 use tokio::spawn;
@@ -33,6 +37,18 @@ pub struct Config {
 
     /// The discovery client endpoint (either Redis or local depending on feature)
     discovery_endpoint: String,
+
+    /// Whether or not we want to serve metrics
+    #[builder(default = "true")]
+    pub metrics_enabled: bool,
+
+    /// The port we want to serve metrics on
+    #[builder(default = "9090")]
+    pub metrics_port: u16,
+
+    /// The IP/interface we want to serve the metrics on
+    #[builder(default = "String::from(\"127.0.0.1\")")]
+    pub metrics_ip: String,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
     #[builder(default)]
@@ -52,6 +68,9 @@ pub struct Marshal<Def: RunDef> {
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: Def::DiscoveryClientType,
+
+    /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
+    metrics_bind_address: Option<SocketAddr>,
 }
 
 impl<Def: RunDef> Marshal<Def> {
@@ -65,6 +84,9 @@ impl<Def: RunDef> Marshal<Def> {
         let Config {
             bind_address,
             discovery_endpoint,
+            metrics_enabled,
+            metrics_ip,
+            metrics_port,
             ca_cert_path,
             ca_key_path,
         } = config;
@@ -91,9 +113,18 @@ impl<Def: RunDef> Marshal<Def> {
             "failed to create discovery client"
         );
 
+        // Parse the metrics IP and port
+        let metrics_bind_address = if metrics_enabled {
+            let ip: Ipv4Addr = parse_socket_address!(metrics_ip);
+            Some(SocketAddr::from((ip, metrics_port)))
+        } else {
+            None
+        };
+
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
+            metrics_bind_address,
             discovery_client,
         })
     }
@@ -104,6 +135,12 @@ impl<Def: RunDef> Marshal<Def> {
     /// # Errors
     /// Right now, we return a `Result` but don't actually ever error.
     pub async fn start(self) -> Result<()> {
+        // Serve the (possible) metrics task
+        if let Some(metrics_bind_address) = self.metrics_bind_address {
+            // Spawn the serving task
+            spawn(proto_metrics::serve_metrics(metrics_bind_address));
+        }
+
         // Listen for connections forever
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
