@@ -1,0 +1,77 @@
+name: Docker Build
+
+on:
+  push:
+    branches:
+      - master
+      - dockers
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,amd64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: broker
+        with:
+          images: ghcr.io/espressosystems/push-cdn/broker
+
+      - uses: docker/metadata-action@v5
+        id: client
+        with:
+          images: ghcr.io/espressosystems/push-cdn/client
+
+      - uses: docker/metadata-action@v5
+        id: marshal
+        with:
+          images: ghcr.io/espressosystems/push-cdn/marshal
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./
+          file: ./cdn-broker/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.broker.outputs.tags }}
+          labels: ${{ steps.broker.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./
+          file: ./cdn-client/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.client.outputs.tags }}
+          labels: ${{ steps.client.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./
+          file: ./cdn-marshal/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.marshal.outputs.tags }}
+          labels: ${{ steps.marshal.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
