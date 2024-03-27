@@ -13,7 +13,9 @@ runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
 
 [dependencies]
 jf-primitives.workspace = true
-cdn-proto = { path = "../cdn-proto", default-features = false }
+cdn-proto = { path = "../cdn-proto", default-features = false, features = [
+    "metrics",
+] }
 async-std = { workspace = true, optional = true }
 tokio.workspace = true
 tracing.workspace = true
