@@ -55,10 +55,6 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// The topics we're currently subscribed to. We need this so we can send our subscriptions
     /// when we connect to a new server.
     pub subscribed_topics: RwLock<HashSet<Topic>>,
-
-    /// Phantom data that lets us use `ProtocolType`, `AuthFlow`, and
-    /// `SignatureScheme` downstream.
-    pd: PhantomData<(Scheme, ProtocolType)>,
 }
 
 /// The configuration needed to construct a `Retry` connection.
@@ -204,7 +200,6 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
                 receiver: Arc::from(RwLock::from(connection.1)),
                 keypair,
                 subscribed_topics,
-                pd: PhantomData,
             }),
         })
     }
