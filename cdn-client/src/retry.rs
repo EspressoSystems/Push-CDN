@@ -18,7 +18,10 @@ use cdn_proto::{
     message::{Message, Topic},
 };
 use derive_builder::Builder;
-use tokio::{sync::RwLock, time::sleep};
+use tokio::{
+    sync::{OnceCell, RwLock},
+    time::sleep,
+};
 use tracing::{error, info};
 
 use crate::bail;
@@ -43,11 +46,8 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     /// a production environment.
     use_local_authority: bool,
 
-    /// The send-side of the connection.
-    sender: Arc<RwLock<ProtocolType::Sender>>,
-
-    /// The receive side of the connection.
-    receiver: Arc<RwLock<ProtocolType::Receiver>>,
+    /// The underlying connection
+    connection: Arc<OnceCell<Arc<RwLock<(ProtocolType::Sender, ProtocolType::Receiver)>>>>,
 
     /// The keypair to use when authenticating
     pub keypair: KeyPair<Scheme>,
@@ -99,8 +99,10 @@ macro_rules! try_with_reconnect {
                 sleep(Duration::from_secs(2)).await;
 
                 // Acquire our "semaphore". If another task is doing this, just return an error
-                if let Ok(mut sender_guard) = $self.inner.sender.clone().try_write_owned() {
-                    let mut receiver_guard = $self.inner.receiver.clone().write_owned().await;
+                if let Ok(mut connection_guard) = get_or_initialize_connection!($self)?
+                    .clone()
+                    .try_write_owned()
+                {
                     // Clone `inner` so we can use it in the task
                     let inner = $self.inner.clone();
                     // We are the only ones reconnecting. Let's launch the task to reconnect
@@ -125,8 +127,7 @@ macro_rules! try_with_reconnect {
 
                         // Update sender and receiver
                         // TODO: parameterize duration and size
-                        *sender_guard = connection.0;
-                        *receiver_guard = connection.1;
+                        *connection_guard = connection;
                     });
                 }
 
@@ -137,6 +138,30 @@ macro_rules! try_with_reconnect {
     }};
 }
 
+macro_rules! get_or_initialize_connection {
+    ($self: expr) => {
+        $self
+            .inner
+            .connection
+            .get_or_try_init(|| async {
+                let possible_connection = match connect_and_authenticate::<Scheme, ProtocolType>(
+                    &$self.inner.endpoint,
+                    $self.inner.use_local_authority,
+                    &$self.inner.keypair,
+                    $self.inner.subscribed_topics.read().await.clone(),
+                )
+                .await
+                {
+                    Ok(res) => res,
+                    Err(err) => return Err(err),
+                };
+
+                Ok(Arc::from(RwLock::from(possible_connection)))
+            })
+            .await
+    };
+}
+
 impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, ProtocolType> {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
@@ -145,7 +170,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
     /// # Errors
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
-    pub async fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
+    pub fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
@@ -158,46 +183,12 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         // Wrap subscribed topics so we can use it now and later
         let subscribed_topics = RwLock::new(HashSet::from_iter(subscribed_topics));
 
-        // Perform the initial connection and authentication.
-        // Retry until we succeed or bail if we fail too many times.
-        let mut retries = 0;
-        let connection = loop {
-            // Try to connect and authenticate
-            match connect_and_authenticate::<Scheme, ProtocolType>(
-                &endpoint,
-                use_local_authority,
-                &keypair,
-                subscribed_topics.read().await.clone(),
-            )
-            .await
-            {
-                // The connection was successful, break the loop
-                Ok(connection) => break connection,
-
-                // The connection failed, log the error and retry
-                Err(err) => {
-                    error!("failed connection: {err}");
-                    retries += 1;
-
-                    // If we fail too many times, bail
-                    if retries > 5 {
-                        bail!(Err(err), Connection, "failed to connect after 5 retries");
-                    }
-
-                    // Sleep so we don't overload the server
-                    sleep(Duration::from_secs(1)).await;
-                }
-            }
-        };
-
         // Return the slightly transformed connection.
         Ok(Self {
             inner: Arc::from(Inner {
                 endpoint,
                 use_local_authority,
-                // TODO: parameterize batch params
-                sender: Arc::from(RwLock::from(connection.0)),
-                receiver: Arc::from(RwLock::from(connection.1)),
+                connection: Arc::from(OnceCell::new()),
                 keypair,
                 subscribed_topics,
             }),
@@ -213,10 +204,10 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
     /// - If we are disconnected
     pub async fn send_message(&self, message: Message) -> Result<()> {
         // Check if we're (probably) reconnecting or not
-        if let Ok(sender_guard) = self.inner.sender.try_read() {
+        if let Ok(connection_guard) = get_or_initialize_connection!(self)?.try_read() {
             // We're not reconnecting, try to send the message
-            let out = sender_guard.send_message(message).await;
-            drop(sender_guard);
+            let out = connection_guard.0.send_message(message).await;
+            drop(connection_guard);
 
             try_with_reconnect!(self, out)
         } else {
@@ -233,9 +224,9 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
     /// - If the message receiving failed
     pub async fn receive_message(&self) -> Result<Message> {
         // Wait for a reconnection before trying to receive
-        let receiver_guard = self.inner.receiver.read().await;
-        let out = receiver_guard.recv_message().await;
-        drop(receiver_guard);
+        let connection_guard = get_or_initialize_connection!(self)?.read().await;
+        let out = connection_guard.1.recv_message().await;
+        drop(connection_guard);
 
         // If we failed to receive a message, kick off reconnection logic
         try_with_reconnect!(self, out)
