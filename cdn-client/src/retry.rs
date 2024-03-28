@@ -216,6 +216,16 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         }
     }
 
+    pub async fn ensure_initialized(&self) {
+        loop {
+            if let Err(err) = get_or_initialize_connection!(self) {
+                error!("failed to initialize connection: {err}");
+                continue;
+            }
+            break;
+        }
+    }
+
     /// Receives a message from the underlying fallible connection. Reconnection logic is here,
     /// but retry logic needs to be handled by the caller (e.g. re-receive messages)
     ///

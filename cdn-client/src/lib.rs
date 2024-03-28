@@ -153,6 +153,10 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Client<Scheme, Proto
         Ok(())
     }
 
+    pub async fn ensure_initialized(&self) {
+        self.0.ensure_initialized().await
+    }
+
     /// Sends a message over the wire. Various functions make use
     /// of this one upstream.
     ///
