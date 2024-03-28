@@ -31,12 +31,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Client<Scheme, Proto
     ///
     /// # Errors
     /// If the initial connection fails
-    pub async fn new(config: Config<Scheme, ProtocolType>) -> Result<Self> {
-        Ok(Self(bail!(
-            Retry::from_config(config).await,
-            Connection,
-            "failed to create client"
-        )))
+    pub fn new(config: Config<Scheme, ProtocolType>) -> Self {
+        Self(Retry::from_config(config))
     }
 
     /// Receives the next message from the downstream server.

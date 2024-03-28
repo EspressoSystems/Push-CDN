@@ -94,7 +94,7 @@ macro_rules! new_client {
             .expect("failed to build client config");
 
         // Create the client
-        Client::<BLS, Memory>::new(config).await
+        Client::<BLS, Memory>::new(config)
     }};
 }
 
@@ -108,7 +108,7 @@ async fn test_end_to_end() {
     new_marshal!("8082");
 
     // Create and get the handle to a new client
-    let client = new_client!(0, vec![Topic::Global], "8082").expect("failed to create client");
+    let client = new_client!(0, vec![Topic::Global], "8082");
     let client_public_key = keypair_from_seed!(0).1;
 
     // Send a message to ourself

@@ -170,7 +170,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
     /// # Errors
     /// - If we are unable to either parse or bind an endpoint to the local address.
     /// - If we are unable to make the initial connection
-    pub fn from_config(config: Config<Scheme, ProtocolType>) -> Result<Self> {
+    pub fn from_config(config: Config<Scheme, ProtocolType>) -> Self {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
@@ -184,7 +184,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         let subscribed_topics = RwLock::new(HashSet::from_iter(subscribed_topics));
 
         // Return the slightly transformed connection.
-        Ok(Self {
+        Self {
             inner: Arc::from(Inner {
                 endpoint,
                 use_local_authority,
@@ -192,7 +192,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
                 keypair,
                 subscribed_topics,
             }),
-        })
+        }
     }
 
     /// Sends a message to the underlying connection. Reconnection is handled under
