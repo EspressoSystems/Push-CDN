@@ -20,7 +20,7 @@ struct Args {
     discovery_endpoint: String,
 
     /// Whether or not metric collection and serving is enabled
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     metrics_enabled: bool,
 
     /// The IP to bind to for externalizing metrics
