@@ -30,6 +30,13 @@ impl<Def: RunDef> Inner<Def> {
         ),
         is_outbound: bool,
     ) {
+        // Acquire a permit to authenticate with a broker. Removes the possibility for race
+        // conditions when doing so.
+        let Ok(auth_guard) = self.auth_lock.acquire().await else {
+            error!("needed semaphore has been closed");
+            std::process::exit(-1);
+        };
+
         // Depending on which way the direction came in, we will want to authenticate with a different
         // flow.
         let broker_identifier = if is_outbound {
@@ -54,6 +61,9 @@ impl<Def: RunDef> Inner<Def> {
         // Add to our brokers
         self.connections
             .add_broker(broker_identifier.clone(), sender);
+
+        // Once we have added the broker, drop the authentication guard
+        drop(auth_guard);
 
         // Send a full user sync
         if let Err(err) = self.full_user_sync(&broker_identifier) {
