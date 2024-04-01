@@ -35,7 +35,7 @@ use cdn_proto::{
 use connections::Connections;
 use derive_builder::Builder;
 use local_ip_address::local_ip;
-use tokio::{select, spawn};
+use tokio::{select, spawn, sync::Semaphore};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
@@ -89,6 +89,10 @@ struct Inner<Def: RunDef> {
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
     keypair: KeyPair<Def::BrokerScheme>,
+
+    /// A lock on authentication so we don't thrash when authenticating with brokers.
+    /// Only lets us authenticate to one broker at a time.
+    auth_lock: Semaphore,
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
@@ -209,6 +213,7 @@ impl<Def: RunDef> Broker<Def> {
                 discovery_client,
                 identity: identity.clone(),
                 keypair,
+                auth_lock: Semaphore::const_new(1),
                 connections: Arc::from(Connections::new(identity)),
             }),
             metrics_bind_address,
