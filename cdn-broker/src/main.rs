@@ -1,6 +1,5 @@
 //! The following is the main `Broker` binary, which just instantiates and runs
 //! a `Broker` object.
-
 use cdn_broker::{Broker, Config, ConfigBuilder};
 use cdn_proto::{
     bail,
@@ -12,7 +11,6 @@ use clap::Parser;
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
-use local_ip_address::local_ip;
 use rand::{rngs::StdRng, SeedableRng};
 
 #[derive(Parser, Debug)]
@@ -37,17 +35,22 @@ struct Args {
     #[arg(long, default_value_t = 9090)]
     metrics_port: u16,
 
-    /// The port to bind to for connections from users
+    /// The user-facing address to bind to for connections from users
+    #[arg(long, default_value = "0.0.0.0:1738")]
+    public_bind_address: String,
+
+    /// The user-facing address to advertise
     #[arg(long, default_value = "127.0.0.1:1738")]
     public_advertise_address: String,
 
-    /// The (public) port to bind to for connections from users
-    #[arg(long, default_value_t = 1738)]
-    public_bind_port: u16,
+    /// The broker-facing address to bind to for connections from  
+    /// other brokers
+    #[arg(long, default_value = "0.0.0.0:1739")]
+    private_bind_address: String,
 
-    /// The (private) port to bind to for connections from other brokers
-    #[arg(long, default_value_t = 1739)]
-    private_bind_port: u16,
+    /// The broker-facing address to advertise
+    #[arg(long, default_value = "127.0.0.1:1739")]
+    private_advertise_address: String,
 
     /// The seed for broker key generation
     #[arg(long, default_value_t = 0)]
@@ -62,10 +65,6 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // Get our local IP address
-    let private_ip_address = bail!(local_ip(), Connection, "failed to get local IP address");
-    let private_address = format!("{}:{}", private_ip_address, args.private_bind_port);
-
     // Generate the broker key from the supplied seed
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
@@ -73,9 +72,9 @@ async fn main() -> Result<()> {
     let broker_config: Config<BLS> = bail!(
         ConfigBuilder::default()
             .public_advertise_address(args.public_advertise_address)
-            .public_bind_address(format!("0.0.0.0:{}", args.public_bind_port))
-            .private_advertise_address(private_address.clone())
-            .private_bind_address(private_address)
+            .public_bind_address(args.public_bind_address)
+            .private_advertise_address(args.private_advertise_address)
+            .private_bind_address(args.private_bind_address)
             .metrics_enabled(args.metrics_enabled)
             .metrics_ip(args.metrics_ip)
             .discovery_endpoint(args.discovery_endpoint)

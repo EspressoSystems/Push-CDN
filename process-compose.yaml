@@ -8,10 +8,15 @@ processes:
     command: cargo run --package cdn-marshal --release -- --metrics-port=8080 -d "redis://:changeme!@localhost:6379"
 
   broker_0:
-    command: cargo run --package cdn-broker --release -- --public-advertise-address 127.0.0.1:8083 --private-bind-port 8082 --public-bind-port 8083 -d "redis://:changeme!@localhost:6379"
+    command: cargo run --package cdn-broker --release -- -d "redis://:changeme!@localhost:6379"
 
   broker_1:
-    command: cargo run --package cdn-broker --release -- --metrics-port=9091 --public-advertise-address 127.0.0.1:8085 --private-bind-port 8084 --public-bind-port 8085 -d "redis://:changeme!@localhost:6379"
+    command: cargo run --package cdn-broker --release -- 
+      --public-bind-address 0.0.0.0:8085
+      --public-advertise-address 127.0.0.1:8085
+      --private-bind-address 0.0.0.0:8085
+      --private-advertise-address 127.0.0.1:8085
+      -d "redis://:changeme!@localhost:6379"
 
   client_0:
     command: cargo run --bin cdn-client --release -- -m "127.0.0.1:1737"
