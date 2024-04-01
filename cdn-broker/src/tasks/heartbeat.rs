@@ -2,7 +2,12 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use cdn_proto::{connection::protocols::Protocol, def::RunDef, discovery::DiscoveryClient};
+use cdn_proto::{
+    connection::protocols::Protocol,
+    def::RunDef,
+    discovery::{BrokerIdentifier, DiscoveryClient},
+};
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use tokio::{spawn, time::sleep};
 use tracing::{error, warn};
 
@@ -29,10 +34,18 @@ impl<Def: RunDef> Inner<Def> {
             // Check for new brokers, spawning tasks to connect to them if necessary
             match discovery_client.get_other_brokers().await {
                 Ok(brokers) => {
+                    // Calculate which brokers to connect to by taking the difference
+                    let mut brokers_to_connect_to: Vec<BrokerIdentifier> = brokers
+                        .difference(&HashSet::from_iter(self.connections.all_brokers()))
+                        .cloned()
+                        .collect();
+
+                    // Shuffle the list (so we don't get stuck in the authentication lock
+                    // on a broker that is down)
+                    brokers_to_connect_to.shuffle(&mut StdRng::from_entropy());
+
                     // Calculate the difference, spawn tasks to connect to them
-                    for broker in
-                        brokers.difference(&HashSet::from_iter(self.connections.all_brokers()))
-                    {
+                    for broker in brokers_to_connect_to {
                         // TODO: make this into a separate function
                         // Extrapolate the address to connect to
                         let to_connect_address = broker.private_advertise_address.clone();
