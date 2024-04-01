@@ -34,6 +34,7 @@ use cdn_proto::{
 };
 use connections::Connections;
 use derive_builder::Builder;
+use local_ip_address::local_ip;
 use tokio::{select, spawn};
 use tracing::info;
 
@@ -46,6 +47,11 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     /// The user (public) bind address: the public-facing address we bind to.
     pub public_bind_address: String,
 
+    /// The broker (private) advertise address: what other brokers use to connect to us.
+    pub private_advertise_address: String,
+    /// The broker (private) bind address: the private-facing address we bind to.
+    pub private_bind_address: String,
+
     /// Whether or not we want to serve metrics
     #[builder(default = "true")]
     pub metrics_enabled: bool,
@@ -57,11 +63,6 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     /// The IP/interface we want to serve the metrics on
     #[builder(default = "String::from(\"127.0.0.1\")")]
     pub metrics_ip: String,
-
-    /// The broker (private) advertise address: what other brokers use to connect to us.
-    pub private_advertise_address: String,
-    /// The broker (private) bind address: the private-facing address we bind to.
-    pub private_bind_address: String,
 
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
@@ -135,6 +136,17 @@ impl<Def: RunDef> Broker<Def> {
             ca_cert_path,
             ca_key_path,
         } = config;
+
+        // Get the local IP address so we can replace in
+        let local_ip = local_ip()
+            .expect("failed to obtain local IP and none was supplied")
+            .to_string();
+
+        // Replace "local_ip" with the actual local IP address
+        let public_bind_address = public_bind_address.replace("local_ip", &local_ip);
+        let public_advertise_address = public_advertise_address.replace("local_ip", &local_ip);
+        let private_bind_address = private_bind_address.replace("local_ip", &local_ip);
+        let private_advertise_address = private_advertise_address.replace("local_ip", &local_ip);
 
         // Create a unique broker identifier
         let identity = BrokerIdentifier {
