@@ -10,7 +10,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::{
-        hooks::{Trusted, Untrusted},
+        hooks::Trusted,
         protocols::{Protocol, Receiver, Sender},
     },
     crypto::signature::SignatureScheme,
@@ -24,6 +24,8 @@ use crate::{
     connection::UserPublicKey,
     crypto::signature::{KeyPair, Serializable},
 };
+
+use super::UserConnection;
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
 pub struct BrokerAuth<Def: RunDef> {
@@ -80,10 +82,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &(
-            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
-            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
-        ),
+        connection: &UserConnection<Def>,
         broker_identifier: &BrokerIdentifier,
         discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {

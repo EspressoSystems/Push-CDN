@@ -9,10 +9,7 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::{
-        hooks::Untrusted,
-        protocols::{Protocol, Receiver, Sender},
-    },
+    connection::protocols::{Receiver, Sender},
     def::RunDef,
     discovery::DiscoveryClient,
     error::{Error, Result},
@@ -23,6 +20,8 @@ use crate::{
     connection::UserPublicKey,
     crypto::signature::{Serializable, SignatureScheme},
 };
+
+use super::UserConnection;
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
 pub struct MarshalAuth<Def: RunDef> {
@@ -41,10 +40,7 @@ impl<Def: RunDef> MarshalAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &(
-            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
-            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
-        ),
+        connection: &UserConnection<Def>,
         discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user

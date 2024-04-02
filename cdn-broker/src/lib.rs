@@ -142,9 +142,12 @@ impl<Def: RunDef> Broker<Def> {
         } = config;
 
         // Get the local IP address so we can replace in
-        let local_ip = local_ip()
-            .expect("failed to obtain local IP and none was supplied")
-            .to_string();
+        let local_ip = bail!(
+            local_ip(),
+            Connection,
+            "failed to obtain local IP and none was supplied"
+        )
+        .to_string();
 
         // Replace "local_ip" with the actual local IP address
         let public_bind_address = public_bind_address.replace("local_ip", &local_ip);

@@ -54,9 +54,7 @@ async fn main() {
 
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.
-    let client = Client::<BLS, Quic>::new(config)
-        .await
-        .expect("failed to create client");
+    let client = Client::<BLS, Quic>::new(config);
 
     // In a loop,
     loop {
