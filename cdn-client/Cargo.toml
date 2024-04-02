@@ -8,8 +8,8 @@ description = "Defines client interactions for both marshals and brokers"
 [features]
 default = ["runtime-tokio"]
 
-runtime-tokio = ["cdn-proto/runtime-tokio"]
-runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
+runtime-tokio = []
+runtime-async-std = ["dep:async-std"]
 
 [dependencies]
 tokio = { workspace = true }

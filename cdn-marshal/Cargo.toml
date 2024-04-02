@@ -8,8 +8,8 @@ description = "Contains the server implementation for the marshal, which issues 
 [features]
 default = ["runtime-tokio"]
 
-runtime-tokio = ["cdn-proto/runtime-tokio"]
-runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
+runtime-tokio = []
+runtime-async-std = ["dep:async-std"]
 
 [dependencies]
 jf-primitives.workspace = true

@@ -10,8 +10,8 @@ default = ["runtime-tokio", "strong_consistency"]
 
 strong_consistency = []
 
-runtime-tokio = ["cdn-proto/runtime-tokio"]
-runtime-async-std = ["dep:async-std", "cdn-proto/runtime-async-std"]
+runtime-tokio = []
+runtime-async-std = ["dep:async-std"]
 
 [dev-dependencies]
 criterion.workspace = true
