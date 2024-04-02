@@ -12,8 +12,15 @@ default = ["runtime-tokio"]
 
 metrics = ["dep:prometheus"]
 
-runtime-tokio = ["sqlx/runtime-tokio"]
-runtime-async-std = ["dep:async-std", "sqlx/runtime-async-std"]
+runtime-tokio = [
+    "sqlx/runtime-tokio",
+    "redis/tokio-comp",
+]
+runtime-async-std = [
+    "dep:async-std",
+    "sqlx/runtime-async-std",
+    "redis/async-std-comp",
+]
 
 [dev-dependencies]
 portpicker = "0.1.1"
@@ -27,7 +34,9 @@ harness = false
 
 
 [dependencies]
-redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.24.0", default-features = false, features = [
+    "connection-manager",
+] }
 
 sqlx = { version = "0.7.3", default-features = false, features = [
     "sqlite",
@@ -40,24 +49,21 @@ prometheus = { workspace = true, optional = true }
 lazy_static = { workspace = true }
 
 tokio = { workspace = true }
-async-std = { version = "1.12.0", features = [
-    "tokio1",
-    "attributes",
-], optional = true }
+async-std = { workspace = true, optional = true }
 
 capnp = "0.19"
 thiserror = "1"
-quinn = "0.10"
+quinn = { version = "0.10", default-features = false, features = ["tls-rustls", "runtime-tokio"] }
 jf-primitives.workspace = true
 ark-serialize = "0.4"
 rand.workspace = true
 url = "2"
 tracing.workspace = true
 pem = "3"
-rustls = "0.21"
+rustls = { version = "0.21", default-features = false }
 mockall = "0.12"
 async-trait = "0.1"
-warp = "0.3"
+warp = { version = "0.3", default-features = false }
 anyhow = "1"
 kanal = "0.1.0-pre8"
 rkyv.workspace = true
