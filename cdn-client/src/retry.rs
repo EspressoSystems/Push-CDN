@@ -225,7 +225,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
 
             // Wait a bit so we don't overload the server
             sleep(Duration::from_secs(2)).await;
-        }   
+        }
     }
 
     /// Sends a message to the underlying connection. Reconnection is handled under
