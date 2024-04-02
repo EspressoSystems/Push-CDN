@@ -32,6 +32,11 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Client<Scheme, Proto
         Self(Retry::from_config(config))
     }
 
+    /// Returns only once the connection is fully initialized
+    pub async fn ensure_initialized(&self) {
+        self.0.ensure_initialized().await
+    }
+
     /// Receives the next message from the downstream server.
     /// If it fails, we return an error but try to initiate a new
     /// connection in the background.

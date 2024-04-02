@@ -210,6 +210,24 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, Protoc
         }
     }
 
+    /// Returns only when the connection is fully initialized
+    pub async fn ensure_initialized(&self) {
+        // In a loop, attempt to initialize the connection (if not yet)
+        while let Err(err) = self
+            .inner
+            .connection
+            .read()
+            .await
+            .get_or_try_init(|| self.inner.connect())
+            .await
+        {
+            error!("failed to initialize connection: {err}");
+
+            // Wait a bit so we don't overload the server
+            sleep(Duration::from_secs(2)).await;
+        }   
+    }
+
     /// Sends a message to the underlying connection. Reconnection is handled under
     /// the hood. Messages will fail if the connection is currently closed or reconnecting.
     ///
