@@ -5,13 +5,13 @@ processes:
     command: echo 'requirepass changeme!' | keydb-server - --save "" --appendonly no
 
   marshal_0:
-    command: cargo run --package cdn-marshal --features global-permits --release -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --package cdn-marshal --release -- -d "redis://:changeme!@localhost:6379"
 
   broker_0:
-    command: cargo run --package cdn-broker --features global-permits  --release -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --package cdn-broker --release -- -d "redis://:changeme!@localhost:6379"
 
   broker_1:
-    command: cargo run --package cdn-broker --features global-permits  --release -- 
+    command: cargo run --package cdn-broker --release -- 
       --public-bind-address 0.0.0.0:1740
       --public-advertise-address local_ip:1740
       --private-bind-address 0.0.0.0:1741
