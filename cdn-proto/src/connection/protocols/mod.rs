@@ -111,7 +111,6 @@ impl Clone for MockReceiver {
     }
 }
 
-
 /// A macro to read a length-delimited (serialized) message from a stream.
 /// Has a bounds check for if the message is too big
 #[macro_export]
@@ -187,10 +186,10 @@ pub mod tests {
 
     /// Test connection establishment, listening for connections, and message
     /// sending and receiving. All protocols should be calling this test function
-    /// 
-    /// # Panics 
+    ///
+    /// # Panics
     /// If any asserts fail
-    /// 
+    ///
     /// # Errors
     /// If the connection failed
     pub async fn test_connection<P: Protocol<None>>(bind_address: String) -> Result<()> {
