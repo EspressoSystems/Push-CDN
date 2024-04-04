@@ -83,7 +83,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// - If our connection fails
     pub async fn verify_user(
         connection: &UserConnection<Def>,
-        broker_identifier: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] broker_identifier: &BrokerIdentifier,
         discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
@@ -100,7 +100,11 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // Check the permit
         let serialized_public_key = match discovery_client
-            .validate_permit(broker_identifier, auth_message.permit)
+            .validate_permit(
+                #[cfg(not(feature = "global-permits"))]
+                broker_identifier,
+                auth_message.permit,
+            )
             .await
         {
             // The permit did not exist

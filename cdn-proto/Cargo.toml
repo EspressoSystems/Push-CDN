@@ -9,6 +9,8 @@ rcgen.workspace = true
 
 [features]
 metrics = ["dep:prometheus"]
+# Allow permits to be issued for _any_ broker
+global-permits = []
 
 [dev-dependencies]
 portpicker = "0.1.1"

@@ -67,7 +67,7 @@ fn set_up_bench<Proto: Protocol<Untrusted>>(
             .expect("failed to generate TLS cert from CA");
 
         // Create listener, bind to port
-        let listener = Proto::bind(&format!("127.0.0.1:{}", port), tls_cert, tls_key)
+        let listener = Proto::bind(&format!("127.0.0.1:{port}"), tls_cert, tls_key)
             .await
             .expect("failed to listen on port");
 
@@ -85,7 +85,7 @@ fn set_up_bench<Proto: Protocol<Untrusted>>(
         });
 
         // Attempt to connect
-        let conn1 = Proto::connect(&format!("127.0.0.1:{}", port), true)
+        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true)
             .await
             .expect("failed to connect to listener");
 
@@ -114,7 +114,7 @@ fn bench_quic(c: &mut Criterion) {
     static MB: usize = 1024 * 1024;
     let mut group = c.benchmark_group("quic_transfer");
     // The message sizes we want to test
-    for size in [100, 1 * KB, 100 * KB, 10 * MB, 100 * MB].iter() {
+    for size in &[100, KB, 100 * KB, 10 * MB, 100 * MB] {
         // Set up our bench
         let (runtime, conn1, conn2, message) = set_up_bench::<Quic>(*size);
 
@@ -140,7 +140,7 @@ fn bench_tcp(c: &mut Criterion) {
     static MB: usize = 1024 * 1024;
     let mut group = c.benchmark_group("tcp_transfer");
     // The message sizes we want to test
-    for size in [100, 1 * KB, 100 * KB, 10 * MB, 100 * MB].iter() {
+    for size in &[100, KB, 100 * KB, 10 * MB, 100 * MB] {
         // Set up our bench
         let (runtime, conn1, conn2, message) = set_up_bench::<Tcp>(*size);
 

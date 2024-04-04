@@ -415,6 +415,6 @@ mod tests {
         };
 
         // Test using the super traits' function
-        super_test_connection::<Quic>(format!("127.0.0.1:{}", port)).await
+        super_test_connection::<Quic>(format!("127.0.0.1:{port}")).await
     }
 }

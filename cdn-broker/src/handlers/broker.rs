@@ -80,13 +80,13 @@ impl<Def: RunDef> Inner<Def> {
             return;
         };
 
-        // If we have `strong_consistency` enabled, send partials
-        #[cfg(feature = "strong_consistency")]
+        // If we have `strong-consistency` enabled, send partials
+        #[cfg(feature = "strong-consistency")]
         if let Err(err) = self.partial_topic_sync() {
             error!("failed to perform partial topic sync: {err}");
         }
 
-        #[cfg(feature = "strong_consistency")]
+        #[cfg(feature = "strong-consistency")]
         if let Err(err) = self.partial_user_sync() {
             error!("failed to perform partial user sync: {err}");
         }

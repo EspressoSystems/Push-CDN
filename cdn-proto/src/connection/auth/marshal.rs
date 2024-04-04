@@ -117,6 +117,7 @@ impl<Def: RunDef> MarshalAuth<Def> {
         // Generate and issue a permit for said broker
         let permit = match discovery_client
             .issue_permit(
+                #[cfg(not(feature = "global-permits"))]
                 &broker_with_least_connections,
                 Duration::from_secs(30),
                 auth_message.public_key,

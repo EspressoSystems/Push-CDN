@@ -159,7 +159,7 @@ pub mod tests {
         );
 
         // Check that both users are associated with 1
-        vec_equal!(map.get_keys_by_value(&1), vec!["user0", "user1"]);
+        vec_equal!(map.get_keys_by_value(&1), ["user0", "user1"]);
 
         // Dissociate "user0" from 1
         map.dissociate_keys_from_value(&"user0", &[1]);
@@ -175,7 +175,7 @@ pub mod tests {
 
         // Check that nobody is associated with 1
         assert!(
-            map.get_keys_by_value(&1).len() == 0,
+            map.get_keys_by_value(&1).is_empty(),
             "expected no user to be associated with value 1"
         );
 
@@ -202,13 +202,13 @@ pub mod tests {
 
         // Assert zero keys to value
         assert!(
-            map.key_to_values.len() == 0,
+            map.key_to_values.is_empty(),
             "expected `key_to_values` to be empty"
         );
 
         // Assert zero values to key
         assert!(
-            map.value_to_keys.len() == 0,
+            map.value_to_keys.is_empty(),
             "expected `value_to_keys` to be empty"
         );
     }
