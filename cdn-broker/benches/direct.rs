@@ -79,15 +79,13 @@ fn bench_direct_user_to_self(c: &mut Criterion) {
             connected_brokers: vec![],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Run the benchmark
     c.bench_function("direct: user -> broker -> same user", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| direct_user_to_self(black_box(&run)))
+            .iter(|| direct_user_to_self(black_box(&run)));
     });
 }
 
@@ -104,15 +102,13 @@ fn bench_direct_user_to_user(c: &mut Criterion) {
             connected_brokers: vec![],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Run the benchmark
     c.bench_function("direct: user -> broker -> different user", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| direct_user_to_user(black_box(&run)))
+            .iter(|| direct_user_to_user(black_box(&run)));
     });
 }
 
@@ -129,15 +125,13 @@ fn bench_direct_user_to_broker(c: &mut Criterion) {
             connected_brokers: vec![(vec![2], vec![Topic::Global])],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Run the benchmark
     c.bench_function("direct: user -> broker -> broker", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| direct_user_to_broker(black_box(&run)))
+            .iter(|| direct_user_to_broker(black_box(&run)));
     });
 }
 
@@ -154,15 +148,13 @@ fn bench_direct_broker_to_user(c: &mut Criterion) {
             connected_brokers: vec![(vec![2], vec![Topic::Global])],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Run the benchmark
     c.bench_function("direct: broker -> broker -> user", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| direct_broker_to_user(black_box(&run)))
+            .iter(|| direct_broker_to_user(black_box(&run)));
     });
 }
 

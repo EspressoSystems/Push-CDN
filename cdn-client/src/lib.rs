@@ -34,7 +34,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Client<Scheme, Proto
 
     /// Returns only once the connection is fully initialized
     pub async fn ensure_initialized(&self) {
-        self.0.ensure_initialized().await
+        self.0.ensure_initialized().await;
     }
 
     /// Receives the next message from the downstream server.

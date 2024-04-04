@@ -249,7 +249,7 @@ pub mod tests {
 
         // Remove "user0"
         map.remove("user0");
-        assert!(map.get(&"user0") == None);
+        assert!(map.get(&"user0").is_none());
     }
 
     #[test]
@@ -291,7 +291,7 @@ pub mod tests {
 
         // Merge map_1 with new_diff, expecting user0 to have a value but not user1
         map_1.merge(new_diff);
-        assert!(map_1.get(&"user0") == None);
+        assert!(map_1.get(&"user0").is_none());
         assert!(map_1.get(&"user1") == Some(&"broker0"));
 
         // Full sync, expect now to be present
@@ -299,13 +299,13 @@ pub mod tests {
         assert!(map_1.get(&"user0") == Some(&"broker0"));
 
         // Map 1 removes value, syncs
-        map_1.remove(&"user0");
+        map_1.remove("user0");
 
         // Merge map0 with map 1's diff
         map_0.merge(map_1.diff());
 
         // Expect user0 to be gone from map0
-        assert!(map_0.get(&"user0") == None);
+        assert!(map_0.get(&"user0").is_none());
     }
 
     // TODO: fuzzy tests for this

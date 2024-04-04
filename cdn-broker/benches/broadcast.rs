@@ -52,15 +52,13 @@ fn bench_broadcast_user(c: &mut Criterion) {
             connected_brokers: vec![],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Benchmark
     c.bench_function("broadcast: users", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| broadcast_user(black_box(&run)))
+            .iter(|| broadcast_user(black_box(&run)));
     });
 }
 
@@ -76,15 +74,13 @@ fn bench_broadcast_broker(c: &mut Criterion) {
             connected_brokers: vec![(vec![], vec![Topic::Global]), (vec![], vec![Topic::Global])],
         };
 
-        let run = run_definition.into_run().await;
-
-        run
+        run_definition.into_run().await
     });
 
     // Benchmark
     c.bench_function("broadcast: brokers", |b| {
         b.to_async(&benchmark_runtime)
-            .iter(|| broadcast_broker(black_box(&run)))
+            .iter(|| broadcast_broker(black_box(&run)));
     });
 }
 

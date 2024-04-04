@@ -200,7 +200,7 @@ impl DiscoveryClient for Redis {
     /// - If the `Redis` connection fails
     async fn issue_permit(
         &mut self,
-        for_broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] for_broker: &BrokerIdentifier,
         expiry: Duration,
         public_key: Vec<u8>,
     ) -> Result<u64> {
@@ -208,11 +208,19 @@ impl DiscoveryClient for Redis {
         // TODO: figure out if it makes sense to initialize this somewhere else
         let permit = StdRng::from_entropy().next_u64();
 
+        // Issue this permit for either one broker or all brokers (if we have
+        // the `global-permits` feature enabled)
+        let mut cmd = redis::cmd("SET");
+        #[cfg(not(feature = "global-permits"))]
+        // Per-broker permit
+        cmd.arg(&[format!("{for_broker}/permits/{permit}")]);
+        #[cfg(feature = "global-permits")]
+        // Global permit
+        cmd.arg(&[format!("permits/{permit}")]);
+
         // Issue the permit
         bail!(
-            redis::cmd("SET")
-                .arg(&[format!("{for_broker}/permits/{permit}")])
-                .arg(public_key)
+            cmd.arg(public_key)
                 .arg(&["EX", &expiry.as_secs().to_string()])
                 .query_async(&mut self.underlying_connection)
                 .await,
@@ -231,15 +239,20 @@ impl DiscoveryClient for Redis {
     /// - If the `Redis` connection fails
     async fn validate_permit(
         &mut self,
-        broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] for_broker: &BrokerIdentifier,
         permit: u64,
     ) -> Result<Option<Vec<u8>>> {
+        // Remove this permit verifying it exists for either one broker or
+        // all brokers (with the `global-permits` feature enabled)
+        let mut cmd = redis::cmd("GETDEL");
+        #[cfg(not(feature = "global-permits"))]
+        cmd.arg(&[format!("{for_broker}/permits/{permit}")]);
+        #[cfg(feature = "global-permits")]
+        cmd.arg(&[format!("permits/{permit}")]);
+
         // Remove the permit
         Ok(bail!(
-            redis::cmd("GETDEL")
-                .arg(format!("{broker}/permits/{permit}"))
-                .query_async(&mut self.underlying_connection)
-                .await,
+            cmd.query_async(&mut self.underlying_connection).await,
             Connection,
             "failed to connect to Redis"
         ))

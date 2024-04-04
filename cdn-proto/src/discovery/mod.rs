@@ -39,19 +39,20 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
     /// (As a broker) get other registered brokers so we can connect to new ones.
     async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>>;
 
-    /// (As a marshal) issue a permit for a user to connect to a particular broker.
+    /// (As a marshal) issue a permit for a user to connect to a particular broker (or all brokers,
+    /// if the feature is specified).
     async fn issue_permit(
         &mut self,
-        for_broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] for_broker: &BrokerIdentifier,
         expiry: Duration,
         public_key: Vec<u8>,
     ) -> Result<u64>;
 
-    /// (As a broker) validate a permit as existing for a broker and remove it, returning
-    /// the user's public key.
+    /// (As a broker) validate a permit as existing for a broker (or all brokers, if the feature is specified)
+    /// and remove it, returning the user's public key.
     async fn validate_permit(
         &mut self,
-        broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] broker: &BrokerIdentifier,
         permit: u64,
     ) -> Result<Option<Vec<u8>>>;
 
@@ -73,9 +74,9 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
 #[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive)]
 #[archive(check_bytes)]
 pub struct BrokerIdentifier {
-    /// The address that a broker advertises to publicly (to users)
+    /// The address that a broker advertises publicly (to users)
     pub public_advertise_address: String,
-    /// The address that a broker advertises to privately (to other brokers)
+    /// The address that a broker advertises privately (to other brokers)
     pub private_advertise_address: String,
 }
 

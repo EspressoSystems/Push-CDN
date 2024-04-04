@@ -8,7 +8,7 @@ use cdn_proto::connection::hooks::Untrusted;
 use cdn_proto::connection::protocols::Protocol;
 use cdn_proto::connection::UserPublicKey;
 use cdn_proto::def::RunDef;
-#[cfg(feature = "strong_consistency")]
+#[cfg(feature = "strong-consistency")]
 use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{
@@ -35,6 +35,7 @@ impl<Def: RunDef> Inner<Def> {
             Duration::from_secs(5),
             BrokerAuth::<Def>::verify_user(
                 &connection,
+                #[cfg(not(feature = "global-permits"))]
                 &self.identity,
                 &mut self.discovery_client.clone(),
             ),
@@ -58,20 +59,20 @@ impl<Def: RunDef> Inner<Def> {
         // Subscribe our user to their connections
         self.connections.subscribe_user_to(&public_key, topics);
 
-        // If we have `strong_consistency` enabled, send partials
-        #[cfg(feature = "strong_consistency")]
+        // If we have `strong-consistency` enabled, send partials
+        #[cfg(feature = "strong-consistency")]
         if let Err(err) = self.partial_topic_sync() {
             tracing::error!("failed to perform partial topic sync: {err}");
         }
 
-        #[cfg(feature = "strong_consistency")]
+        #[cfg(feature = "strong-consistency")]
         if let Err(err) = self.partial_user_sync() {
             tracing::error!("failed to perform partial user sync: {err}");
         }
 
         // We want to perform a heartbeat for every user connection so that the number
         // of users connected to brokers is always evenly distributed.
-        #[cfg(feature = "strong_consistency")]
+        #[cfg(feature = "strong-consistency")]
         let _ = self
             .discovery_client
             .clone()

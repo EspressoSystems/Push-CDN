@@ -111,6 +111,68 @@ impl Clone for MockReceiver {
     }
 }
 
+
+/// A macro to read a length-delimited (serialized) message from a stream.
+/// Has a bounds check for if the message is too big
+#[macro_export]
+macro_rules! read_length_delimited {
+    ($stream: expr) => {{
+        // Read the message size from the stream
+        let Ok(message_size) = $stream.read_u32().await else {
+            return;
+        };
+
+        // Make sure the message isn't too big
+        if message_size > MAX_MESSAGE_SIZE {
+            return;
+        }
+
+        // Acquire the allocation, if necessary
+        let permit = H::allocate_before_read(message_size).await;
+
+        // Create buffer of the proper size
+        let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
+
+        // Read the message from the stream
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await
+        else {
+            return;
+        };
+
+        // Add to our metrics, if desired
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_RECV.add(message_size as f64);
+
+        Bytes::from(buffer, permit)
+    }};
+}
+
+/// A macro to write a length-delimited (serialized) message to a stream.
+#[macro_export]
+macro_rules! write_length_delimited {
+    ($stream: expr, $message:expr) => {
+        // Get the length of the message
+        let message_len = $message.len() as u32;
+
+        // Write the message size to the stream
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await
+        else {
+            // We timed out
+            return;
+        };
+
+        // Write the message size to the stream
+        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await else {
+            // We timed out
+            return;
+        };
+
+        // Increment the number of bytes we've sent by this amount
+        #[cfg(feature = "metrics")]
+        metrics::BYTES_SENT.add(message_len as f64);
+    };
+}
+
 #[cfg(test)]
 pub mod tests {
     use anyhow::Result;
@@ -125,6 +187,12 @@ pub mod tests {
 
     /// Test connection establishment, listening for connections, and message
     /// sending and receiving. All protocols should be calling this test function
+    /// 
+    /// # Panics 
+    /// If any asserts fail
+    /// 
+    /// # Errors
+    /// If the connection failed
     pub async fn test_connection<P: Protocol<None>>(bind_address: String) -> Result<()> {
         // Generate cert signed by local CA
         let (cert, key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)?;
@@ -191,65 +259,4 @@ pub mod tests {
         // We were successful
         Ok(())
     }
-}
-
-/// A macro to read a length-delimited (serialized) message from a stream.
-/// Has a bounds check for if the message is too big
-#[macro_export]
-macro_rules! read_length_delimited {
-    ($stream: expr) => {{
-        // Read the message size from the stream
-        let Ok(message_size) = $stream.read_u32().await else {
-            return;
-        };
-
-        // Make sure the message isn't too big
-        if message_size > MAX_MESSAGE_SIZE {
-            return;
-        }
-
-        // Acquire the allocation, if necessary
-        let permit = H::allocate_before_read(message_size).await;
-
-        // Create buffer of the proper size
-        let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
-
-        // Read the message from the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await
-        else {
-            return;
-        };
-
-        // Add to our metrics, if desired
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_RECV.add(message_size as f64);
-
-        Bytes::from(buffer, permit)
-    }};
-}
-
-/// A macro to write a length-delimited (serialized) message to a stream.
-#[macro_export]
-macro_rules! write_length_delimited {
-    ($stream: expr, $message:expr) => {
-        // Get the length of the message
-        let message_len = $message.len() as u32;
-
-        // Write the message size to the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await
-        else {
-            // We timed out
-            return;
-        };
-
-        // Write the message size to the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await else {
-            // We timed out
-            return;
-        };
-
-        // Increment the number of bytes we've sent by this amount
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_SENT.add(message_len as f64);
-    };
 }

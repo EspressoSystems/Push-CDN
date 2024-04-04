@@ -224,7 +224,7 @@ impl DiscoveryClient for Embedded {
     /// - If the `SQLite` connection fails
     async fn issue_permit(
         &mut self,
-        for_broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] for_broker: &BrokerIdentifier,
         expiry: Duration,
         public_key: Vec<u8>,
     ) -> Result<u64> {
@@ -232,6 +232,7 @@ impl DiscoveryClient for Embedded {
         // TODO: figure out if it makes sense to initialize this somewhere else
         let permit = StdRng::from_entropy().next_u32();
 
+        #[cfg(not(feature = "global-permits"))]
         let broker = for_broker.to_string();
 
         // Calculate record expiry
@@ -242,13 +243,26 @@ impl DiscoveryClient for Embedded {
         ) + expiry)
             .as_secs_f64();
 
+        // Create the query
+        let query = query(
+            "INSERT INTO permits (identifier, permit, user_pubkey, expiry) VALUES (?1, ?2, ?3, ?4)",
+        );
+
+        // Issue for a single broker or for all brokers based on whether or not we have
+        // enabled global permits
+        #[cfg(not(feature = "global-permits"))]
+        let query = query.bind(broker);
+        #[cfg(feature = "global-permits")]
+        let query = query.bind("");
+
         // Insert into permits
         bail!(
-            query(
-                "INSERT INTO permits (identifier, permit, user_pubkey, expiry) VALUES (?1, ?2, ?3, ?4)",
-            ).bind(&broker).bind(permit).bind(public_key).bind(expire_time)
-            .execute(&self.pool)
-            .await,
+            query
+                .bind(permit)
+                .bind(public_key)
+                .bind(expire_time)
+                .execute(&self.pool)
+                .await,
             File,
             "failed to issue permit"
         );
@@ -263,7 +277,7 @@ impl DiscoveryClient for Embedded {
     /// - If the `SQLite` connection fails
     async fn validate_permit(
         &mut self,
-        broker: &BrokerIdentifier,
+        #[cfg(not(feature = "global-permits"))] broker: &BrokerIdentifier,
         permit: u64,
     ) -> Result<Option<Vec<u8>>> {
         // Delete old permits
@@ -279,15 +293,18 @@ impl DiscoveryClient for Embedded {
             Parse,
             "failed to parse permit as u32"
         );
-        let broker = broker.to_string();
 
-        // Get possible permit
+        // Switch the query based on whether or not we have global permits enabled
+        #[cfg(not(feature = "global-permits"))]
+        let query = query("DELETE FROM permits WHERE identifier=(?1) AND permit=(?2) RETURNING *;")
+            .bind(broker.to_string());
+
+        #[cfg(feature = "global-permits")]
+        let query = query("DELETE FROM permits WHERE permit=(?1) RETURNING *;");
+
+        // Get and remove the possible permit
         let res = bail!(
-            query("DELETE FROM permits WHERE permit=(?1) AND identifier=(?2) RETURNING *;",)
-                .bind(permit)
-                .bind(broker)
-                .fetch_optional(&self.pool)
-                .await,
+            query.bind(permit).fetch_optional(&self.pool).await,
             File,
             "failed to get permits"
         );
