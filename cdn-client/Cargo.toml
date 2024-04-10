@@ -6,9 +6,6 @@ edition = "2021"
 description = "Defines client interactions for both marshals and brokers"
 
 [features]
-default = ["runtime-tokio"]
-
-runtime-tokio = []
 runtime-async-std = ["dep:async-std"]
 
 [dependencies]
