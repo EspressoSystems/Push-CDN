@@ -62,15 +62,14 @@ pub trait Sender {
 #[automock]
 #[async_trait]
 pub trait Receiver {
-    /// Receives a message or message[s] over the stream and deserializes
-    /// it.
+    /// Receives message over the stream and deserializes it.
     ///
     /// # Errors
     /// - if we fail to receive the message
     /// - if we fail deserialization
     async fn recv_message(&self) -> Result<Message>;
 
-    /// Receives a message or message[s] over the stream without deserializing.
+    /// Receives a message over the stream without deserializing.
     ///
     /// # Errors
     /// - if we fail to receive the message
