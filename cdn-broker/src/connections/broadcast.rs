@@ -126,9 +126,17 @@ impl<K: Hash + PartialEq + Eq + Clone, V: Hash + PartialEq + Eq + Clone> Relatio
     pub fn remove_key(&mut self, k: &K) {
         // If the key exists, remove it
         if let Some(vs) = self.key_to_values.remove(k) {
-            // For each value that was associated, remove the value
-            for v in &vs {
-                self.value_to_keys.remove(v);
+            // For each value that was associated,
+            for v in vs {
+                if let Some(ks) = self.value_to_keys.get_mut(&v) {
+                    // Remove the key that was associated with the value
+                    ks.remove(k);
+
+                    // If the value is empty, remove it
+                    if ks.is_empty() {
+                        self.value_to_keys.remove(&v);
+                    }
+                }
             }
         }
     }
@@ -149,8 +157,8 @@ pub mod tests {
         let mut map: RelationalMap<&str, u64> = RelationalMap::new();
 
         // Associate "user0" with 0 and "user1" with 1
-        map.associate_key_with_values(&"user0", vec![0, 1]);
-        map.associate_key_with_values(&"user1", vec![1]);
+        map.associate_key_with_values(&"user0", vec![0, 1, 2]);
+        map.associate_key_with_values(&"user1", vec![1, 2]);
 
         // Check that "user0" is only user associated with 0
         assert!(
@@ -172,6 +180,12 @@ pub mod tests {
 
         // Remove "user1"
         map.remove_key(&"user1");
+
+        // Check that 2 is still associated with user0
+        vec_equal!(map.get_keys_by_value(&2), ["user0"]);
+
+        // Dissociate "user0" from 2
+        map.dissociate_keys_from_value(&"user0", &[2]);
 
         // Check that nobody is associated with 1
         assert!(
