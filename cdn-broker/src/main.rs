@@ -61,8 +61,12 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize tracing
-    tracing_subscriber::fmt::init();
-
+    if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
+        tracing_subscriber::fmt().json().init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
+    
     // Generate the broker key from the supplied seed
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();

@@ -33,7 +33,11 @@ async fn main() {
     let args = Args::parse();
 
     // Initialize tracing
-    tracing_subscriber::fmt::init();
+    if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
+        tracing_subscriber::fmt().json().init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
 
     // Generate a random keypair
     let (private_key, public_key) =

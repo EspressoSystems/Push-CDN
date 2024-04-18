@@ -18,6 +18,7 @@ rand = "0.8"
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",
+    "json",
     "ansi",
 ] }
 clap = { version = "4", features = ["derive"] }

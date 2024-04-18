@@ -41,7 +41,11 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize tracing
-    tracing_subscriber::fmt::init();
+    if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
+        tracing_subscriber::fmt().json().init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
 
     // Create a new `Config`
     let config = Config {
