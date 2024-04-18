@@ -24,7 +24,7 @@ use crate::connection::metrics;
 use crate::connection::middleware::Middleware;
 use crate::connection::Bytes;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
-use crate::parse_socket_address;
+use crate::parse_endpoint;
 use crate::{
     bail, bail_option,
     error::{Error, Result},
@@ -49,8 +49,8 @@ impl<M: Middleware> Protocol<M> for Quic {
         remote_endpoint: &str,
         use_local_authority: bool,
     ) -> Result<(QuicSender, QuicReceiver)> {
-        // Parse the socket address
-        let remote_address = bail_option!(
+        // Parse the endpoint
+        let remote_endpoint = bail_option!(
             bail!(
                 remote_endpoint.to_socket_addrs(),
                 Parse,
@@ -58,7 +58,7 @@ impl<M: Middleware> Protocol<M> for Quic {
             )
             .next(),
             Connection,
-            "did not find suitable address for endpoint"
+            "did not find suitable endpoint for endpoint"
         );
 
         // Create QUIC endpoint
@@ -66,10 +66,10 @@ impl<M: Middleware> Protocol<M> for Quic {
             Endpoint::client(bail!(
                 "0.0.0.0:0".parse(),
                 Parse,
-                "failed to parse local bind address"
+                "failed to parse local bind endpoint"
             )),
             Connection,
-            "failed to bind to local address"
+            "failed to bind to local endpoint"
         );
 
         // Pick which authority to trust based on whether or not we have requested
@@ -102,16 +102,16 @@ impl<M: Middleware> Protocol<M> for Quic {
         // Set default client config
         endpoint.set_default_client_config(config);
 
-        // Connect with QUIC endpoint to remote address
+        // Connect with QUIC endpoint to remote endpoint
         let connection = bail!(
             bail!(
-                endpoint.connect(remote_address, "espresso"),
+                endpoint.connect(remote_endpoint, "espresso"),
                 Connection,
-                "failed quic connect to remote address"
+                "failed quic connect to remote endpoint"
             )
             .await,
             Connection,
-            "failed quic connect to remote address"
+            "failed quic connect to remote endpoint"
         );
 
         // Open an outgoing bidirectional stream
@@ -135,20 +135,19 @@ impl<M: Middleware> Protocol<M> for Quic {
         Ok((sender, receiver))
     }
 
-    /// Binds to a local endpoint. Uses `maybe_tls_cert_path` and `maybe_tls_cert_key`
-    /// to conditionally load or generate the given (or not given) certificate.
+    /// Binds to a local endpoint using the given certificate and key.
     ///
     /// # Errors
-    /// - If we cannot parse the bind address
+    /// - If we cannot parse the bind endpoint
     /// - If we cannot load the certificate
     /// - If we cannot bind to the local interface
     async fn bind(
-        bind_address: &str,
+        bind_endpoint: &str,
         certificate: Certificate,
         key: PrivateKey,
     ) -> Result<Self::Listener> {
-        // Parse the bind address
-        let bind_address: SocketAddr = parse_socket_address!(bind_address);
+        // Parse the bind endpoint
+        let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);
 
         // Create server configuration from the loaded certificate
         let mut server_config = bail!(
@@ -165,11 +164,11 @@ impl<M: Middleware> Protocol<M> for Quic {
         server_config.transport_config(Arc::from(transport_config));
 
         // Create endpoint from the given server configuration and
-        // bind address
+        // bind endpoint
         Ok(QuicListener(bail!(
-            Endpoint::server(server_config, bind_address),
+            Endpoint::server(server_config, bind_endpoint),
             Connection,
-            "failed to bind to local address"
+            "failed to bind to local endpoint"
         )))
     }
 }

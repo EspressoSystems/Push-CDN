@@ -6,7 +6,7 @@ use tracing::error;
 use warp::Filter;
 
 /// Start the metrics server that should run forever on a particular port
-pub async fn serve_metrics(bind_address: SocketAddr) {
+pub async fn serve_metrics(bind_endpoint: SocketAddr) {
     // The `/metrics` route is standard for Prometheus deployments
     let route = warp::path("metrics").map(|| {
         // Gather all metrics, encode them, and return them.
@@ -23,5 +23,5 @@ pub async fn serve_metrics(bind_address: SocketAddr) {
     });
 
     // Serve the route on the specified port
-    warp::serve(route).run(bind_address).await;
+    warp::serve(route).run(bind_endpoint).await;
 }

@@ -32,9 +32,9 @@ pub struct BrokerAuth<Def: RunDef> {
 #[macro_export]
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
-        // Authenticate with the other broker, returning their reconnect address
+        // Authenticate with the other broker, returning their reconnect endpoint
         match BrokerAuth::<Def>::authenticate_with_broker(&mut $connection, &$inner.keypair).await {
-            Ok(broker_address) => broker_address,
+            Ok(broker_endpoint) => broker_endpoint,
             Err(err) => {
                 error!("failed authentication with broker: {err}");
                 return;
@@ -193,7 +193,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
             "failed to send auth message to broker"
         );
 
-        // Wait for the response with the permit and address
+        // Wait for the response with the permit and endpoint
         let response = bail!(
             connection.1.recv_message().await,
             Connection,
@@ -201,14 +201,14 @@ impl<Def: RunDef> BrokerAuth<Def> {
         );
 
         // Make sure the message is the proper type
-        let broker_address = if let Message::AuthenticateResponse(response) = response {
+        let broker_endpoint = if let Message::AuthenticateResponse(response) = response {
             // Check if we have passed authentication
             if response.permit == 1 {
-                // We have. Return the address we received
+                // We have. Return the endpoint we received
                 bail!(
                     response.context.try_into(),
                     Parse,
-                    "failed to parse broker address"
+                    "failed to parse broker endpoint"
                 )
             } else {
                 // We haven't, we failed authentication :(
@@ -224,7 +224,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
             ));
         };
 
-        Ok(broker_address)
+        Ok(broker_endpoint)
     }
 
     /// Verify a broker as a broker.
@@ -285,7 +285,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
             context: our_identifier.to_string(),
         });
 
-        // Send the permit to the user, along with the public broker advertise address
+        // Send the permit to the user, along with the public broker advertise endpoint
         let _ = connection.0.send_message(response_message).await;
 
         Ok(())

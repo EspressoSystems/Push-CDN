@@ -39,7 +39,6 @@ async-std = { workspace = true, optional = true }
 clap.workspace = true
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
-derive_builder.workspace = true
 rkyv.workspace = true
 derivative.workspace = true
 dashmap = { version = "5", default-features = false }

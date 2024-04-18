@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use cdn_client::{Client, ConfigBuilder};
+use cdn_client::{Client, Config};
 use cdn_proto::{
     crypto::signature::{KeyPair, Serializable},
     def::ProductionRunDef,
@@ -40,17 +40,15 @@ async fn main() {
         BLS::key_gen(&(), &mut StdRng::from_entropy()).expect("failed to generate key");
 
     // Build the config, the endpoint being where we expect the marshal to be
-    let config = ConfigBuilder::default()
-        .endpoint(args.marshal_endpoint)
-        // Private key is only used for signing authentication messages
-        .keypair(KeyPair {
+    let config = Config {
+        endpoint: args.marshal_endpoint,
+        keypair: KeyPair {
             public_key,
             private_key,
-        })
-        // Subscribe to the global consensus topic
-        .subscribed_topics(vec![Topic::Global])
-        .build()
-        .expect("failed to build client config");
+        },
+        subscribed_topics: vec![Topic::Global],
+        use_local_authority: true,
+    };
 
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.

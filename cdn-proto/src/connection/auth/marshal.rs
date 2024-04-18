@@ -130,10 +130,10 @@ impl<Def: RunDef> MarshalAuth<Def> {
         // Form a response message
         let response_message = Message::AuthenticateResponse(AuthenticateResponse {
             permit,
-            context: broker_with_least_connections.public_advertise_address,
+            context: broker_with_least_connections.public_advertise_endpoint,
         });
 
-        // Send the permit to the user, along with the public broker advertise address
+        // Send the permit to the user, along with the public broker advertise endpoint
         let _ = connection.0.send_message(response_message).await;
 
         Ok(UserPublicKey::from(public_key))

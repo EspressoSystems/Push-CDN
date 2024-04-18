@@ -33,9 +33,9 @@ impl<Def: RunDef> Inner<Def> {
         // flow.
         let broker_identifier = if is_outbound {
             // If we reached out to the other broker first, authenticate first.
-            let broker_address = authenticate_with_broker!(connection, self);
+            let broker_endpoint = authenticate_with_broker!(connection, self);
             verify_broker!(connection, self);
-            broker_address
+            broker_endpoint
         } else {
             // If the other broker reached out to us first, authenticate second.
             verify_broker!(connection, self);

@@ -23,7 +23,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 clap = { version = "4", features = ["derive"] }
 prometheus = { version = "0.13", default-features = false }
 lazy_static = "1"
-derive_builder = "0.20"
 async-std = { version = "1", default-features = false, features = [
     "tokio1",
     "attributes",

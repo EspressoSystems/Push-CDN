@@ -1,12 +1,7 @@
 //! The following is the main `Broker` binary, which just instantiates and runs
 //! a `Broker` object.
-use cdn_broker::{Broker, Config, ConfigBuilder};
-use cdn_proto::{
-    bail,
-    crypto::signature::KeyPair,
-    def::ProductionRunDef,
-    error::{Error, Result},
-};
+use cdn_broker::{Broker, Config};
+use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
 use clap::Parser;
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -23,34 +18,37 @@ struct Args {
     #[arg(short, long)]
     discovery_endpoint: String,
 
-    /// Whether or not metric collection and serving is enabled
-    #[arg(long, default_value_t = false)]
-    metrics_enabled: bool,
-
-    /// The IP to bind to for externalizing metrics
-    #[arg(long, default_value = "127.0.0.1")]
-    metrics_ip: String,
-
-    /// The port to bind to for externalizing metrics
-    #[arg(long, default_value_t = 9090)]
-    metrics_port: u16,
-
-    /// The user-facing address to bind to for connections from users
+    /// The user-facing endpoint in `IP:port` form to bind to for connections from users
     #[arg(long, default_value = "0.0.0.0:1738")]
-    public_bind_address: String,
+    public_bind_endpoint: String,
 
-    /// The user-facing address to advertise
+    /// The user-facing endpoint in `IP:port` form to advertise
     #[arg(long, default_value = "local_ip:1738")]
-    public_advertise_address: String,
+    public_advertise_endpoint: String,
 
-    /// The broker-facing address to bind to for connections from  
+    /// The broker-facing endpoint in `IP:port` form to bind to for connections from  
     /// other brokers
     #[arg(long, default_value = "0.0.0.0:1739")]
-    private_bind_address: String,
+    private_bind_endpoint: String,
 
-    /// The broker-facing address to advertise
+    /// The broker-facing endpoint in `IP:port` form to advertise
     #[arg(long, default_value = "local_ip:1739")]
-    private_advertise_address: String,
+    private_advertise_endpoint: String,
+
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    #[arg(short, long)]
+    metrics_bind_endpoint: Option<String>,
+
+    /// The path to the CA certificate
+    /// If not provided, a local, pinned CA is used
+    #[arg(long)]
+    ca_cert_path: Option<String>,
+
+    /// The path to the CA key
+    /// If not provided, a local, pinned CA is used
+    #[arg(long)]
+    ca_cert_key: Option<String>,
 
     /// The seed for broker key generation
     #[arg(long, default_value_t = 0)]
@@ -69,24 +67,23 @@ async fn main() -> Result<()> {
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
 
-    let broker_config: Config<ProductionRunDef> = bail!(
-        ConfigBuilder::default()
-            .public_advertise_address(args.public_advertise_address)
-            .public_bind_address(args.public_bind_address)
-            .private_advertise_address(args.private_advertise_address)
-            .private_bind_address(args.private_bind_address)
-            .metrics_enabled(args.metrics_enabled)
-            .metrics_ip(args.metrics_ip)
-            .discovery_endpoint(args.discovery_endpoint)
-            .metrics_port(args.metrics_port)
-            .keypair(KeyPair {
-                public_key,
-                private_key
-            })
-            .build(),
-        Parse,
-        "failed to build broker configuration"
-    );
+    // Create config
+    let broker_config: Config<ProductionRunDef> = Config {
+        ca_cert_path: args.ca_cert_path,
+        ca_key_path: args.ca_cert_key,
+
+        discovery_endpoint: args.discovery_endpoint,
+        metrics_bind_endpoint: args.metrics_bind_endpoint,
+        keypair: KeyPair {
+            public_key,
+            private_key,
+        },
+
+        public_bind_endpoint: args.public_bind_endpoint,
+        public_advertise_endpoint: args.public_advertise_endpoint,
+        private_bind_endpoint: args.private_bind_endpoint,
+        private_advertise_endpoint: args.private_advertise_endpoint,
+    };
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.

@@ -75,7 +75,7 @@ impl<D: Def> UserAuth<D> {
             "failed to send auth message to marshal"
         );
 
-        // Wait for the response with the permit and address
+        // Wait for the response with the permit and endpoint
         let response = bail!(
             connection.1.recv_message().await,
             Connection,

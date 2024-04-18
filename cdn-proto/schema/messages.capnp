@@ -63,7 +63,7 @@ struct AuthenticateResponse {
     # The permit. Sent from marshals to clients to verify authentication.
     permit @0: UInt64;
     # The message context. Is an error reason if failed, or the endpoint
-    # address if successful.
+    # if successful.
     context @1: Text;
 }
 

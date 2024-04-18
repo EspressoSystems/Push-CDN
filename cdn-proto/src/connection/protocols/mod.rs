@@ -20,7 +20,7 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     type UnfinalizedConnection: UnfinalizedConnection<Self::Sender, Self::Receiver> + Send + Sync;
     type Listener: Listener<Self::UnfinalizedConnection> + Send + Sync;
 
-    /// Connect to a remote address, returning an instance of `Self`.
+    /// Connect to a remote endpoint, returning an instance of `Self`.
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
@@ -29,12 +29,12 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
         use_local_authority: bool,
     ) -> Result<(Self::Sender, Self::Receiver)>;
 
-    /// Bind to the local address, returning an instance of `Listener`.
+    /// Bind to the local endpoint, returning an instance of `Listener`.
     ///
     /// # Errors
-    /// If we fail to bind to the given socket address
+    /// If we fail to bind to the given socket endpoint
     async fn bind(
-        bind_address: &str,
+        bind_endpoint: &str,
         certificate: Certificate,
         key: PrivateKey,
     ) -> Result<Self::Listener>;
@@ -191,12 +191,12 @@ pub mod tests {
     ///
     /// # Errors
     /// If the connection failed
-    pub async fn test_connection<P: Protocol<NoMiddleware>>(bind_address: String) -> Result<()> {
+    pub async fn test_connection<P: Protocol<NoMiddleware>>(bind_endpoint: String) -> Result<()> {
         // Generate cert signed by local CA
         let (cert, key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)?;
 
         // Create listener
-        let listener = P::bind(bind_address.as_str(), cert, key).await?;
+        let listener = P::bind(bind_endpoint.as_str(), cert, key).await?;
 
         // The messages we will send and receive
         let new_connection_to_listener = Message::Direct(Direct {
@@ -233,7 +233,7 @@ pub mod tests {
         // Spawn a task to connect and send and receive the message
         let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
             // Connect to the remote
-            let (sender, receiver) = P::connect(bind_address.as_str(), true).await?;
+            let (sender, receiver) = P::connect(bind_endpoint.as_str(), true).await?;
 
             // Receive a message, assert it's the correct one
             let message = receiver.recv_message().await?;

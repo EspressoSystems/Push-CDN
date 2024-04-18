@@ -24,7 +24,7 @@ use crate::{
 pub struct Redis {
     /// The underlying `Redis` connection. Is managed, so we don't have to worry about reconnections
     underlying_connection: ConnectionManager,
-    /// Our operator identifier (in practice, will be something like a concat of advertise addresses)
+    /// Our operator identifier (in practice, will be something like a concat of advertise endpointes)
     identifier: BrokerIdentifier,
 }
 
@@ -47,8 +47,8 @@ impl DiscoveryClient for Redis {
         // We only "need" the identifier if we want to register with Redis
         let identifier = identity.map_or_else(
             || BrokerIdentifier {
-                public_advertise_address: String::new(),
-                private_advertise_address: String::new(),
+                public_advertise_endpoint: String::new(),
+                private_advertise_endpoint: String::new(),
             },
             |identifier| identifier,
         );
@@ -161,7 +161,7 @@ impl DiscoveryClient for Redis {
         }
 
         // Return the broker with the least amount of connections, for which we
-        // will issue a permit. Try to parse the broker address from a `String`.
+        // will issue a permit. Try to parse the broker endpoint from a `String`.
         broker_with_least_connections.try_into()
     }
 

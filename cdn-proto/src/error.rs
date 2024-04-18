@@ -27,7 +27,7 @@ pub enum Error {
     Crypto(String),
     /// An error occurred while authenticating with the server.
     Authentication(String),
-    /// A generic parsing-related error. An example is a failed parse of a socket address.
+    /// A generic parsing-related error. An example is a failed parse of an endpoint.
     Parse(String),
     /// A file-related (either read or write) error. An example is a failed read of a certificate file.
     File(String),
@@ -55,12 +55,12 @@ macro_rules! bail_option {
     };
 }
 
-/// The following is a macro that helps us parse socket addresses. We use it to
-/// deduplicate code where we parse multiple addresses. It basically combines `.parse()`
+/// The following is a macro that helps us parse socket endpoints. We use it to
+/// deduplicate code where we parse multiple. It basically combines `.parse()`
 /// and `bail!()`
 #[macro_export]
-macro_rules! parse_socket_address {
-    ($address:expr) => {
-        bail!($address.parse(), Parse, "failed to parse socket address")
+macro_rules! parse_endpoint {
+    ($endpoint:expr) => {
+        bail!($endpoint.parse(), Parse, "failed to parse endpoint")
     };
 }

@@ -13,7 +13,7 @@ mod tasks;
 mod tests;
 
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
 
@@ -25,40 +25,30 @@ use cdn_proto::{
     def::{Listener, Protocol, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
-    parse_socket_address,
 };
 use cdn_proto::{crypto::signature::KeyPair, def::RunDef, metrics as proto_metrics};
 use connections::Connections;
-use derive_builder::Builder;
 use local_ip_address::local_ip;
 use tokio::{select, spawn, sync::Semaphore};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
-#[derive(Builder)]
 pub struct Config<Def: RunDef> {
-    /// The user (public) advertise address: what the marshals send to users upon authentication.
-    /// Users connect to us with this address.
-    pub public_advertise_address: String,
-    /// The user (public) bind address: the public-facing address we bind to.
-    pub public_bind_address: String,
+    /// The user (public) advertise endpoint in `IP:port` form: what the marshals send to
+    /// users upon authentication. Users connect to us with this endpoint.
+    pub public_advertise_endpoint: String,
+    /// The user (public) bind endpoint in `IP:port` form: the public-facing endpoint we bind to.
+    pub public_bind_endpoint: String,
 
-    /// The broker (private) advertise address: what other brokers use to connect to us.
-    pub private_advertise_address: String,
-    /// The broker (private) bind address: the private-facing address we bind to.
-    pub private_bind_address: String,
-
-    /// Whether or not we want to serve metrics
-    #[builder(default = "true")]
-    pub metrics_enabled: bool,
+    /// The broker (private) advertise endpoint in `IP:port` form: what other brokers use
+    /// to connect to us.
+    pub private_advertise_endpoint: String,
+    /// The broker (private) bind endpoint in `IP:port` form: the private-facing endpoint
+    /// we bind to.
+    pub private_bind_endpoint: String,
 
     /// The port we want to serve metrics on
-    #[builder(default = "9090")]
-    pub metrics_port: u16,
-
-    /// The IP/interface we want to serve the metrics on
-    #[builder(default = "String::from(\"127.0.0.1\")")]
-    pub metrics_ip: String,
+    pub metrics_bind_endpoint: Option<String>,
 
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
@@ -66,11 +56,9 @@ pub struct Config<Def: RunDef> {
     pub keypair: KeyPair<Scheme<Def::Broker>>,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
-    #[builder(default)]
     pub ca_cert_path: Option<String>,
 
     /// An optional TLS CA key path. If not specified, will use the local one.
-    #[builder(default)]
     pub ca_key_path: Option<String>,
 }
 
@@ -106,8 +94,9 @@ pub struct Broker<Def: RunDef> {
     /// The private (broker <-> broker) listener
     broker_listener: Listener<Def::Broker>,
 
-    /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
-    metrics_bind_address: Option<SocketAddr>,
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    metrics_bind_endpoint: Option<SocketAddr>,
 }
 
 impl<Def: RunDef> Broker<Def> {
@@ -120,15 +109,13 @@ impl<Def: RunDef> Broker<Def> {
     pub async fn new(config: Config<Def>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
-            public_advertise_address,
-            public_bind_address,
+            public_advertise_endpoint,
+            public_bind_endpoint,
 
-            metrics_enabled,
-            metrics_ip,
-            metrics_port,
+            metrics_bind_endpoint,
 
-            private_advertise_address,
-            private_bind_address,
+            private_advertise_endpoint,
+            private_bind_endpoint,
 
             keypair,
 
@@ -146,15 +133,15 @@ impl<Def: RunDef> Broker<Def> {
         .to_string();
 
         // Replace "local_ip" with the actual local IP address
-        let public_bind_address = public_bind_address.replace("local_ip", &local_ip);
-        let public_advertise_address = public_advertise_address.replace("local_ip", &local_ip);
-        let private_bind_address = private_bind_address.replace("local_ip", &local_ip);
-        let private_advertise_address = private_advertise_address.replace("local_ip", &local_ip);
+        let public_bind_endpoint = public_bind_endpoint.replace("local_ip", &local_ip);
+        let public_advertise_endpoint = public_advertise_endpoint.replace("local_ip", &local_ip);
+        let private_bind_endpoint = private_bind_endpoint.replace("local_ip", &local_ip);
+        let private_advertise_endpoint = private_advertise_endpoint.replace("local_ip", &local_ip);
 
         // Create a unique broker identifier
         let identity = BrokerIdentifier {
-            public_advertise_address: public_advertise_address.clone(),
-            private_advertise_address: private_advertise_address.clone(),
+            public_advertise_endpoint: public_advertise_endpoint.clone(),
+            private_advertise_endpoint: private_advertise_endpoint.clone(),
         };
 
         // Create the `Discovery` client we will use to maintain consistency
@@ -173,38 +160,45 @@ impl<Def: RunDef> Broker<Def> {
         // Create the user (public) listener
         let user_listener = bail!(
             Protocol::<Def::User>::bind(
-                public_bind_address.as_str(),
+                public_bind_endpoint.as_str(),
                 tls_cert.clone(),
                 tls_key.clone()
             )
             .await,
             Connection,
             format!(
-                "failed to bind to public (user) bind address {}",
-                public_bind_address
+                "failed to bind to public (user) bind endpoint {}",
+                public_bind_endpoint
             )
         );
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            Protocol::<Def::Broker>::bind(private_bind_address.as_str(), tls_cert, tls_key).await,
+            Protocol::<Def::Broker>::bind(private_bind_endpoint.as_str(), tls_cert, tls_key).await,
             Connection,
             format!(
-                "failed to bind to private (broker) bind address {}",
-                private_bind_address
+                "failed to bind to private (broker) bind endpoint {}",
+                private_bind_endpoint
             )
         );
 
-        info!("listening for users on {public_advertise_address} -> {public_bind_address}");
-        info!("listening for brokers on {private_advertise_address} -> {private_bind_address}");
+        info!("listening for users on {public_advertise_endpoint} -> {public_bind_endpoint}");
+        info!("listening for brokers on {private_advertise_endpoint} -> {private_bind_endpoint}");
 
-        // Parse the metrics IP and port
-        let metrics_bind_address = if metrics_enabled {
-            let ip: Ipv4Addr = parse_socket_address!(metrics_ip);
-            Some(SocketAddr::from((ip, metrics_port)))
-        } else {
-            None
-        };
+        // Parse the metrics bind endpoint
+        let metrics_bind_endpoint: Option<SocketAddr> = metrics_bind_endpoint
+            .map(|m| {
+                Ok(bail!(
+                    m.to_socket_addrs(),
+                    Parse,
+                    "failed to parse metrics bind endpoint"
+                )
+                .find(|s| s.is_ipv4())
+                .ok_or(Error::Connection(
+                    "failed to resolve metrics bind endpoint".to_string(),
+                ))?)
+            })
+            .transpose()?;
 
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
@@ -215,7 +209,7 @@ impl<Def: RunDef> Broker<Def> {
                 auth_lock: Semaphore::const_new(1),
                 connections: Arc::from(Connections::new(identity)),
             }),
-            metrics_bind_address,
+            metrics_bind_endpoint,
             user_listener,
             broker_listener,
         })
@@ -255,9 +249,9 @@ impl<Def: RunDef> Broker<Def> {
         );
 
         // Serve the (possible) metrics task
-        if let Some(metrics_bind_address) = self.metrics_bind_address {
+        if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
             // Spawn the serving task
-            spawn(proto_metrics::serve_metrics(metrics_bind_address));
+            spawn(proto_metrics::serve_metrics(metrics_bind_endpoint));
         }
 
         // If one of the tasks exists, we want to return (stopping the program)

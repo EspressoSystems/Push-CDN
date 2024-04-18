@@ -17,7 +17,6 @@ use cdn_proto::{
     error::{Error, Result},
     message::{Message, Topic},
 };
-use derive_builder::Builder;
 use tokio::{
     sync::{OnceCell, RwLock},
     time::sleep,
@@ -38,8 +37,7 @@ pub struct Retry<Def: RunDef> {
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
 pub struct Inner<Def: RunDef> {
-    /// This is the remote address that we authenticate to. It can either be a broker
-    /// or a marshal.
+    /// This is the remote endpoint of the marshal that we authenticate with.
     endpoint: String,
 
     /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
@@ -74,7 +72,7 @@ impl<Def: RunDef> Inner<Def> {
         );
 
         // Authenticate the connection to the marshal (if not provided)
-        let (broker_address, permit) = bail!(
+        let (broker_endpoint, permit) = bail!(
             UserAuth::<Def::User>::authenticate_with_marshal(&connection, &self.keypair).await,
             Authentication,
             "failed to authenticate to marshal"
@@ -82,7 +80,7 @@ impl<Def: RunDef> Inner<Def> {
 
         // Make the connection to the broker
         let connection = bail!(
-            Protocol::<Def::User>::connect(&broker_address, self.use_local_authority).await,
+            Protocol::<Def::User>::connect(&broker_endpoint, self.use_local_authority).await,
             Connection,
             "failed to connect to broker"
         );
@@ -99,22 +97,20 @@ impl<Def: RunDef> Inner<Def> {
             "failed to authenticate to broker"
         );
 
-        info!("connected to broker {}", broker_address);
+        info!("connected to broker {}", broker_endpoint);
 
         Ok(connection)
     }
 }
 
 /// The configuration needed to construct a `Retry` connection.
-#[derive(Builder, Clone)]
+#[derive(Clone)]
 pub struct Config<Def: RunDef> {
-    /// This is the remote address that we authenticate to. It can either be a broker
-    /// or a marshal.
+    /// This is the remote endpoint of the marshal that we authenticate with.
     pub endpoint: String,
 
     /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
     /// a production environment.
-    #[builder(default = "true")]
     pub use_local_authority: bool,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
@@ -123,7 +119,6 @@ pub struct Config<Def: RunDef> {
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
-    #[builder(default = "Vec::new()")]
     pub subscribed_topics: Vec<Topic>,
 }
 
@@ -177,7 +172,7 @@ impl<Def: RunDef> Retry<Def> {
     /// This allows us to create elastic clients that always try to maintain a connection.
     ///
     /// # Errors
-    /// - If we are unable to either parse or bind an endpoint to the local address.
+    /// - If we are unable to either parse or bind an endpoint to the local endpoint.
     /// - If we are unable to make the initial connection
     pub fn from_config(config: Config<Def>) -> Self {
         // Extrapolate values from the underlying client configuration

@@ -12,10 +12,10 @@ processes:
 
   broker_1:
     command: cargo run --package cdn-broker --release -- 
-      --public-bind-address 0.0.0.0:1740
-      --public-advertise-address local_ip:1740
-      --private-bind-address 0.0.0.0:1741
-      --private-advertise-address local_ip:1741
+      --public-bind-endpoint 0.0.0.0:1740
+      --public-advertise-endpoint local_ip:1740
+      --private-bind-endpoint 0.0.0.0:1741
+      --private-advertise-endpoint local_ip:1741
       -d "redis://:changeme!@localhost:6379"
 
   client_0:

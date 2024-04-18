@@ -22,7 +22,6 @@ use retry::Retry;
 pub struct Client<Def: RunDef>(Retry<Def>);
 
 pub type Config<D> = retry::Config<D>;
-pub type ConfigBuilder<D> = retry::ConfigBuilder<D>;
 
 impl<Def: RunDef> Client<Def> {
     /// Creates a new `Retry` from a configuration.

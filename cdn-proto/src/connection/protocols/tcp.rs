@@ -26,7 +26,7 @@ use crate::{
     connection::Bytes,
     error::{Error, Result},
     message::Message,
-    parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    parse_endpoint, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
@@ -54,8 +54,8 @@ impl<M: Middleware> Protocol<M> for Tcp {
     where
         Self: Sized,
     {
-        // Parse the socket address
-        let remote_address = bail_option!(
+        // Parse the socket endpoint
+        let remote_endpoint = bail_option!(
             bail!(
                 remote_endpoint.to_socket_addrs(),
                 Parse,
@@ -75,9 +75,9 @@ impl<M: Middleware> Protocol<M> for Tcp {
 
         // Connect the stream to the local socket
         let stream = bail!(
-            socket.connect(remote_address).await,
+            socket.connect(remote_endpoint).await,
             Connection,
-            "failed tcp connect to remote address"
+            "failed tcp connect to remote endpoint"
         );
 
         // Split the connection into a `ReadHalf` and `WriteHalf`, spawning tasks so we can operate
@@ -92,20 +92,20 @@ impl<M: Middleware> Protocol<M> for Tcp {
     ///
     /// # Errors
     /// - If we cannot bind to the local interface
-    /// - If we cannot parse the bind address
+    /// - If we cannot parse the bind endpoint
     async fn bind(
-        bind_address: &str,
+        bind_endpoint: &str,
         _certificate: Certificate,
         _key: PrivateKey,
     ) -> Result<Self::Listener> {
-        // Parse the bind address
-        let bind_address: SocketAddr = parse_socket_address!(bind_address);
+        // Parse the bind endpoint
+        let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);
 
-        // Try to bind to the local address
+        // Try to bind to the local endpoint
         Ok(TcpListener(bail!(
-            tokio::net::TcpListener::bind(bind_address).await,
+            tokio::net::TcpListener::bind(bind_endpoint).await,
             Connection,
-            "failed to bind to local address"
+            "failed to bind to local endpoint"
         )))
     }
 }

@@ -1,9 +1,9 @@
 //! Contains connection-related integration tests, like testing
 //! end-to-end connections and double connects.
 
-use cdn_broker::{Broker, Config as BrokerConfig, ConfigBuilder as BrokerConfigBuilder};
-use cdn_client::{Client, ConfigBuilder as ClientConfigBuilder};
-use cdn_marshal::{ConfigBuilder as MarshalConfigBuilder, Marshal};
+use cdn_broker::{Broker, Config as BrokerConfig};
+use cdn_client::{Client, Config as ClientConfig};
+use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{crypto::signature::KeyPair, def::TestingRunDef, message::Topic};
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -27,19 +27,20 @@ macro_rules! new_broker {
         let (private_key, public_key) = keypair_from_seed!($key);
 
         // Create config
-        let config: BrokerConfig<TestingRunDef> = BrokerConfigBuilder::default()
-            .public_advertise_address($public_ep.to_string())
-            .public_bind_address($public_ep.to_string())
-            .private_advertise_address($private_ep.to_string())
-            .private_bind_address($private_ep.to_string())
-            .discovery_endpoint("test.sqlite".to_string())
-            .metrics_enabled(false)
-            .keypair(KeyPair {
+        let config: BrokerConfig<TestingRunDef> = BrokerConfig {
+            ca_cert_path: None,
+            ca_key_path: None,
+            discovery_endpoint: "test.sqlite".to_string(),
+            keypair: KeyPair {
                 public_key,
                 private_key,
-            })
-            .build()
-            .expect("failed to build broker configuration");
+            },
+            metrics_bind_endpoint: None,
+            private_advertise_endpoint: $private_ep.to_string(),
+            private_bind_endpoint: $private_ep.to_string(),
+            public_advertise_endpoint: $public_ep.to_string(),
+            public_bind_endpoint: $public_ep.to_string(),
+        };
 
         // Create broker
         let broker = Broker::<TestingRunDef>::new(config)
@@ -56,11 +57,13 @@ macro_rules! new_broker {
 macro_rules! new_marshal {
     ($ep: expr) => {{
         // Create the marshal's configuration
-        let config = MarshalConfigBuilder::default()
-            .bind_address($ep.to_string())
-            .discovery_endpoint("test.sqlite".to_string())
-            .build()
-            .expect("failed to build marshal config");
+        let config = MarshalConfig {
+            bind_endpoint: $ep.to_string(),
+            discovery_endpoint: "test.sqlite".to_string(),
+            metrics_bind_endpoint: None,
+            ca_cert_path: None,
+            ca_key_path: None,
+        };
 
         // Create a new marshal
         let marshal = Marshal::<TestingRunDef>::new(config)
@@ -80,15 +83,15 @@ macro_rules! new_client {
         let (private_key, public_key) = keypair_from_seed!($key);
 
         // Build the client's config
-        let config = ClientConfigBuilder::default()
-            .endpoint($marshal_ep.to_string())
-            .keypair(KeyPair {
+        let config = ClientConfig {
+            endpoint: $marshal_ep.to_string(),
+            keypair: KeyPair {
                 public_key,
                 private_key,
-            })
-            .subscribed_topics($topics)
-            .build()
-            .expect("failed to build client config");
+            },
+            subscribed_topics: $topics,
+            use_local_authority: true,
+        };
 
         // Create the client
         Client::<TestingRunDef>::new(config)

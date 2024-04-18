@@ -1,12 +1,8 @@
 //! The following is the main `Marshal` binary, which just instantiates and runs
 //! a `Marshal` object.
 
-use cdn_marshal::{ConfigBuilder, Marshal};
-use cdn_proto::{
-    bail,
-    def::ProductionRunDef,
-    error::{Error, Result},
-};
+use cdn_marshal::{Config, Marshal};
+use cdn_proto::{def::ProductionRunDef, error::Result};
 use clap::Parser;
 
 // TODO: forall, add logging where we need it
@@ -19,21 +15,24 @@ struct Args {
     #[arg(short, long)]
     discovery_endpoint: String,
 
-    /// Whether or not metric collection and serving is enabled
-    #[arg(long, default_value_t = false)]
-    metrics_enabled: bool,
-
-    /// The IP to bind to for externalizing metrics
-    #[arg(long, default_value = "127.0.0.1")]
-    metrics_ip: String,
-
-    /// The port to bind to for externalizing metrics
-    #[arg(long, default_value_t = 9090)]
-    metrics_port: u16,
-
     /// The port to bind to for connections (from users)
     #[arg(short, long, default_value_t = 1737)]
     bind_port: u16,
+
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    #[arg(short, long)]
+    metrics_bind_endpoint: Option<String>,
+
+    /// The path to the CA certificate
+    /// If not provided, a local, pinned CA is used
+    #[arg(long)]
+    ca_cert_path: Option<String>,
+
+    /// The path to the CA key
+    /// If not provided, a local, pinned CA is used
+    #[arg(long)]
+    ca_cert_key: Option<String>,
 }
 
 #[tokio::main]
@@ -45,17 +44,13 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Create a new `Config`
-    let config = bail!(
-        ConfigBuilder::default()
-            .bind_address(format!("0.0.0.0:{}", args.bind_port))
-            .metrics_enabled(args.metrics_enabled)
-            .metrics_ip(args.metrics_ip)
-            .metrics_port(args.metrics_port)
-            .discovery_endpoint(args.discovery_endpoint)
-            .build(),
-        Parse,
-        "failed to build Marshal config"
-    );
+    let config = Config {
+        discovery_endpoint: args.discovery_endpoint,
+        bind_endpoint: format!("0.0.0.0:{}", args.bind_port),
+        metrics_bind_endpoint: args.metrics_bind_endpoint,
+        ca_cert_path: args.ca_cert_path,
+        ca_key_path: args.ca_cert_key,
+    };
 
     // Create new `Marshal` from the config
     let marshal = Marshal::<ProductionRunDef>::new(config).await?;

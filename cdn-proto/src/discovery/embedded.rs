@@ -41,8 +41,8 @@ impl DiscoveryClient for Embedded {
         // We only "need" the identifier if we want to register
         let identifier = identity.map_or_else(
             || BrokerIdentifier {
-                public_advertise_address: String::new(),
-                private_advertise_address: String::new(),
+                public_advertise_endpoint: String::new(),
+                private_advertise_endpoint: String::new(),
             },
             |identifier| identifier,
         );
