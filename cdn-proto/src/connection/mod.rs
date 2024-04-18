@@ -4,10 +4,10 @@
 use std::sync::Arc;
 
 pub mod auth;
-pub mod hooks;
+pub mod middleware;
 pub mod protocols;
 
-use hooks::pool::Allocation;
+use self::middleware::pool::Allocation;
 
 /// Some type aliases to help with readability
 pub type Bytes = Allocation<Vec<u8>>;

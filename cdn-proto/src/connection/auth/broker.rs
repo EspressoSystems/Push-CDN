@@ -9,12 +9,9 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::{
-        hooks::Trusted,
-        protocols::{Protocol, Receiver, Sender},
-    },
+    connection::protocols::{Receiver as _, Sender as _},
     crypto::signature::SignatureScheme,
-    def::RunDef,
+    def::{Connection, PublicKey, Receiver, RunDef, Scheme, Sender},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
@@ -24,8 +21,6 @@ use crate::{
     connection::UserPublicKey,
     crypto::signature::{KeyPair, Serializable},
 };
-
-use super::UserConnection;
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
 pub struct BrokerAuth<Def: RunDef> {
@@ -38,12 +33,7 @@ pub struct BrokerAuth<Def: RunDef> {
 macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
         // Authenticate with the other broker, returning their reconnect address
-        match BrokerAuth::<Def>::authenticate_with_broker::<Def::BrokerScheme, Def::BrokerProtocol>(
-            &mut $connection,
-            &$inner.keypair,
-        )
-        .await
-        {
+        match BrokerAuth::<Def>::authenticate_with_broker(&mut $connection, &$inner.keypair).await {
             Ok(broker_address) => broker_address,
             Err(err) => {
                 error!("failed authentication with broker: {err}");
@@ -58,13 +48,12 @@ macro_rules! authenticate_with_broker {
 macro_rules! verify_broker {
     ($connection: expr, $inner: expr) => {
         // Verify the other broker's authentication
-        if let Err(err) =
-            BrokerAuth::<Def>::verify_broker::<Def::BrokerScheme, Def::BrokerProtocol>(
-                &mut $connection,
-                &$inner.identity,
-                &$inner.keypair.public_key,
-            )
-            .await
+        if let Err(err) = BrokerAuth::<Def>::verify_broker(
+            &mut $connection,
+            &$inner.identity,
+            &$inner.keypair.public_key,
+        )
+        .await
         {
             error!("failed to verify broker: {err}");
             return;
@@ -82,7 +71,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &UserConnection<Def>,
+        connection: &Connection<Def::User>,
         #[cfg(not(feature = "global-permits"))] broker_identifier: &BrokerIdentifier,
         discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
@@ -133,7 +122,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // Try to serialize the public key
         bail!(
-            <Def::UserScheme as SignatureScheme>::PublicKey::deserialize(&serialized_public_key),
+            PublicKey::<Def::User>::deserialize(&serialized_public_key),
             Crypto,
             "failed to deserialize public key"
         );
@@ -164,12 +153,9 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// # Errors
     /// - If we fail to authenticate
     /// - If we have a connection failure
-    pub async fn authenticate_with_broker<
-        BrokerScheme: SignatureScheme,
-        BrokerProtocol: Protocol<Trusted>,
-    >(
-        connection: &(BrokerProtocol::Sender, BrokerProtocol::Receiver),
-        keypair: &KeyPair<BrokerScheme>,
+    pub async fn authenticate_with_broker(
+        connection: &(Sender<Def::Broker>, Receiver<Def::Broker>),
+        keypair: &KeyPair<Scheme<Def::Broker>>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -181,7 +167,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // Sign the timestamp from above
         let signature = bail!(
-            BrokerScheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<Def::Broker>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
@@ -246,10 +232,10 @@ impl<Def: RunDef> BrokerAuth<Def> {
     ///
     /// # Errors
     /// - If verification has failed
-    pub async fn verify_broker<BrokerScheme: SignatureScheme, BrokerProtocol: Protocol<Trusted>>(
-        connection: &(BrokerProtocol::Sender, BrokerProtocol::Receiver),
+    pub async fn verify_broker(
+        connection: &(Sender<Def::Broker>, Receiver<Def::Broker>),
         our_identifier: &BrokerIdentifier,
-        our_public_key: &BrokerScheme::PublicKey,
+        our_public_key: &PublicKey<Def::Broker>,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -265,12 +251,12 @@ impl<Def: RunDef> BrokerAuth<Def> {
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) = BrokerScheme::PublicKey::deserialize(&auth_message.public_key) else {
+        let Ok(public_key) = PublicKey::<Def::Broker>::deserialize(&auth_message.public_key) else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !BrokerScheme::verify(
+        if !Scheme::<Def::Broker>::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,

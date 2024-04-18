@@ -3,9 +3,7 @@
 
 use cdn_marshal::{ConfigBuilder, Marshal};
 use cdn_proto::{
-    bail,
-    def::ProductionDef,
-    error::{Error, Result},
+    bail, def::ProductionRunDef, error::{Error, Result}
 };
 use clap::Parser;
 
@@ -58,7 +56,7 @@ async fn main() -> Result<()> {
     );
 
     // Create new `Marshal` from the config
-    let marshal = Marshal::<ProductionDef>::new(config).await?;
+    let marshal = Marshal::<ProductionRunDef>::new(config).await?;
 
     // Start the main loop, consuming it
     marshal.start().await?;

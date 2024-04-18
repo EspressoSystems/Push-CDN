@@ -1,9 +1,5 @@
 //! This file defines all authentication flows that the Push CDN implements.
 
-use crate::def::RunDef;
-
-use super::{hooks::Untrusted, protocols::Protocol};
-
 pub mod broker;
 pub mod marshal;
 pub mod user;
@@ -26,12 +22,3 @@ macro_rules! fail_verification_with_message {
         return Err(Error::Authentication($context.to_string()));
     };
 }
-
-/// A type alias to help readability
-type UserConnection<Def> = Connection<<Def as RunDef>::UserProtocol, Untrusted>;
-
-/// A type alias to help readability
-type Connection<ProtocolType, H> = (
-    <ProtocolType as Protocol<H>>::Sender,
-    <ProtocolType as Protocol<H>>::Receiver,
-);

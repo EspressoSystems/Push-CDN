@@ -4,11 +4,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use cdn_proto::{
-    connection::{
-        hooks::{Trusted, Untrusted},
-        protocols::{Protocol, Sender},
-        Bytes, UserPublicKey,
-    },
+    connection::{protocols::Sender as _, Bytes, UserPublicKey},
+    def::{RunDef, Sender},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
@@ -26,14 +23,14 @@ mod direct;
 mod versioned;
 
 /// Stores information about all current connections.
-pub struct Connections<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>> {
+pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<UserPublicKey, UserProtocol::Sender>,
+    users: DashMap<UserPublicKey, Sender<Def::User>>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, BrokerProtocol::Sender>,
+    brokers: DashMap<BrokerIdentifier, Sender<Def::Broker>>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: RwLock<DirectMap>,
@@ -41,9 +38,7 @@ pub struct Connections<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol
     broadcast_map: BroadcastMap,
 }
 
-impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
-    Connections<BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Connections<Def> {
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {
@@ -128,7 +123,7 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
     pub fn add_broker(
         self: &Arc<Self>,
         broker_identifier: BrokerIdentifier,
-        connection: BrokerProtocol::Sender,
+        connection: Sender<Def::Broker>,
     ) {
         self.brokers.insert(broker_identifier, connection);
     }
@@ -138,7 +133,7 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
     pub fn add_user(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
-        connection: UserProtocol::Sender,
+        connection: Sender<Def::User>,
     ) {
         // Add to our map
         self.users.insert(user_public_key.clone(), connection);

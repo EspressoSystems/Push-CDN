@@ -2,7 +2,8 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use std::{marker::PhantomData, net::SocketAddr, result::Result as StdResult, time::Duration};
+use std::marker::PhantomData;
+use std::{net::SocketAddr, result::Result as StdResult, time::Duration};
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
@@ -19,9 +20,10 @@ use tokio::{
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
+use crate::connection::middleware::Middleware;
 use crate::{
     bail, bail_option,
-    connection::{hooks::Hooks, Bytes},
+    connection::Bytes,
     error::{Error, Result},
     message::Message,
     parse_socket_address, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
@@ -33,12 +35,12 @@ use crate::{
 pub struct Tcp;
 
 #[async_trait]
-impl<H: Hooks> Protocol<H> for Tcp {
+impl<M: Middleware> Protocol<M> for Tcp {
     type Sender = TcpSender;
     type Receiver = TcpReceiver;
 
     type Listener = TcpListener;
-    type UnfinalizedConnection = UnfinalizedTcpConnection<H>;
+    type UnfinalizedConnection = UnfinalizedTcpConnection<M>;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     /// With TCP, this requires just connecting to the remote endpoint.
@@ -80,7 +82,7 @@ impl<H: Hooks> Protocol<H> for Tcp {
 
         // Split the connection into a `ReadHalf` and `WriteHalf`, spawning tasks so we can operate
         // concurrently over both
-        let (sender, receiver) = into_split::<H>(stream);
+        let (sender, receiver) = into_split::<M>(stream);
 
         // Return the sender and receiver
         Ok((sender, receiver))
@@ -113,7 +115,7 @@ pub struct TcpSender(Arc<TcpSenderRef>);
 
 struct TcpSenderRef(AsyncSender<Bytes>, AbortHandle);
 
-fn into_split<H: Hooks>(connection: TcpStream) -> (TcpSender, TcpReceiver) {
+fn into_split<M: Middleware>(connection: TcpStream) -> (TcpSender, TcpReceiver) {
     // Create a channel for sending messages to the task
     let (send_to_task, receive_as_task) = bounded_async(0);
 
@@ -251,10 +253,10 @@ impl Receiver for TcpReceiver {
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedTcpConnection<H: Hooks>(TcpStream, PhantomData<H>);
+pub struct UnfinalizedTcpConnection<M>(TcpStream, PhantomData<M>);
 
 #[async_trait]
-impl<H: Hooks> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection<H> {
+impl<M: Middleware> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection<M> {
     /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
     ///
@@ -262,7 +264,7 @@ impl<H: Hooks> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpC
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
         // Split the connection and start the sending and receiving tasks
-        let (sender, receiver) = into_split::<H>(self.0);
+        let (sender, receiver) = into_split::<M>(self.0);
 
         // Wrap and return the finalized connection
         Ok((sender, receiver))
@@ -274,12 +276,12 @@ impl<H: Hooks> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpC
 pub struct TcpListener(pub tokio::net::TcpListener);
 
 #[async_trait]
-impl<H: Hooks> Listener<UnfinalizedTcpConnection<H>> for TcpListener {
+impl<M: Middleware> Listener<UnfinalizedTcpConnection<M>> for TcpListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
-    async fn accept(&self) -> Result<UnfinalizedTcpConnection<H>> {
+    async fn accept(&self) -> Result<UnfinalizedTcpConnection<M>> {
         // Try to accept a connection from the underlying endpoint
         // Split into reader and writer half
         let connection = bail!(

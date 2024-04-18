@@ -14,12 +14,9 @@ mod handlers;
 
 use cdn_proto::{
     bail,
-    connection::{
-        hooks::Untrusted,
-        protocols::{Listener, Protocol, UnfinalizedConnection},
-    },
+    connection::protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
     crypto::tls::{generate_cert_from_ca, load_ca},
-    def::RunDef,
+    def::{Listener, Protocol, RunDef},
     discovery::DiscoveryClient,
     error::{Error, Result},
     metrics as proto_metrics, parse_socket_address,
@@ -64,7 +61,7 @@ pub struct Config {
 /// the brokers.
 pub struct Marshal<Def: RunDef> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<<Def::UserProtocol as Protocol<Untrusted>>::Listener>,
+    listener: Arc<Listener<Def::User>>,
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: Def::DiscoveryClientType,
@@ -99,7 +96,7 @@ impl<Def: RunDef> Marshal<Def> {
 
         // Create the `Listener` from the bind address
         let listener = bail!(
-            Def::UserProtocol::bind(bind_address.as_str(), tls_cert, tls_key).await,
+            Protocol::<Def::User>::bind(bind_address.as_str(), tls_cert, tls_key).await,
             Connection,
             format!("failed to listen to address {}", bind_address)
         );

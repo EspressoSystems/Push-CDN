@@ -11,13 +11,7 @@ use std::{ops::Deref, sync::Arc};
 
 use anyhow::Result;
 use derivative::Derivative;
-use lazy_static::lazy_static;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-
-lazy_static! {
-    pub static ref MEMORY_POOL: MemoryPool =
-        MemoryPool::new(usize::try_from(u32::MAX).expect(">= 32 bit system"));
-}
 
 /// A global memory arena that tracks but does not allocate memory.
 /// Allows for asynchronous capping of memory usage.
@@ -26,7 +20,7 @@ pub struct MemoryPool(Arc<Semaphore>);
 
 impl MemoryPool {
     /// Create a new `MemoryPool` from the number of bytes to
-    fn new(n: usize) -> Self {
+    pub fn new(n: usize) -> Self {
         Self(Arc::from(Semaphore::const_new(n)))
     }
 }

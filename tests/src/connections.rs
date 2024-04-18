@@ -4,10 +4,7 @@
 use cdn_broker::{Broker, Config as BrokerConfig, ConfigBuilder as BrokerConfigBuilder};
 use cdn_client::{Client, ConfigBuilder as ClientConfigBuilder};
 use cdn_marshal::{ConfigBuilder as MarshalConfigBuilder, Marshal};
-use cdn_proto::{
-    connection::protocols::memory::Memory, crypto::signature::KeyPair, def::TestingDef,
-    message::Topic,
-};
+use cdn_proto::{crypto::signature::KeyPair, def::TestingRunDef, message::Topic};
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
@@ -30,7 +27,7 @@ macro_rules! new_broker {
         let (private_key, public_key) = keypair_from_seed!($key);
 
         // Create config
-        let config: BrokerConfig<BLS> = BrokerConfigBuilder::default()
+        let config: BrokerConfig<TestingRunDef> = BrokerConfigBuilder::default()
             .public_advertise_address($public_ep.to_string())
             .public_bind_address($public_ep.to_string())
             .private_advertise_address($private_ep.to_string())
@@ -45,7 +42,7 @@ macro_rules! new_broker {
             .expect("failed to build broker configuration");
 
         // Create broker
-        let broker = Broker::<TestingDef>::new(config)
+        let broker = Broker::<TestingRunDef>::new(config)
             .await
             .expect("failed to create broker");
 
@@ -66,7 +63,7 @@ macro_rules! new_marshal {
             .expect("failed to build marshal config");
 
         // Create a new marshal
-        let marshal = Marshal::<TestingDef>::new(config)
+        let marshal = Marshal::<TestingRunDef>::new(config)
             .await
             .expect("failed to create marshal");
 
@@ -94,7 +91,7 @@ macro_rules! new_client {
             .expect("failed to build client config");
 
         // Create the client
-        Client::<BLS, Memory>::new(config)
+        Client::<TestingRunDef>::new(config)
     }};
 }
 

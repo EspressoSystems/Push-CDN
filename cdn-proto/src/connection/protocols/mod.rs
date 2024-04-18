@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use mockall::automock;
 use rustls::{Certificate, PrivateKey};
 
-use super::{hooks::Hooks, Bytes};
+use super::{middleware::Middleware, Bytes};
 use crate::{error::Result, message::Message};
 pub mod memory;
 pub mod quic;
@@ -13,7 +13,7 @@ pub mod tcp;
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
 #[automock(type Sender=MockSender; type Receiver=MockReceiver; type UnfinalizedConnection=MockUnfinalizedConnection<MockSender, MockReceiver>; type Listener=MockListener<MockUnfinalizedConnection<MockSender, MockReceiver>>;)]
 #[async_trait]
-pub trait Protocol<H: Hooks>: Send + Sync + 'static {
+pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     type Sender: Sender + Send + Sync + Clone;
     type Receiver: Receiver + Send + Sync + Clone;
 
@@ -125,8 +125,8 @@ macro_rules! read_length_delimited {
             return;
         }
 
-        // Acquire the allocation, if necessary
-        let permit = H::allocate_before_read(message_size).await;
+        // Acquire the allocation if necessary
+        let permit = M::allocate_message_bytes(message_size).await;
 
         // Create buffer of the proper size
         let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
@@ -178,7 +178,7 @@ pub mod tests {
 
     use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
     use crate::{
-        connection::hooks::None,
+        connection::middleware::NoMiddleware,
         crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
         message::{Direct, Message},
     };
@@ -191,7 +191,7 @@ pub mod tests {
     ///
     /// # Errors
     /// If the connection failed
-    pub async fn test_connection<P: Protocol<None>>(bind_address: String) -> Result<()> {
+    pub async fn test_connection<P: Protocol<NoMiddleware>>(bind_address: String) -> Result<()> {
         // Generate cert signed by local CA
         let (cert, key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)?;
 

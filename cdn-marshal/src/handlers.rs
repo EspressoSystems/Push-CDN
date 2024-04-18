@@ -1,12 +1,8 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::{
-        auth::marshal::MarshalAuth,
-        hooks::Untrusted,
-        protocols::{Protocol, Sender},
-    },
-    def::RunDef,
+    connection::{auth::marshal::MarshalAuth, protocols::Sender as _},
+    def::{Receiver, RunDef, Sender},
     mnemonic,
 };
 use tokio::time::timeout;
@@ -17,10 +13,7 @@ use crate::Marshal;
 impl<Def: RunDef> Marshal<Def> {
     /// Handles a user's connection, including authentication.
     pub async fn handle_connection(
-        connection: (
-            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
-            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
-        ),
+        connection: (Sender<Def::User>, Receiver<Def::User>),
         mut discovery_client: Def::DiscoveryClientType,
     ) {
         // Verify (authenticate) the connection

@@ -10,7 +10,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::{Receiver, Sender},
-    def::RunDef,
+    def::{Connection, PublicKey, RunDef, Scheme},
     discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
@@ -20,8 +20,6 @@ use crate::{
     connection::UserPublicKey,
     crypto::signature::{Serializable, SignatureScheme},
 };
-
-use super::UserConnection;
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
 pub struct MarshalAuth<Def: RunDef> {
@@ -40,7 +38,7 @@ impl<Def: RunDef> MarshalAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &UserConnection<Def>,
+        connection: &Connection<Def::User>,
         discovery_client: &mut Def::DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
@@ -56,14 +54,12 @@ impl<Def: RunDef> MarshalAuth<Def> {
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) =
-            <Def::UserScheme as SignatureScheme>::PublicKey::deserialize(&auth_message.public_key)
-        else {
+        let Ok(public_key) = PublicKey::<Def::User>::deserialize(&auth_message.public_key) else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !Def::UserScheme::verify(
+        if !Scheme::<Def::User>::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,

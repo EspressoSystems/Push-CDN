@@ -4,13 +4,8 @@ use std::sync::Arc;
 
 use cdn_proto::{
     authenticate_with_broker, bail,
-    connection::{
-        auth::broker::BrokerAuth,
-        hooks::Trusted,
-        protocols::{Protocol, Receiver},
-        UserPublicKey,
-    },
-    def::RunDef,
+    connection::{auth::broker::BrokerAuth, protocols::Receiver as _, UserPublicKey},
+    def::{Receiver, RunDef, Sender},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
@@ -24,10 +19,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (
-            <Def::BrokerProtocol as Protocol<Trusted>>::Sender,
-            <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
-        ),
+        mut connection: (Sender<Def::Broker>, Receiver<Def::Broker>),
         is_outbound: bool,
     ) {
         // Acquire a permit to authenticate with a broker. Removes the possibility for race
@@ -114,7 +106,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
+        receiver: Receiver<Def::Broker>,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

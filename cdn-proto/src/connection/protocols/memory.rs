@@ -16,7 +16,7 @@ use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 use crate::{
     bail,
-    connection::{hooks::Hooks, Bytes},
+    connection::{middleware::Middleware, Bytes},
     error::{Error, Result},
     message::Message,
 };
@@ -35,7 +35,7 @@ static LISTENERS: OnceLock<RwLock<HashMap<String, ChannelExchange>>> = OnceLock:
 pub struct Memory;
 
 #[async_trait]
-impl<H: Hooks> Protocol<H> for Memory {
+impl<M: Middleware> Protocol<M> for Memory {
     type Sender = MemorySender;
     type Receiver = MemoryReceiver;
 

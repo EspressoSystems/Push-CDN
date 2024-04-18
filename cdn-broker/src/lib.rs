@@ -20,18 +20,14 @@ use std::{
 mod metrics;
 use cdn_proto::{
     bail,
-    connection::protocols::Protocol,
+    connection::protocols::Protocol as _,
     crypto::tls::{generate_cert_from_ca, load_ca},
+    def::{Listener, Protocol, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     parse_socket_address,
 };
-use cdn_proto::{
-    connection::hooks::{Trusted, Untrusted},
-    crypto::signature::{KeyPair, SignatureScheme},
-    def::RunDef,
-    metrics as proto_metrics,
-};
+use cdn_proto::{crypto::signature::KeyPair, def::RunDef, metrics as proto_metrics};
 use connections::Connections;
 use derive_builder::Builder;
 use local_ip_address::local_ip;
@@ -40,7 +36,7 @@ use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
 #[derive(Builder)]
-pub struct Config<BrokerScheme: SignatureScheme> {
+pub struct Config<Def: RunDef> {
     /// The user (public) advertise address: what the marshals send to users upon authentication.
     /// Users connect to us with this address.
     pub public_advertise_address: String,
@@ -67,7 +63,7 @@ pub struct Config<BrokerScheme: SignatureScheme> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
-    pub keypair: KeyPair<BrokerScheme>,
+    pub keypair: KeyPair<Scheme<Def::Broker>>,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
     #[builder(default)]
@@ -88,7 +84,7 @@ struct Inner<Def: RunDef> {
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    keypair: KeyPair<Def::BrokerScheme>,
+    keypair: KeyPair<Scheme<Def::Broker>>,
 
     /// A lock on authentication so we don't thrash when authenticating with brokers.
     /// Only lets us authenticate to one broker at a time.
@@ -96,7 +92,7 @@ struct Inner<Def: RunDef> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<Def::BrokerProtocol, Def::UserProtocol>>,
+    connections: Arc<Connections<Def>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -105,10 +101,10 @@ pub struct Broker<Def: RunDef> {
     inner: Arc<Inner<Def>>,
 
     /// The public (user -> broker) listener
-    user_listener: <Def::UserProtocol as Protocol<Untrusted>>::Listener,
+    user_listener: Listener<Def::User>,
 
     /// The private (broker <-> broker) listener
-    broker_listener: <Def::BrokerProtocol as Protocol<Trusted>>::Listener,
+    broker_listener: Listener<Def::Broker>,
 
     /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
     metrics_bind_address: Option<SocketAddr>,
@@ -121,7 +117,7 @@ impl<Def: RunDef> Broker<Def> {
     /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
-    pub async fn new(config: Config<Def::BrokerScheme>) -> Result<Self> {
+    pub async fn new(config: Config<Def>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             public_advertise_address,
@@ -176,7 +172,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the user (public) listener
         let user_listener = bail!(
-            Def::UserProtocol::bind(
+            Protocol::<Def::User>::bind(
                 public_bind_address.as_str(),
                 tls_cert.clone(),
                 tls_key.clone()
@@ -191,7 +187,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            Def::BrokerProtocol::bind(private_bind_address.as_str(), tls_cert, tls_key).await,
+            Protocol::<Def::Broker>::bind(private_bind_address.as_str(), tls_cert, tls_key).await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind address {}",

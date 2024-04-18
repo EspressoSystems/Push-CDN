@@ -4,7 +4,7 @@ use cdn_broker::{Broker, Config, ConfigBuilder};
 use cdn_proto::{
     bail,
     crypto::signature::KeyPair,
-    def::ProductionDef,
+    def::ProductionRunDef,
     error::{Error, Result},
 };
 use clap::Parser;
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
 
-    let broker_config: Config<BLS> = bail!(
+    let broker_config: Config<ProductionRunDef> = bail!(
         ConfigBuilder::default()
             .public_advertise_address(args.public_advertise_address)
             .public_bind_address(args.public_bind_address)
@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
 
     // Create new `Broker`
     // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::<ProductionDef>::new(broker_config).await?;
+    let broker = Broker::new(broker_config).await?;
 
     // Start the main loop, consuming it
     broker.start().await?;

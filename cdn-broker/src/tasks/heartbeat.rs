@@ -3,8 +3,8 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use cdn_proto::{
-    connection::protocols::Protocol,
-    def::RunDef,
+    connection::protocols::Protocol as _,
+    def::{Protocol, RunDef},
     discovery::{BrokerIdentifier, DiscoveryClient},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -58,7 +58,7 @@ impl<Def: RunDef> Inner<Def> {
                             // Connect to the broker
                             let connection =
                                 // Our TCP protocol is unsecured, so the cert we use does not matter.
-                                match Def::BrokerProtocol::connect(&to_connect_address, true).await
+                                match Protocol::<Def::Broker>::connect(&to_connect_address, true).await
                                 {
                                     Ok(connection) => connection,
                                     Err(err) => {

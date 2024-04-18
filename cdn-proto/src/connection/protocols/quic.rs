@@ -19,9 +19,9 @@ use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
-use crate::connection::hooks::Hooks;
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
+use crate::connection::middleware::Middleware;
 use crate::connection::Bytes;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
 use crate::parse_socket_address;
@@ -38,11 +38,11 @@ use crate::{
 pub struct Quic;
 
 #[async_trait]
-impl<H: Hooks> Protocol<H> for Quic {
+impl<M: Middleware> Protocol<M> for Quic {
     type Sender = QuicSender;
     type Receiver = QuicReceiver;
 
-    type UnfinalizedConnection = UnfinalizedQuicConnection<H>;
+    type UnfinalizedConnection = UnfinalizedQuicConnection<M>;
     type Listener = QuicListener;
 
     async fn connect(
@@ -130,7 +130,7 @@ impl<H: Hooks> Protocol<H> for Quic {
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels::<H>(sender, receiver);
+        let (sender, receiver) = into_channels::<M>(sender, receiver);
 
         Ok((sender, receiver))
     }
@@ -182,7 +182,7 @@ pub struct QuicSenderRef(AsyncSender<Bytes>, AbortHandle);
 /// Convert a Quic `SendStream` and `RecvStream` to use dedicated tasks and channels
 /// under the hood.
 /// TODO: this is almost the same as with TCP, figure out how to combine them
-fn into_channels<H: Hooks>(
+fn into_channels<M: Middleware>(
     mut write_half: quinn::SendStream,
     mut read_half: quinn::RecvStream,
 ) -> (QuicSender, QuicReceiver) {
@@ -321,10 +321,12 @@ impl Receiver for QuicReceiver {
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedQuicConnection<H: Hooks>(Connecting, PhantomData<H>);
+pub struct UnfinalizedQuicConnection<M: Middleware>(Connecting, PhantomData<M>);
 
 #[async_trait]
-impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection<H> {
+impl<M: Middleware> UnfinalizedConnection<QuicSender, QuicReceiver>
+    for UnfinalizedQuicConnection<M>
+{
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
@@ -348,7 +350,7 @@ impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQu
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels::<H>(sender, receiver);
+        let (sender, receiver) = into_channels::<M>(sender, receiver);
 
         // Clone and return the connection
         Ok((sender, receiver))
@@ -360,13 +362,13 @@ impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQu
 pub struct QuicListener(pub quinn::Endpoint);
 
 #[async_trait]
-impl<H: Hooks> Listener<UnfinalizedQuicConnection<H>> for QuicListener {
+impl<M: Middleware> Listener<UnfinalizedQuicConnection<M>> for QuicListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
-    async fn accept(&self) -> Result<UnfinalizedQuicConnection<H>> {
+    async fn accept(&self) -> Result<UnfinalizedQuicConnection<M>> {
         // Try to accept a connection from the QUIC endpoint
         let connection = bail_option!(
             self.0.accept().await,

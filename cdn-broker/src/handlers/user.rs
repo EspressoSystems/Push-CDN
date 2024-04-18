@@ -4,18 +4,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdn_proto::connection::hooks::Untrusted;
-use cdn_proto::connection::protocols::Protocol;
+use cdn_proto::connection::protocols::Receiver as _;
 use cdn_proto::connection::UserPublicKey;
-use cdn_proto::def::RunDef;
+use cdn_proto::def::{Receiver, RunDef, Sender};
 #[cfg(feature = "strong-consistency")]
 use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
-use cdn_proto::{
-    connection::{auth::broker::BrokerAuth, protocols::Receiver},
-    message::Message,
-    mnemonic,
-};
+use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::time::timeout;
 use tracing::info;
 
@@ -25,10 +20,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(
         self: Arc<Self>,
-        connection: (
-            <Def::UserProtocol as Protocol<Untrusted>>::Sender,
-            <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
-        ),
+        connection: (Sender<Def::User>, Receiver<Def::User>),
     ) {
         // Verify (authenticate) the connection. Needs to happen within 5 seconds
         let Ok(Ok((public_key, topics))) = timeout(
@@ -102,7 +94,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn user_receive_loop(
         &self,
         public_key: &UserPublicKey,
-        receiver: <Def::UserProtocol as Protocol<Untrusted>>::Receiver,
+        receiver: Receiver<Def::User>,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message
