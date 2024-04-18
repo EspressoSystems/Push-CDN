@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
     } else {
         tracing_subscriber::fmt().init();
     }
-    
+
     // Generate the broker key from the supplied seed
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
