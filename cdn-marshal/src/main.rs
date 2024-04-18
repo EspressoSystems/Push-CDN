@@ -3,7 +3,9 @@
 
 use cdn_marshal::{ConfigBuilder, Marshal};
 use cdn_proto::{
-    bail, def::ProductionRunDef, error::{Error, Result}
+    bail,
+    def::ProductionRunDef,
+    error::{Error, Result},
 };
 use clap::Parser;
 
