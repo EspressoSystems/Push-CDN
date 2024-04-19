@@ -47,19 +47,19 @@ pub struct Config {
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<Def: RunDef> {
+pub struct Marshal<R: RunDef> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<Listener<Def::User>>,
+    listener: Arc<Listener<R::User>>,
 
     /// The client we use to issue permits and check for brokers that are up
-    discovery_client: Def::DiscoveryClientType,
+    discovery_client: R::DiscoveryClientType,
 
     /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
     /// metrics are not exposed.
     metrics_bind_endpoint: Option<SocketAddr>,
 }
 
-impl<Def: RunDef> Marshal<Def> {
+impl<R: RunDef> Marshal<R> {
     /// Create and return a new marshal from a bind endpoint, and an optional
     /// TLS cert and key path.
     ///
@@ -83,7 +83,7 @@ impl<Def: RunDef> Marshal<Def> {
 
         // Create the `Listener` from the bind endpoint
         let listener = bail!(
-            Protocol::<Def::User>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
+            Protocol::<R::User>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
             Connection,
             format!("failed to bind to endpoint {}", bind_endpoint)
         );
@@ -92,7 +92,7 @@ impl<Def: RunDef> Marshal<Def> {
 
         // Create the discovery client
         let discovery_client = bail!(
-            Def::DiscoveryClientType::new(discovery_endpoint, None).await,
+            R::DiscoveryClientType::new(discovery_endpoint, None).await,
             Connection,
             "failed to create discovery client"
         );
@@ -100,15 +100,15 @@ impl<Def: RunDef> Marshal<Def> {
         // Parse the metrics IP and port
         let metrics_bind_endpoint: Option<SocketAddr> = metrics_bind_endpoint
             .map(|m| {
-                Ok(bail!(
+                bail!(
                     m.to_socket_addrs(),
                     Parse,
                     "failed to parse metrics bind endpoint"
                 )
-                .find(|s| s.is_ipv4())
-                .ok_or(Error::Connection(
-                    "failed to resolve metrics bind endpoint".to_string(),
-                ))?)
+                .find(SocketAddr::is_ipv4)
+                .ok_or_else(|| {
+                    Error::Connection("failed to resolve metrics bind endpoint".to_string())
+                })
             })
             .transpose()?;
 

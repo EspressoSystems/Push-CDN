@@ -6,27 +6,20 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::crypto::signature::Serializable;
 use crate::{
     bail,
     connection::protocols::{Receiver as _, Sender as _},
     crypto::signature::{KeyPair, SignatureScheme},
-    def::Scheme,
+    def::{Connection, ConnectionDef, Scheme},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
-use crate::{
-    crypto::signature::Serializable,
-    def::{Def, Receiver, Sender},
-};
 
 /// This is the `UserAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<D: Def> {
-    /// We use `PhantomData` here so we can be generic over a signature scheme
-    /// and protocol type
-    pub pd: PhantomData<D>,
-}
+pub struct UserAuth<C: ConnectionDef>(PhantomData<C>);
 
-impl<D: Def> UserAuth<D> {
+impl<C: ConnectionDef> UserAuth<C> {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message
@@ -36,8 +29,8 @@ impl<D: Def> UserAuth<D> {
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &(Sender<D>, Receiver<D>),
-        keypair: &KeyPair<Scheme<D>>,
+        connection: &Connection<C>,
+        keypair: &KeyPair<Scheme<C>>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -49,7 +42,7 @@ impl<D: Def> UserAuth<D> {
 
         // Sign the timestamp from above
         let signature = bail!(
-            Scheme::<D>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<C>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
@@ -110,7 +103,7 @@ impl<D: Def> UserAuth<D> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &(Sender<D>, Receiver<D>),
+        connection: &Connection<C>,
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {

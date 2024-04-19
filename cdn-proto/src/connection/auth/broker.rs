@@ -23,9 +23,7 @@ use crate::{
 };
 
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct BrokerAuth<Def: RunDef> {
-    pd: PhantomData<Def>,
-}
+pub struct BrokerAuth<R: RunDef>(PhantomData<R>);
 
 /// We  use this macro upstream to conditionally order broker authentication flows
 /// TODO: do something else with these macros
@@ -61,7 +59,7 @@ macro_rules! verify_broker {
     };
 }
 
-impl<Def: RunDef> BrokerAuth<Def> {
+impl<R: RunDef> BrokerAuth<R> {
     /// The authentication implementation for a broker to a user. We take the following steps:
     /// 1. Receive a permit from the user
     /// 2. Validate and remove the permit from `Redis`
@@ -71,9 +69,9 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &Connection<Def::User>,
+        connection: &Connection<R::User>,
         #[cfg(not(feature = "global-permits"))] broker_identifier: &BrokerIdentifier,
-        discovery_client: &mut Def::DiscoveryClientType,
+        discovery_client: &mut R::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
@@ -122,7 +120,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // Try to serialize the public key
         bail!(
-            PublicKey::<Def::User>::deserialize(&serialized_public_key),
+            PublicKey::<R::User>::deserialize(&serialized_public_key),
             Crypto,
             "failed to deserialize public key"
         );
@@ -154,8 +152,8 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// - If we fail to authenticate
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
-        connection: &(Sender<Def::Broker>, Receiver<Def::Broker>),
-        keypair: &KeyPair<Scheme<Def::Broker>>,
+        connection: &Connection<R::Broker>,
+        keypair: &KeyPair<Scheme<R::Broker>>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -167,7 +165,7 @@ impl<Def: RunDef> BrokerAuth<Def> {
 
         // Sign the timestamp from above
         let signature = bail!(
-            Scheme::<Def::Broker>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<R::Broker>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
@@ -233,9 +231,9 @@ impl<Def: RunDef> BrokerAuth<Def> {
     /// # Errors
     /// - If verification has failed
     pub async fn verify_broker(
-        connection: &(Sender<Def::Broker>, Receiver<Def::Broker>),
+        connection: &(Sender<R::Broker>, Receiver<R::Broker>),
         our_identifier: &BrokerIdentifier,
-        our_public_key: &PublicKey<Def::Broker>,
+        our_public_key: &PublicKey<R::Broker>,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -251,12 +249,12 @@ impl<Def: RunDef> BrokerAuth<Def> {
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) = PublicKey::<Def::Broker>::deserialize(&auth_message.public_key) else {
+        let Ok(public_key) = PublicKey::<R::Broker>::deserialize(&auth_message.public_key) else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !Scheme::<Def::Broker>::verify(
+        if !Scheme::<R::Broker>::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,

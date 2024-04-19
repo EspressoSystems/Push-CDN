@@ -4,7 +4,11 @@
 use cdn_broker::{Broker, Config as BrokerConfig};
 use cdn_client::{Client, Config as ClientConfig};
 use cdn_marshal::{Config as MarshalConfig, Marshal};
-use cdn_proto::{crypto::signature::KeyPair, def::TestingRunDef, message::Topic};
+use cdn_proto::{
+    crypto::signature::KeyPair,
+    def::{TestingConnection, TestingRunDef},
+    message::Topic,
+};
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
@@ -94,7 +98,7 @@ macro_rules! new_client {
         };
 
         // Create the client
-        Client::<TestingRunDef>::new(config)
+        Client::<TestingConnection>::new(config)
     }};
 }
 

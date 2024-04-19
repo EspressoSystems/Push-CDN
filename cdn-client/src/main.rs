@@ -7,7 +7,7 @@ use std::time::Duration;
 use cdn_client::{Client, Config};
 use cdn_proto::{
     crypto::signature::{KeyPair, Serializable},
-    def::ProductionRunDef,
+    def::ProductionClientConnection,
     message::{Broadcast, Direct, Message, Topic},
 };
 use clap::Parser;
@@ -56,7 +56,7 @@ async fn main() {
 
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.
-    let client = Client::<ProductionRunDef>::new(config);
+    let client = Client::<ProductionClientConnection>::new(config);
 
     // In a loop,
     loop {

@@ -22,18 +22,18 @@ use cdn_proto::{
     bail,
     connection::protocols::Protocol as _,
     crypto::tls::{generate_cert_from_ca, load_ca},
-    def::{Listener, Protocol, Scheme},
+    def::{Listener, Protocol, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
 };
-use cdn_proto::{crypto::signature::KeyPair, def::RunDef, metrics as proto_metrics};
+use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
 use tokio::{select, spawn, sync::Semaphore};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
-pub struct Config<Def: RunDef> {
+pub struct Config<R: RunDef> {
     /// The user (public) advertise endpoint in `IP:port` form: what the marshals send to
     /// users upon authentication. Users connect to us with this endpoint.
     pub public_advertise_endpoint: String,
@@ -53,7 +53,7 @@ pub struct Config<Def: RunDef> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
-    pub keypair: KeyPair<Scheme<Def::Broker>>,
+    pub keypair: KeyPair<Scheme<R::Broker>>,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
     pub ca_cert_path: Option<String>,
@@ -63,16 +63,15 @@ pub struct Config<Def: RunDef> {
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
-struct Inner<Def: RunDef> {
+struct Inner<R: RunDef> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
     /// The (clonable) `Discovery` client that we will use to maintain consistency between brokers and marshals
-    discovery_client: Def::DiscoveryClientType,
+    discovery_client: R::DiscoveryClientType,
 
-    /// The underlying (public) verification key, used to authenticate with the server. Checked
-    /// against the stake table.
-    keypair: KeyPair<Scheme<Def::Broker>>,
+    /// The underlying (public) verification key, used to authenticate with other brokers.
+    keypair: KeyPair<Scheme<R::Broker>>,
 
     /// A lock on authentication so we don't thrash when authenticating with brokers.
     /// Only lets us authenticate to one broker at a time.
@@ -80,33 +79,33 @@ struct Inner<Def: RunDef> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<Def>>,
+    connections: Arc<Connections<R>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
-pub struct Broker<Def: RunDef> {
+pub struct Broker<R: RunDef> {
     /// The broker's `Inner`. We clone this and pass it around when needed.
-    inner: Arc<Inner<Def>>,
+    inner: Arc<Inner<R>>,
 
     /// The public (user -> broker) listener
-    user_listener: Listener<Def::User>,
+    user_listener: Listener<R::User>,
 
     /// The private (broker <-> broker) listener
-    broker_listener: Listener<Def::Broker>,
+    broker_listener: Listener<R::Broker>,
 
     /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
     /// metrics are not exposed.
     metrics_bind_endpoint: Option<SocketAddr>,
 }
 
-impl<Def: RunDef> Broker<Def> {
+impl<R: RunDef> Broker<R> {
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
     /// - If we fail to create the `Discovery` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
-    pub async fn new(config: Config<Def>) -> Result<Self> {
+    pub async fn new(config: Config<R>) -> Result<Self> {
         // Extrapolate values from the underlying broker configuration
         let Config {
             public_advertise_endpoint,
@@ -146,7 +145,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the `Discovery` client we will use to maintain consistency
         let discovery_client = bail!(
-            Def::DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
+            R::DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
             Parse,
             "failed to create discovery client"
         );
@@ -159,7 +158,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the user (public) listener
         let user_listener = bail!(
-            Protocol::<Def::User>::bind(
+            Protocol::<R::User>::bind(
                 public_bind_endpoint.as_str(),
                 tls_cert.clone(),
                 tls_key.clone()
@@ -174,7 +173,7 @@ impl<Def: RunDef> Broker<Def> {
 
         // Create the broker (private) listener
         let broker_listener = bail!(
-            Protocol::<Def::Broker>::bind(private_bind_endpoint.as_str(), tls_cert, tls_key).await,
+            Protocol::<R::Broker>::bind(private_bind_endpoint.as_str(), tls_cert, tls_key).await,
             Connection,
             format!(
                 "failed to bind to private (broker) bind endpoint {}",
@@ -188,15 +187,15 @@ impl<Def: RunDef> Broker<Def> {
         // Parse the metrics bind endpoint
         let metrics_bind_endpoint: Option<SocketAddr> = metrics_bind_endpoint
             .map(|m| {
-                Ok(bail!(
+                bail!(
                     m.to_socket_addrs(),
                     Parse,
                     "failed to parse metrics bind endpoint"
                 )
-                .find(|s| s.is_ipv4())
-                .ok_or(Error::Connection(
-                    "failed to resolve metrics bind endpoint".to_string(),
-                ))?)
+                .find(SocketAddr::is_ipv4)
+                .ok_or_else(|| {
+                    Error::Connection("failed to resolve metrics bind endpoint".to_string())
+                })
             })
             .transpose()?;
 

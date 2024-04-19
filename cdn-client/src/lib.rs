@@ -9,7 +9,7 @@ mod retry;
 use cdn_proto::{
     bail,
     crypto::signature::Serializable,
-    def::{PublicKey, RunDef},
+    def::{ConnectionDef, PublicKey},
     error::{Error, Result},
     message::{Broadcast, Direct, Message, Topic},
 };
@@ -19,13 +19,13 @@ use retry::Retry;
 /// for common operations to and from a server. Mostly just used to make the API
 /// more ergonomic. Also keeps track of subscriptions.
 #[derive(Clone)]
-pub struct Client<Def: RunDef>(Retry<Def>);
+pub struct Client<C: ConnectionDef>(Retry<C>);
 
-pub type Config<D> = retry::Config<D>;
+pub type Config<C> = retry::Config<C>;
 
-impl<Def: RunDef> Client<Def> {
+impl<C: ConnectionDef> Client<C> {
     /// Creates a new `Retry` from a configuration.
-    pub fn new(config: Config<Def>) -> Self {
+    pub fn new(config: Config<C>) -> Self {
         Self(Retry::from_config(config))
     }
 
@@ -65,7 +65,7 @@ impl<Def: RunDef> Client<Def> {
     /// If the connection or serialization has failed
     pub async fn send_direct_message(
         &self,
-        recipient: &PublicKey<Def::User>,
+        recipient: &PublicKey<C>,
         message: Vec<u8>,
     ) -> Result<()> {
         // Serialize recipient to a byte array before sending the message
