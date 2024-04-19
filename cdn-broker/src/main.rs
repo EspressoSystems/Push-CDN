@@ -48,7 +48,7 @@ struct Args {
     /// The path to the CA key
     /// If not provided, a local, pinned CA is used
     #[arg(long)]
-    ca_cert_key: Option<String>,
+    ca_key_path: Option<String>,
 
     /// The seed for broker key generation
     #[arg(short, long, default_value_t = 0)]
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     // Create config
     let broker_config: Config<ProductionRunDef> = Config {
         ca_cert_path: args.ca_cert_path,
-        ca_key_path: args.ca_cert_key,
+        ca_key_path: args.ca_key_path,
 
         discovery_endpoint: args.discovery_endpoint,
         metrics_bind_endpoint: args.metrics_bind_endpoint,
