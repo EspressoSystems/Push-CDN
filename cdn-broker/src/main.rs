@@ -51,7 +51,7 @@ struct Args {
     ca_cert_key: Option<String>,
 
     /// The seed for broker key generation
-    #[arg(long, default_value_t = 0)]
+    #[arg(short, long, default_value_t = 0)]
     key_seed: u64,
 }
 
