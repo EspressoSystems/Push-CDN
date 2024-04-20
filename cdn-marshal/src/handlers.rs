@@ -23,7 +23,7 @@ impl<R: RunDef> Marshal<R> {
         )
         .await
         {
-            info!("user {} authenticated", mnemonic(&user_public_key));
+            info!(id = mnemonic(&user_public_key), "user authenticated");
         }
 
         // Finish the connection to ensure all data is sent

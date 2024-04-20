@@ -7,6 +7,7 @@ use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use rand::{rngs::StdRng, SeedableRng};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -62,9 +63,14 @@ async fn main() -> Result<()> {
 
     // Initialize tracing
     if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
-        tracing_subscriber::fmt().json().init();
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .json()
+            .init();
     } else {
-        tracing_subscriber::fmt().init();
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
     }
 
     // Generate the broker key from the supplied seed

@@ -181,8 +181,16 @@ impl<R: RunDef> Broker<R> {
             )
         );
 
-        info!("listening for users on {public_advertise_endpoint} -> {public_bind_endpoint}");
-        info!("listening for brokers on {private_advertise_endpoint} -> {private_bind_endpoint}");
+        info!(
+            advertise = public_advertise_endpoint,
+            bind = public_bind_endpoint,
+            "listening for users"
+        );
+        info!(
+            advertise = private_advertise_endpoint,
+            bind = private_bind_endpoint,
+            "listening for brokers"
+        );
 
         // Parse the metrics bind endpoint
         let metrics_bind_endpoint: Option<SocketAddr> = metrics_bind_endpoint

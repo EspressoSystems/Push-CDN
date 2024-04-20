@@ -83,17 +83,17 @@ impl<Def: RunDef> Inner<Def> {
             error!("failed to perform partial user sync: {err}");
         }
 
-        info!("connected to broker {}", broker_identifier);
+        info!(id = %broker_identifier, "connected to broker");
 
         // Increment our metric
         metrics::NUM_BROKERS_CONNECTED.inc();
 
         // If we error, come back to the callback so we can remove the connection from the list.
         if let Err(err) = self.broker_receive_loop(&broker_identifier, receiver).await {
-            error!("broker disconnected with error: {err}");
+            error!(id = %broker_identifier, "broker disconnected with error: {err}");
         };
 
-        info!("disconnected from broker {}", broker_identifier);
+        info!(id = %broker_identifier, "disconnected from broker");
 
         // Decrement our metric
         metrics::NUM_BROKERS_CONNECTED.dec();

@@ -40,7 +40,7 @@ impl<Def: RunDef> Inner<Def> {
         // Create a human-readable user identifier (by public key)
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
-        info!("{user_identifier} connected");
+        info!(id = user_identifier, "user connected");
 
         // Create new batch sender
         let (sender, receiver) = connection;
@@ -80,7 +80,7 @@ impl<Def: RunDef> Inner<Def> {
         // This runs the main loop for receiving information from the user
         let _ = self.user_receive_loop(&public_key, receiver).await;
 
-        info!("{user_identifier} disconnected");
+        info!(id = user_identifier, "user disconnected");
 
         // Decrement our metric
         metrics::NUM_USERS_CONNECTED.dec();

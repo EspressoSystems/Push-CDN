@@ -97,7 +97,7 @@ impl<C: ConnectionDef> Inner<C> {
             "failed to authenticate to broker"
         );
 
-        info!("connected to broker {}", broker_endpoint);
+        info!(id = broker_endpoint, "connected to broker");
 
         Ok(connection)
     }

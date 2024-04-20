@@ -1,7 +1,7 @@
 //! This module defines almost all of the connection lookup, addition,
 //! and removal process.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, ops::Deref, sync::Arc};
 
 use cdn_proto::{
     connection::{protocols::Sender as _, Bytes, UserPublicKey},
@@ -286,18 +286,28 @@ impl<Def: RunDef> Connections<Def> {
         if let Some(broker_identifier) = self.direct_map.read().get(&user_public_key) {
             if *broker_identifier == self.identity {
                 // We own the user, send it this way
+                debug!(
+                    user = mnemonic(&user_public_key),
+                    msg = mnemonic(message.deref()),
+                    "direct",
+                );
                 self.send_to_user(user_public_key, message);
             } else {
                 // If we don't have the stipulation to send it to ourselves only
                 // This is so we don't thrash between brokers
                 if !to_user_only {
+                    debug!(
+                        broker = %broker_identifier,
+                        msg = mnemonic(message.deref()),
+                        "direct",
+                    );
                     // Send to the broker responsible
                     self.send_to_broker(broker_identifier, message);
                 }
             }
         } else {
             // Debug warning if the recipient user did not exist.
-            debug!("user {} did not exist in map", mnemonic(&user_public_key));
+            debug!(id = mnemonic(&user_public_key), "user did not exist in map");
         }
     }
 
@@ -325,6 +335,13 @@ impl<Def: RunDef> Connections<Def> {
             }
             user_recipients.extend(self.broadcast_map.users.read().get_keys_by_value(&topic));
         }
+
+        debug!(
+            num_brokers = broker_recipients.len(),
+            num_users = user_recipients.len(),
+            msg = mnemonic(message.deref()),
+            "broadcast",
+        );
 
         // If we can send to brokers, do so
         if !to_users_only {

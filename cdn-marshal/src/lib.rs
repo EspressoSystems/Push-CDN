@@ -88,7 +88,7 @@ impl<R: RunDef> Marshal<R> {
             format!("failed to bind to endpoint {}", bind_endpoint)
         );
 
-        info!("listening for users on {bind_endpoint}");
+        info!(bind = bind_endpoint, "listening for users");
 
         // Create the discovery client
         let discovery_client = bail!(

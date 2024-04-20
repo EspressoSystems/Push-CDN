@@ -17,6 +17,7 @@ use jf_primitives::signatures::{
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::sleep;
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -34,9 +35,14 @@ async fn main() {
 
     // Initialize tracing
     if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
-        tracing_subscriber::fmt().json().init();
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .json()
+            .init();
     } else {
-        tracing_subscriber::fmt().init();
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
     }
 
     // Generate a random keypair

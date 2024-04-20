@@ -132,11 +132,11 @@ async fn test_end_to_end() {
 //     new_marshal!("8085");
 
 //     // Create and get the handle to a new client
-//     let client_1 = new_client!(0, vec![Topic::Global], "8085").expect("client connection failed");
+//     let client_1 = new_client!(0, vec![Topic::Global], "8085");
 //     let client_public_key = keypair_from_seed!(0).1;
 
 //     // Create another client with the same key
-//     let client_2 = new_client!(0, vec![Topic::Global], "8085").expect("client connection failed");
+//     let client_2 = new_client!(0, vec![Topic::Global], "8085");
 
 //     sleep(Duration::from_secs(5)).await;
 
