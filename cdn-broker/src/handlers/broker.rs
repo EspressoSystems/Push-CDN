@@ -24,7 +24,7 @@ impl<Def: RunDef> Inner<Def> {
     ) {
         // Acquire a permit to authenticate with a broker. Removes the possibility for race
         // conditions when doing so.
-        let Ok(auth_guard) = self.auth_lock.acquire().await else {
+        let Ok(auth_guard) = self.broker_auth_lock.acquire().await else {
             error!("needed semaphore has been closed");
             std::process::exit(-1);
         };
@@ -50,7 +50,8 @@ impl<Def: RunDef> Inner<Def> {
             return;
         }
 
-        // Add to our brokers
+        // Add to our brokers and remove the old one if it exists
+        self.connections.remove_broker(&broker_identifier);
         self.connections
             .add_broker(broker_identifier.clone(), sender);
 

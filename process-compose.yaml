@@ -1,5 +1,8 @@
 version: "0.5"
 
+environment:
+  - RUST_LOG=info
+
 processes:
   redis:
     command: echo 'requirepass changeme!' | keydb-server - --save "" --appendonly no

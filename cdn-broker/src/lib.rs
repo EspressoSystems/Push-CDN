@@ -75,7 +75,11 @@ struct Inner<R: RunDef> {
 
     /// A lock on authentication so we don't thrash when authenticating with brokers.
     /// Only lets us authenticate to one broker at a time.
-    auth_lock: Semaphore,
+    broker_auth_lock: Semaphore,
+
+    /// A lock on authentication so we don't encounter UB when adding users.
+    /// Only lets us add/remove one user to our state at a time.
+    user_add_lock: Semaphore,
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
@@ -213,7 +217,8 @@ impl<R: RunDef> Broker<R> {
                 discovery_client,
                 identity: identity.clone(),
                 keypair,
-                auth_lock: Semaphore::const_new(1),
+                broker_auth_lock: Semaphore::const_new(1),
+                user_add_lock: Semaphore::const_new(1),
                 connections: Arc::from(Connections::new(identity)),
             }),
             metrics_bind_endpoint,

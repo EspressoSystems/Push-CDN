@@ -42,14 +42,21 @@ impl<Def: RunDef> Inner<Def> {
         let user_identifier = mnemonic(&public_key);
         info!(id = user_identifier, "user connected");
 
-        // Create new batch sender
+        // Create new sender
         let (sender, receiver) = connection;
 
-        // Add our user
+        // Acquire a permit to add/remove a user
+        let add_guard = self.user_add_lock.acquire().await;
+
+        // Add our user and remove the old one if it exists
+        self.connections.remove_user(public_key.clone());
         self.connections.add_user(public_key.clone(), sender);
 
         // Subscribe our user to their connections
         self.connections.subscribe_user_to(&public_key, topics);
+
+        // Drop the permit
+        drop(add_guard);
 
         // If we have `strong-consistency` enabled, send partials
         #[cfg(feature = "strong-consistency")]
