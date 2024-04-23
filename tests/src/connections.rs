@@ -1,19 +1,24 @@
 //! Contains connection-related integration tests, like testing
 //! end-to-end connections and double connects.
 
+use std::{sync::Arc, time::Duration};
+
 use cdn_broker::{Broker, Config as BrokerConfig};
 use cdn_client::{Client, Config as ClientConfig};
 use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{
-    crypto::signature::KeyPair,
+    connection::UserPublicKey,
+    crypto::signature::{KeyPair, Serializable},
     def::{TestingConnection, TestingRunDef},
+    discovery::{embedded::Embedded, DiscoveryClient},
     message::Topic,
 };
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
+use rand::RngCore;
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::spawn;
+use tokio::{spawn, time::timeout};
 
 /// Generate a deterministic keypair from a seed
 macro_rules! keypair_from_seed {
@@ -22,11 +27,35 @@ macro_rules! keypair_from_seed {
     }};
 }
 
+/// Generate a serialized public key from a seed deterministically
+macro_rules! serialized_public_key_from_seed {
+    ($seed: expr) => {{
+        keypair_from_seed!($seed)
+            .1
+            .serialize()
+            .expect("failed to serialize public key")
+    }};
+}
+
+/// Get a path for a temporary SQLite database
+macro_rules! get_temp_db_path {
+    () => {{
+        // Get a temporary directory
+        let temp_dir = std::env::temp_dir();
+
+        // Generate a random path
+        temp_dir
+            .join(format!("test-{}.sqlite", StdRng::from_entropy().next_u64()))
+            .to_string_lossy()
+            .to_string()
+    }};
+}
+
 /// Create a new broker for testing purposes that uses the memory network.
 /// Parameters include the key (as a u64), the public endpoint,
 /// and the private endpoint.
 macro_rules! new_broker {
-    ($key: expr, $public_ep: expr, $private_ep: expr) => {{
+    ($key: expr, $public_ep: expr, $private_ep: expr, $discovery_ep: expr) => {{
         // Generate keypair
         let (private_key, public_key) = keypair_from_seed!($key);
 
@@ -34,7 +63,7 @@ macro_rules! new_broker {
         let config: BrokerConfig<TestingRunDef> = BrokerConfig {
             ca_cert_path: None,
             ca_key_path: None,
-            discovery_endpoint: "test.sqlite".to_string(),
+            discovery_endpoint: $discovery_ep.clone(),
             keypair: KeyPair {
                 public_key,
                 private_key,
@@ -59,11 +88,11 @@ macro_rules! new_broker {
 /// Create a new marshal for testing purposes that uses the memory network.
 /// The only parameter is the endpoint (as a string) to bind to.
 macro_rules! new_marshal {
-    ($ep: expr) => {{
+    ($ep: expr, $discovery_ep: expr) => {{
         // Create the marshal's configuration
         let config = MarshalConfig {
             bind_endpoint: $ep.to_string(),
-            discovery_endpoint: "test.sqlite".to_string(),
+            discovery_endpoint: $discovery_ep.to_string(),
             metrics_bind_endpoint: None,
             ca_cert_path: None,
             ca_key_path: None,
@@ -105,11 +134,14 @@ macro_rules! new_client {
 /// Test that an end-to-end connection succeeds
 #[tokio::test]
 async fn test_end_to_end() {
+    // Get a temporary path for the discovery endpoint
+    let discovery_endpoint = get_temp_db_path!();
+
     // Create and start a new broker
-    new_broker!(0, "8080", "8081");
+    new_broker!(0, "8080", "8081", discovery_endpoint);
 
     // Create and start a new marshal
-    new_marshal!("8082");
+    new_marshal!("8082", discovery_endpoint);
 
     // Create and get the handle to a new client
     let client = new_client!(0, vec![Topic::Global], "8082");
@@ -122,66 +154,70 @@ async fn test_end_to_end() {
         .expect("failed to send message");
 }
 
-// TODO: finish the below tests
-// #[tokio::test]
-// async fn test_double_connect_same_broker() {
-//     // Create and start a new broker
-//     new_broker!(0, "8083", "8084");
+/// Test that the whitelist works
+#[tokio::test]
+async fn test_whitelist() {
+    // Get a temporary path for the discovery endpoint
+    let discovery_endpoint = get_temp_db_path!();
 
-//     // Create and start a new marshal
-//     new_marshal!("8085");
+    // Create and start a new broker
+    new_broker!(0, "8083", "8084", discovery_endpoint);
 
-//     // Create and get the handle to a new client
-//     let client_1 = new_client!(0, vec![Topic::Global], "8085");
-//     let client_public_key = keypair_from_seed!(0).1;
+    // Create and start a new marshal
+    new_marshal!("8085", discovery_endpoint);
 
-//     // Create another client with the same key
-//     let client_2 = new_client!(0, vec![Topic::Global], "8085");
+    // Create a client with keypair 1
+    let client1_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed!(1));
+    let client1 = new_client!(1, vec![Topic::Global], "8085");
 
-//     sleep(Duration::from_secs(5)).await;
+    // Create a client with keypair 2
+    let client2_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed!(2));
+    let client2 = new_client!(2, vec![Topic::Global], "8085");
 
-//     // Attempt to send a message from the first client
-//     let send_1 = client_1
-//         .send_direct_message(&client_public_key, b"hello direct".to_vec())
-//         .await;
+    // Assert both clients can connect
+    let Ok(_) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+        panic!("failed to connect as client1");
+    };
+    let Ok(_) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
+        panic!("failed to connect as client2");
+    };
 
-//     // Attempt to send a message from the second client
-//     let send_2 = client_2
-//         .send_direct_message(&client_public_key, b"hello direct".to_vec())
-//         .await;
+    // Create a new DB client
+    let mut db = Embedded::new(discovery_endpoint, None)
+        .await
+        .expect("failed to initialize db client");
 
-//     // Assert one of them failed
-//     assert!(send_1.is_err() || send_2.is_err());
-// }
+    // Set the whitelist to only allow client1
+    db.set_whitelist(vec![client1_public_key.clone()])
+        .await
+        .expect("failed to set whitelist");
 
-// // #[tokio::test]
-// // async fn test_double_connect_different_broker() {
-// //     // Create and start a new broker
-// //     new_broker!(0, "8086", "8087");
+    // Assert client1 is whitelisted
+    assert!(db
+        .check_whitelist(&client1_public_key)
+        .await
+        .is_ok_and(|x| x));
 
-// //     // Create and start another new broker
-// //     new_broker!(0, "8088", "8089");
+    // Assert client2 is not whitelisted
+    assert!(db
+        .check_whitelist(&client2_public_key)
+        .await
+        .is_ok_and(|x| !x));
 
-// //     // Create and start a new marshal
-// //     new_marshal!("8090");
+    // Recreate clients
+    let client1 = new_client!(1, vec![Topic::Global], "8085");
+    let client2 = new_client!(2, vec![Topic::Global], "8085");
 
-// //     // Create and get the handle to a new client
-// //     let client_1 = new_client!(0, vec![Topic::Global], "8090").expect("failed to create client");
-// //     let client_public_key = keypair_from_seed!(0).1;
+    // Assert we can connect as client1
+    let Ok(_) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+        panic!("failed to connect as client1");
+    };
 
-// //     // Create another client with the same key
-// //     let client_2 = new_client!(0, vec![Topic::Global], "8090").expect("failed to create client");
-
-// //     sleep(Duration::from_secs(20)).await;
-
-// //     // Send a message to ourself
-// //     client_1
-// //         .send_direct_message(&client_public_key, b"hello direct".to_vec())
-// //         .await
-// //         .expect("failed to send message");
-
-// //     client_2
-// //         .send_direct_message(&client_public_key, b"hello direct".to_vec())
-// //         .await
-// //         .expect("failed to send message");
-// // }
+    // Assert we can't connect as client2
+    assert!(
+        timeout(Duration::from_secs(1), client2.ensure_initialized())
+            .await
+            .is_err(),
+        "client2 connected when it shouldn't have"
+    );
+}

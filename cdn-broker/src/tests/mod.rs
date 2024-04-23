@@ -17,6 +17,7 @@ use cdn_proto::{
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::spawn;
 
 #[cfg(test)]
@@ -112,6 +113,13 @@ impl TestDefinition {
         // Create a key for our broker [under test]
         let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
+        // Create a temporary SQLite file for the broker's discovery endpoint
+        let temp_dir = std::env::temp_dir();
+        let discovery_endpoint = temp_dir
+            .join(format!("test-{}.sqlite", StdRng::from_entropy().next_u64()))
+            .to_string_lossy()
+            .into();
+
         // Build the broker's config
         let broker_config: Config<TestingRunDef> = Config {
             metrics_bind_endpoint: None,
@@ -119,7 +127,7 @@ impl TestDefinition {
             public_bind_endpoint: String::new(),
             private_advertise_endpoint: String::new(),
             private_bind_endpoint: String::new(),
-            discovery_endpoint: "test.sqlite".to_string(),
+            discovery_endpoint,
             keypair: KeyPair {
                 public_key,
                 private_key,
