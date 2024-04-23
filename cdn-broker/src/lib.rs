@@ -77,7 +77,7 @@ struct Inner<R: RunDef> {
     /// Only lets us authenticate to one broker at a time.
     broker_auth_lock: Semaphore,
 
-    /// A lock on authentication so we don't encounter UB when adding users.
+    /// A lock so we don't encounter UB when adding users.
     /// Only lets us add/remove one user to our state at a time.
     user_add_lock: Semaphore,
 
