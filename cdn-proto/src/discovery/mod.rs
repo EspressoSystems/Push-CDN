@@ -69,15 +69,15 @@ pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
     async fn check_whitelist(&mut self, user: &UserPublicKey) -> Result<bool>;
 }
 
-/// Used as a unique identifier for a broker. Defines both public and private addresses.
+/// Used as a unique identifier for a broker. Defines both public and private endpoints.
 /// We need this to be ordered so we can use primitives like versioned vectors over it.
 #[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive)]
 #[archive(check_bytes)]
 pub struct BrokerIdentifier {
-    /// The address that a broker advertises publicly (to users)
-    pub public_advertise_address: String,
-    /// The address that a broker advertises privately (to other brokers)
-    pub private_advertise_address: String,
+    /// The endpoint that a broker advertises publicly (to users)
+    pub public_advertise_endpoint: String,
+    /// The endpoint that a broker advertises privately (to other brokers)
+    pub private_advertise_endpoint: String,
 }
 
 /// We need this to convert in the opposite direction: to create a `String`
@@ -87,7 +87,7 @@ impl std::fmt::Display for BrokerIdentifier {
         write!(
             f,
             "{}/{}",
-            self.public_advertise_address, self.private_advertise_address
+            self.public_advertise_endpoint, self.private_advertise_endpoint
         )
     }
 }
@@ -102,17 +102,19 @@ impl TryFrom<String> for BrokerIdentifier {
 
         // Create a new `Self` from the split string
         Ok(Self {
-            public_advertise_address: split
-                .next()
-                .ok_or_else(|| {
-                    Error::Parse("failed to parse public advertise address from string".to_string())
-                })?
-                .to_string(),
-            private_advertise_address: split
+            public_advertise_endpoint: split
                 .next()
                 .ok_or_else(|| {
                     Error::Parse(
-                        "failed to parse private advertise address from string".to_string(),
+                        "failed to parse public advertise endpoint from string".to_string(),
+                    )
+                })?
+                .to_string(),
+            private_advertise_endpoint: split
+                .next()
+                .ok_or_else(|| {
+                    Error::Parse(
+                        "failed to parse private advertise endpoint from string".to_string(),
                     )
                 })?
                 .to_string(),

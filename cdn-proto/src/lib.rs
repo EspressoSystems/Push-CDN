@@ -5,8 +5,6 @@
 
 use std::hash::{Hash, Hasher};
 
-use connection::UserPublicKey;
-
 pub mod connection;
 pub mod crypto;
 pub mod def;
@@ -29,7 +27,7 @@ pub mod messages_capnp {
 
 /// A function for generating a cute little user mnemonic from a hash
 #[must_use]
-pub fn mnemonic(bytes: &UserPublicKey) -> String {
+pub fn mnemonic<H: Hash>(bytes: H) -> String {
     let mut state = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut state);
     mnemonic::to_string(state.finish().to_le_bytes())

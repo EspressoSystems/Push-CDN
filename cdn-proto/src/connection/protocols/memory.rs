@@ -16,7 +16,7 @@ use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
 use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 use crate::{
     bail,
-    connection::{hooks::Hooks, Bytes},
+    connection::{middleware::Middleware, Bytes},
     error::{Error, Result},
     message::Message,
 };
@@ -35,14 +35,14 @@ static LISTENERS: OnceLock<RwLock<HashMap<String, ChannelExchange>>> = OnceLock:
 pub struct Memory;
 
 #[async_trait]
-impl<H: Hooks> Protocol<H> for Memory {
+impl<M: Middleware> Protocol<M> for Memory {
     type Sender = MemorySender;
     type Receiver = MemoryReceiver;
 
     type UnfinalizedConnection = UnfinalizedMemoryConnection;
     type Listener = MemoryListener;
 
-    /// Connect to the internal, local address.
+    /// Connect to the internal, local endpoint.
     ///
     /// # Errors
     /// - If the listener is not listening
@@ -68,14 +68,14 @@ impl<H: Hooks> Protocol<H> for Memory {
         bail!(
             channel_exchange_sender.send(send_to_us).await,
             Connection,
-            "failed to connect to remote address"
+            "failed to connect to remote endpoint"
         );
 
         // Receive their channel
         let send_to_them = bail!(
             channel_exchange_receiver.recv().await,
             Connection,
-            "failed to connect to remote address"
+            "failed to connect to remote endpoint"
         );
 
         // Return the conmunication channels
@@ -85,13 +85,13 @@ impl<H: Hooks> Protocol<H> for Memory {
         ))
     }
 
-    /// Binds to a local endpoint. The bind address should be numeric.
+    /// Binds to a local endpoint. The bind endpoint should be numeric.
     ///
     /// # Errors
-    /// - If we fail to parse the local bind address
-    /// - If we fail to bind to the local address
+    /// - If we fail to parse the local bind endpoint
+    /// - If we fail to bind to the local endpoint
     async fn bind(
-        bind_address: &str,
+        bind_endpoint: &str,
         _certificate: Certificate,
         _key: PrivateKey,
     ) -> Result<Self::Listener> {
@@ -101,11 +101,11 @@ impl<H: Hooks> Protocol<H> for Memory {
 
         // Add to our listeners
         let mut listeners = LISTENERS.get_or_init(RwLock::default).write().await;
-        listeners.insert(bind_address.to_string(), (send_to_us, receive_from_us));
+        listeners.insert(bind_endpoint.to_string(), (send_to_us, receive_from_us));
 
-        // Return our listener as a u64 bind address
+        // Return our listener as a u64 bind endpoint
         Ok(MemoryListener {
-            bind_address: bind_address.to_string(),
+            bind_endpoint: bind_endpoint.to_string(),
             receive_new_connection: receive_from_them,
             send_to_new_connection: send_to_them,
         })
@@ -226,10 +226,10 @@ impl UnfinalizedConnection<MemorySender, MemoryReceiver> for UnfinalizedMemoryCo
     }
 }
 
-/// Contains a way to send and receive to new channels, and the bind address
+/// Contains a way to send and receive to new channels, and the bind endpoint
 /// so we can remove on drop.
 pub struct MemoryListener {
-    bind_address: String,
+    bind_endpoint: String,
     receive_new_connection: AsyncReceiver<SenderChannel>,
     send_to_new_connection: AsyncSender<SenderChannel>,
 }
@@ -271,13 +271,13 @@ impl Listener<UnfinalizedMemoryConnection> for MemoryListener {
 /// On `Drop`, we want to remove ourself from the map of listeners.
 impl Drop for MemoryListener {
     fn drop(&mut self) {
-        // Clone the bind address so we can use it
-        let bind_address = self.bind_address.clone();
+        // Clone the bind endpoint so we can use it
+        let bind_endpoint = self.bind_endpoint.clone();
 
         // Spawn a blocking task to remove the listener
         spawn_blocking(move || async move {
             let mut listeners = LISTENERS.get_or_init(RwLock::default).write().await;
-            listeners.remove(&bind_address);
+            listeners.remove(&bind_endpoint);
         });
     }
 }

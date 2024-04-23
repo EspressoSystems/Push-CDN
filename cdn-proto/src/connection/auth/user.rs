@@ -9,23 +9,17 @@ use std::{
 use crate::crypto::signature::Serializable;
 use crate::{
     bail,
-    connection::{
-        hooks::None,
-        protocols::{Protocol, Receiver, Sender},
-    },
+    connection::protocols::{Receiver as _, Sender as _},
     crypto::signature::{KeyPair, SignatureScheme},
+    def::{Connection, ConnectionDef, Scheme},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
 
 /// This is the `UserAuth` struct that we define methods to for authentication purposes.
-pub struct UserAuth<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
-    /// We use `PhantomData` here so we can be generic over a signature scheme
-    /// and protocol type
-    pub pd: PhantomData<(Scheme, ProtocolType)>,
-}
+pub struct UserAuth<C: ConnectionDef>(PhantomData<C>);
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, ProtocolType> {
+impl<C: ConnectionDef> UserAuth<C> {
     /// The authentication steps with a key:
     /// 1. Sign the timestamp with our private key
     /// 2. Send a signed message
@@ -35,8 +29,8 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
-        keypair: &KeyPair<Scheme>,
+        connection: &Connection<C>,
+        keypair: &KeyPair<Scheme<C>>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
         let timestamp = bail!(
@@ -48,7 +42,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
 
         // Sign the timestamp from above
         let signature = bail!(
-            Scheme::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<C>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
             Crypto,
             "failed to sign message"
         );
@@ -74,7 +68,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
             "failed to send auth message to marshal"
         );
 
-        // Wait for the response with the permit and address
+        // Wait for the response with the permit and endpoint
         let response = bail!(
             connection.1.recv_message().await,
             Connection,
@@ -109,7 +103,7 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> UserAuth<Scheme, Pro
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &(ProtocolType::Sender, ProtocolType::Receiver),
+        connection: &Connection<C>,
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {

@@ -149,11 +149,12 @@ pub mod tests {
     macro_rules! vec_equal {
         ($a: expr, $b: expr) => {
             assert!($b.iter().all(|item| $a.contains(item)));
+            assert!($a.iter().all(|item| $b.contains(item)));
         };
     }
 
     #[test]
-    fn test_relational_map() {
+    fn test_relational() {
         let mut map: RelationalMap<&str, u64> = RelationalMap::new();
 
         // Associate "user0" with 0 and "user1" with 1
@@ -224,6 +225,147 @@ pub mod tests {
         assert!(
             map.value_to_keys.is_empty(),
             "expected `value_to_keys` to be empty"
+        );
+    }
+
+    #[test]
+    fn test_relational_association() {
+        let mut map: RelationalMap<&str, u64> = RelationalMap::new();
+
+        // Associate "user0" with 0 and "user1" with 1
+        map.associate_key_with_values(&"user0", vec![0, 1, 2]);
+        map.associate_key_with_values(&"user1", vec![1, 2]);
+
+        // Dissociate "user0" from 1
+        map.dissociate_keys_from_value(&"user0", &[1]);
+
+        // Check value-to-key associations
+        vec_equal!(map.get_keys_by_value(&0), ["user0"]);
+        vec_equal!(map.get_keys_by_value(&1), ["user1"]);
+        vec_equal!(map.get_keys_by_value(&2), ["user0", "user1"]);
+
+        // Check key-to-value associations
+        vec_equal!(
+            map.key_to_values.get(&"user1").expect("user1 not found"),
+            [1, 2]
+        );
+        vec_equal!(
+            map.key_to_values.get(&"user0").expect("user0 not found"),
+            [0, 2]
+        );
+
+        // Check that there are 3 values
+        assert!(map.get_values().len() == 3, "expected 3 values");
+
+        // Check that there are 2 keys
+        assert!(map.key_to_values.len() == 2, "expected 2 keys");
+
+        // Dissociate "user0" from 0
+        map.dissociate_keys_from_value(&"user0", &[0]);
+
+        // Check value-to-key associations
+        vec_equal!(map.get_keys_by_value(&0), []);
+        vec_equal!(map.get_keys_by_value(&1), ["user1"]);
+        vec_equal!(map.get_keys_by_value(&2), ["user0", "user1"]);
+
+        // Check key-to-value associations
+        vec_equal!(
+            map.key_to_values.get(&"user1").expect("user1 not found"),
+            [1, 2]
+        );
+        vec_equal!(
+            map.key_to_values.get(&"user0").expect("user0 not found"),
+            [2]
+        );
+
+        // Check that there are 2 values
+        vec_equal!(map.get_values(), [1, 2]);
+
+        // Dissociate "user1" from everything
+        map.dissociate_keys_from_value(&"user1", &[1, 2]);
+
+        // Check value-to-key associations
+        vec_equal!(map.get_keys_by_value(&0), []);
+        vec_equal!(map.get_keys_by_value(&1), []);
+        vec_equal!(map.get_keys_by_value(&2), ["user0"]);
+
+        // Check key-to-value associations
+        assert!(map.key_to_values.get(&"user1").is_none());
+        vec_equal!(
+            map.key_to_values.get(&"user0").expect("user0 not found"),
+            [2]
+        );
+    }
+
+    #[test]
+    fn test_relational_remove() {
+        let mut map: RelationalMap<&str, u64> = RelationalMap::new();
+
+        // Associate "user0" and "user1"
+        map.associate_key_with_values(&"user0", vec![0, 1, 2]);
+        map.associate_key_with_values(&"user1", vec![1, 2, 3]);
+
+        // Assert that the users are associated with the proper values
+        vec_equal!(
+            map.key_to_values.get(&"user0").expect("user0 not found"),
+            [0, 1, 2]
+        );
+        vec_equal!(
+            map.key_to_values.get(&"user1").expect("user0 not found"),
+            [1, 2, 3]
+        );
+
+        // Assert that the values are associated with the proper users
+        vec_equal!(map.value_to_keys.get(&0).expect("0 not found"), ["user0"]);
+        vec_equal!(
+            map.value_to_keys.get(&1).expect("1 not found"),
+            ["user0", "user1"]
+        );
+        vec_equal!(
+            map.value_to_keys.get(&2).expect("2 not found"),
+            ["user0", "user1"]
+        );
+        vec_equal!(map.value_to_keys.get(&3).expect("2 not found"), ["user1"]);
+
+        // Remove "user1"
+        map.remove_key(&"user1");
+
+        // Assert that the users are associated with the proper values
+        vec_equal!(
+            map.key_to_values.get(&"user0").expect("user0 not found"),
+            [0, 1, 2]
+        );
+        // Assert user1 is no longer in the map
+        assert!(
+            map.key_to_values.get(&"user1").is_none(),
+            "expected user1 to be removed"
+        );
+
+        // Assert that the values are associated with the proper users
+        vec_equal!(map.value_to_keys.get(&0).expect("0 not found"), ["user0"]);
+        vec_equal!(map.value_to_keys.get(&1).expect("1 not found"), ["user0"]);
+        vec_equal!(map.value_to_keys.get(&2).expect("2 not found"), ["user0"]);
+        assert!(map.value_to_keys.get(&3).is_none());
+
+        // Assert that 3 is no longer in the map
+        assert!(
+            !map.get_values().contains(&3),
+            "expected 3 to be removed from values"
+        );
+
+        // Remove "user0"
+        map.remove_key(&"user0");
+
+        // Assert that the user is no longer in the map
+        assert!(
+            map.key_to_values.get(&"user0").is_none(),
+            "expected user0 to be removed"
+        );
+
+        // Assert that the values are associated with the proper users
+        assert!(
+            map.value_to_keys.is_empty(),
+            "expected all values to be removed"
         );
     }
 }

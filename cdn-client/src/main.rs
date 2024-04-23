@@ -4,10 +4,10 @@
 
 use std::time::Duration;
 
-use cdn_client::{Client, ConfigBuilder};
+use cdn_client::{Client, Config};
 use cdn_proto::{
-    connection::protocols::quic::Quic,
     crypto::signature::{KeyPair, Serializable},
+    def::ProductionClientConnection,
     message::{Broadcast, Direct, Message, Topic},
 };
 use clap::Parser;
@@ -17,6 +17,7 @@ use jf_primitives::signatures::{
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::sleep;
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -33,28 +34,35 @@ async fn main() {
     let args = Args::parse();
 
     // Initialize tracing
-    tracing_subscriber::fmt::init();
+    if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .json()
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+    }
 
     // Generate a random keypair
     let (private_key, public_key) =
         BLS::key_gen(&(), &mut StdRng::from_entropy()).expect("failed to generate key");
 
     // Build the config, the endpoint being where we expect the marshal to be
-    let config = ConfigBuilder::default()
-        .endpoint(args.marshal_endpoint)
-        // Private key is only used for signing authentication messages
-        .keypair(KeyPair {
+    let config = Config {
+        endpoint: args.marshal_endpoint,
+        keypair: KeyPair {
             public_key,
             private_key,
-        })
-        // Subscribe to the global consensus topic
-        .subscribed_topics(vec![Topic::Global])
-        .build()
-        .expect("failed to build client config");
+        },
+        subscribed_topics: vec![Topic::Global],
+        use_local_authority: true,
+    };
 
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.
-    let client = Client::<BLS, Quic>::new(config);
+    let client = Client::<ProductionClientConnection>::new(config);
 
     // In a loop,
     loop {

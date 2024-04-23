@@ -10,7 +10,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::{Receiver, Sender},
-    def::RunDef,
+    def::{Connection, PublicKey, RunDef, Scheme},
     discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
@@ -21,15 +21,10 @@ use crate::{
     crypto::signature::{Serializable, SignatureScheme},
 };
 
-use super::UserConnection;
-
 /// This is the `BrokerAuth` struct that we define methods to for authentication purposes.
-pub struct MarshalAuth<Def: RunDef> {
-    /// We use `PhantomData` here so we can be generic over a signature scheme
-    pub pd: PhantomData<Def>,
-}
+pub struct MarshalAuth<R: RunDef>(PhantomData<R>);
 
-impl<Def: RunDef> MarshalAuth<Def> {
+impl<R: RunDef> MarshalAuth<R> {
     /// The authentication implementation for a marshal to a user. We take the following steps:
     /// 1. Receive a signed message from the user
     /// 2. Validate the message
@@ -40,8 +35,8 @@ impl<Def: RunDef> MarshalAuth<Def> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &UserConnection<Def>,
-        discovery_client: &mut Def::DiscoveryClientType,
+        connection: &Connection<R::User>,
+        discovery_client: &mut R::DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -56,14 +51,12 @@ impl<Def: RunDef> MarshalAuth<Def> {
         };
 
         // Deserialize the user's public key
-        let Ok(public_key) =
-            <Def::UserScheme as SignatureScheme>::PublicKey::deserialize(&auth_message.public_key)
-        else {
+        let Ok(public_key) = PublicKey::<R::User>::deserialize(&auth_message.public_key) else {
             fail_verification_with_message!(connection, "malformed public key");
         };
 
         // Verify the signature
-        if !Def::UserScheme::verify(
+        if !Scheme::<R::User>::verify(
             &public_key,
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,
@@ -134,10 +127,10 @@ impl<Def: RunDef> MarshalAuth<Def> {
         // Form a response message
         let response_message = Message::AuthenticateResponse(AuthenticateResponse {
             permit,
-            context: broker_with_least_connections.public_advertise_address,
+            context: broker_with_least_connections.public_advertise_endpoint,
         });
 
-        // Send the permit to the user, along with the public broker advertise address
+        // Send the permit to the user, along with the public broker advertise endpoint
         let _ = connection.0.send_message(response_message).await;
 
         Ok(UserPublicKey::from(public_key))

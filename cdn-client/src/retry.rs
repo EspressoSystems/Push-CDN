@@ -5,19 +5,18 @@
 //! and where we can just return. Most of the errors already have
 //! enough context from previous bails.
 
-use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
-        hooks::None,
-        protocols::{Protocol, Receiver, Sender},
+        protocols::{Protocol as _, Receiver as _, Sender as _},
     },
-    crypto::signature::{KeyPair, SignatureScheme},
+    crypto::signature::KeyPair,
+    def::{Connection, ConnectionDef, Protocol, Scheme},
     error::{Error, Result},
     message::{Message, Topic},
 };
-use derive_builder::Builder;
 use tokio::{
     sync::{OnceCell, RwLock},
     time::sleep,
@@ -31,15 +30,14 @@ use crate::bail;
 /// It employs synchronization as well as retry logic.
 /// Can be cloned to provide a handle to the same underlying elastic connection.
 #[derive(Clone)]
-pub struct Retry<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
-    pub inner: Arc<Inner<Scheme, ProtocolType>>,
+pub struct Retry<C: ConnectionDef> {
+    pub inner: Arc<Inner<C>>,
 }
 
 /// `Inner` is held exclusively by `Retry`, wherein an `Arc` is used
 /// to facilitate interior mutability.
-pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
-    /// This is the remote address that we authenticate to. It can either be a broker
-    /// or a marshal.
+pub struct Inner<C: ConnectionDef> {
+    /// This is the remote endpoint of the marshal that we authenticate with.
     endpoint: String,
 
     /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
@@ -47,17 +45,17 @@ pub struct Inner<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
     use_local_authority: bool,
 
     /// The underlying connection
-    connection: Arc<RwLock<OnceCell<(ProtocolType::Sender, ProtocolType::Receiver)>>>,
+    connection: Arc<RwLock<OnceCell<Connection<C>>>>,
 
     /// The keypair to use when authenticating
-    pub keypair: KeyPair<Scheme>,
+    pub keypair: KeyPair<Scheme<C>>,
 
     /// The topics we're currently subscribed to. We need this so we can send our subscriptions
     /// when we connect to a new server.
     pub subscribed_topics: RwLock<HashSet<Topic>>,
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Inner<Scheme, ProtocolType> {
+impl<C: ConnectionDef> Inner<C> {
     /// Attempt a reconnection to the remote marshal endpoint.
     /// Returns the connection verbatim without updating any internal
     /// structs.
@@ -65,32 +63,31 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Inner<Scheme, Protoc
     /// # Errors
     /// - If the connection failed
     /// - If authentication failed
-    async fn connect(self: &Arc<Self>) -> Result<(ProtocolType::Sender, ProtocolType::Receiver)> {
+    async fn connect(self: &Arc<Self>) -> Result<Connection<C>> {
         // Make the connection to the marshal
         let connection = bail!(
-            ProtocolType::connect(&self.endpoint, self.use_local_authority).await,
+            Protocol::<C>::connect(&self.endpoint, self.use_local_authority).await,
             Connection,
             "failed to connect to endpoint"
         );
 
         // Authenticate the connection to the marshal (if not provided)
-        let (broker_address, permit) = bail!(
-            UserAuth::<Scheme, ProtocolType>::authenticate_with_marshal(&connection, &self.keypair)
-                .await,
+        let (broker_endpoint, permit) = bail!(
+            UserAuth::<C>::authenticate_with_marshal(&connection, &self.keypair).await,
             Authentication,
             "failed to authenticate to marshal"
         );
 
         // Make the connection to the broker
         let connection = bail!(
-            ProtocolType::connect(&broker_address, self.use_local_authority).await,
+            Protocol::<C>::connect(&broker_endpoint, self.use_local_authority).await,
             Connection,
             "failed to connect to broker"
         );
 
         // Authenticate the connection to the broker
         bail!(
-            UserAuth::<Scheme, ProtocolType>::authenticate_with_broker(
+            UserAuth::<C>::authenticate_with_broker(
                 &connection,
                 permit,
                 self.subscribed_topics.read().await.clone()
@@ -100,36 +97,29 @@ impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Inner<Scheme, Protoc
             "failed to authenticate to broker"
         );
 
-        info!("connected to broker {}", broker_address);
+        info!(id = broker_endpoint, "connected to broker");
 
         Ok(connection)
     }
 }
 
 /// The configuration needed to construct a `Retry` connection.
-#[derive(Builder, Clone)]
-pub struct Config<Scheme: SignatureScheme, ProtocolType: Protocol<None>> {
-    /// This is the remote address that we authenticate to. It can either be a broker
-    /// or a marshal.
+#[derive(Clone)]
+pub struct Config<C: ConnectionDef> {
+    /// This is the remote endpoint of the marshal that we authenticate with.
     pub endpoint: String,
 
     /// Whether or not to use the trust the local, pinned CA. It is insecure to use this in
     /// a production environment.
-    #[builder(default = "true")]
     pub use_local_authority: bool,
 
     /// The underlying (public) verification key, used to authenticate with the server. Checked
     /// against the stake table.
-    pub keypair: KeyPair<Scheme>,
+    pub keypair: KeyPair<Scheme<C>>,
 
     /// The topics we're currently subscribed to. We need this here so we can send our subscriptions
     /// when we connect to a new server.
-    #[builder(default = "Vec::new()")]
     pub subscribed_topics: Vec<Topic>,
-
-    /// The phantom data we need to be able to make use of these types
-    #[builder(default)]
-    pub pd: PhantomData<ProtocolType>,
 }
 
 /// This is a macro that helps with reconnections when sending
@@ -176,22 +166,21 @@ macro_rules! try_with_reconnect {
     }};
 }
 
-impl<Scheme: SignatureScheme, ProtocolType: Protocol<None>> Retry<Scheme, ProtocolType> {
+impl<C: ConnectionDef> Retry<C> {
     /// Creates a new `Retry` connection from a `Config`
     /// Attempts to make an initial connection.
     /// This allows us to create elastic clients that always try to maintain a connection.
     ///
     /// # Errors
-    /// - If we are unable to either parse or bind an endpoint to the local address.
+    /// - If we are unable to either parse or bind an endpoint to the local endpoint.
     /// - If we are unable to make the initial connection
-    pub fn from_config(config: Config<Scheme, ProtocolType>) -> Self {
+    pub fn from_config(config: Config<C>) -> Self {
         // Extrapolate values from the underlying client configuration
         let Config {
             endpoint,
             use_local_authority,
             keypair,
             subscribed_topics,
-            pd: _,
         } = config;
 
         // Wrap subscribed topics so we can use it now and later

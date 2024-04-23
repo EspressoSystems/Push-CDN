@@ -6,7 +6,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
 
@@ -14,79 +14,63 @@ mod handlers;
 
 use cdn_proto::{
     bail,
-    connection::{
-        hooks::Untrusted,
-        protocols::{Listener, Protocol, UnfinalizedConnection},
-    },
+    connection::protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
     crypto::tls::{generate_cert_from_ca, load_ca},
-    def::RunDef,
+    def::{Listener, Protocol, RunDef},
     discovery::DiscoveryClient,
     error::{Error, Result},
-    metrics as proto_metrics, parse_socket_address,
+    metrics as proto_metrics,
 };
-use derive_builder::Builder;
 use tokio::spawn;
 use tracing::info;
 
 /// The `Marshal's` configuration (with a Builder), to help with usability.
 /// We need this to construct a `Marshal`
-#[derive(Builder)]
 pub struct Config {
-    /// The bind address that users will reach. Example: `0.0.0.0:1738`
-    bind_address: String,
+    /// The bind endpoint that users will reach. Example: `0.0.0.0:1738`
+    pub bind_endpoint: String,
 
     /// The discovery client endpoint (either Redis or local depending on feature)
-    discovery_endpoint: String,
-
-    /// Whether or not we want to serve metrics
-    #[builder(default = "true")]
-    pub metrics_enabled: bool,
-
-    /// The port we want to serve metrics on
-    #[builder(default = "9090")]
-    pub metrics_port: u16,
-
-    /// The IP/interface we want to serve the metrics on
-    #[builder(default = "String::from(\"127.0.0.1\")")]
-    pub metrics_ip: String,
+    pub discovery_endpoint: String,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
-    #[builder(default)]
     pub ca_cert_path: Option<String>,
 
     /// An optional TLS CA key path. If not specified, will use the local one.
-    #[builder(default)]
     pub ca_key_path: Option<String>,
+
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    pub metrics_bind_endpoint: Option<String>,
 }
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
 /// to connect to an actual broker. Think of it like a load balancer for
 /// the brokers.
-pub struct Marshal<Def: RunDef> {
+pub struct Marshal<R: RunDef> {
     /// The underlying connection listener. Used to accept new connections.
-    listener: Arc<<Def::UserProtocol as Protocol<Untrusted>>::Listener>,
+    listener: Arc<Listener<R::User>>,
 
     /// The client we use to issue permits and check for brokers that are up
-    discovery_client: Def::DiscoveryClientType,
+    discovery_client: R::DiscoveryClientType,
 
-    /// The endpoint at which we serve metrics to, our none at all if we aren't serving.
-    metrics_bind_address: Option<SocketAddr>,
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    metrics_bind_endpoint: Option<SocketAddr>,
 }
 
-impl<Def: RunDef> Marshal<Def> {
-    /// Create and return a new marshal from a bind address, and an optional
+impl<R: RunDef> Marshal<R> {
+    /// Create and return a new marshal from a bind endpoint, and an optional
     /// TLS cert and key path.
     ///
     /// # Errors
-    /// - If we fail to bind to the local address
+    /// - If we fail to bind to the local endpoint
     pub async fn new(config: Config) -> Result<Self> {
         // Extrapolate values from the underlying marshal configuration
         let Config {
-            bind_address,
+            bind_endpoint,
             discovery_endpoint,
-            metrics_enabled,
-            metrics_ip,
-            metrics_port,
+            metrics_bind_endpoint,
             ca_cert_path,
             ca_key_path,
         } = config;
@@ -97,34 +81,41 @@ impl<Def: RunDef> Marshal<Def> {
         // Generate a cert from the provided CA cert and key
         let (tls_cert, tls_key) = generate_cert_from_ca(&ca_cert, &ca_key)?;
 
-        // Create the `Listener` from the bind address
+        // Create the `Listener` from the bind endpoint
         let listener = bail!(
-            Def::UserProtocol::bind(bind_address.as_str(), tls_cert, tls_key).await,
+            Protocol::<R::User>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
             Connection,
-            format!("failed to listen to address {}", bind_address)
+            format!("failed to bind to endpoint {}", bind_endpoint)
         );
 
-        info!("listening for users on {bind_address}");
+        info!(bind = bind_endpoint, "listening for users");
 
         // Create the discovery client
         let discovery_client = bail!(
-            Def::DiscoveryClientType::new(discovery_endpoint, None).await,
+            R::DiscoveryClientType::new(discovery_endpoint, None).await,
             Connection,
             "failed to create discovery client"
         );
 
         // Parse the metrics IP and port
-        let metrics_bind_address = if metrics_enabled {
-            let ip: Ipv4Addr = parse_socket_address!(metrics_ip);
-            Some(SocketAddr::from((ip, metrics_port)))
-        } else {
-            None
-        };
+        let metrics_bind_endpoint: Option<SocketAddr> = metrics_bind_endpoint
+            .map(|m| {
+                bail!(
+                    m.to_socket_addrs(),
+                    Parse,
+                    "failed to parse metrics bind endpoint"
+                )
+                .find(SocketAddr::is_ipv4)
+                .ok_or_else(|| {
+                    Error::Connection("failed to resolve metrics bind endpoint".to_string())
+                })
+            })
+            .transpose()?;
 
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
-            metrics_bind_address,
+            metrics_bind_endpoint,
             discovery_client,
         })
     }
@@ -136,9 +127,9 @@ impl<Def: RunDef> Marshal<Def> {
     /// Right now, we return a `Result` but don't actually ever error.
     pub async fn start(self) -> Result<()> {
         // Serve the (possible) metrics task
-        if let Some(metrics_bind_address) = self.metrics_bind_address {
+        if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
             // Spawn the serving task
-            spawn(proto_metrics::serve_metrics(metrics_bind_address));
+            spawn(proto_metrics::serve_metrics(metrics_bind_endpoint));
         }
 
         // Listen for connections forever

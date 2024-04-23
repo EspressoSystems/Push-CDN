@@ -1,14 +1,11 @@
 //! This module defines almost all of the connection lookup, addition,
 //! and removal process.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, ops::Deref, sync::Arc};
 
 use cdn_proto::{
-    connection::{
-        hooks::{Trusted, Untrusted},
-        protocols::{Protocol, Sender},
-        Bytes, UserPublicKey,
-    },
+    connection::{protocols::Sender as _, Bytes, UserPublicKey},
+    def::{RunDef, Sender},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
@@ -26,14 +23,14 @@ mod direct;
 mod versioned;
 
 /// Stores information about all current connections.
-pub struct Connections<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>> {
+pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<UserPublicKey, UserProtocol::Sender>,
+    users: DashMap<UserPublicKey, Sender<Def::User>>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, BrokerProtocol::Sender>,
+    brokers: DashMap<BrokerIdentifier, Sender<Def::Broker>>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: RwLock<DirectMap>,
@@ -41,9 +38,7 @@ pub struct Connections<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol
     broadcast_map: BroadcastMap,
 }
 
-impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
-    Connections<BrokerProtocol, UserProtocol>
-{
+impl<Def: RunDef> Connections<Def> {
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {
@@ -128,7 +123,7 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
     pub fn add_broker(
         self: &Arc<Self>,
         broker_identifier: BrokerIdentifier,
-        connection: BrokerProtocol::Sender,
+        connection: Sender<Def::Broker>,
     ) {
         self.brokers.insert(broker_identifier, connection);
     }
@@ -138,7 +133,7 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
     pub fn add_user(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
-        connection: UserProtocol::Sender,
+        connection: Sender<Def::User>,
     ) {
         // Add to our map
         self.users.insert(user_public_key.clone(), connection);
@@ -291,18 +286,28 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
         if let Some(broker_identifier) = self.direct_map.read().get(&user_public_key) {
             if *broker_identifier == self.identity {
                 // We own the user, send it this way
+                debug!(
+                    user = mnemonic(&user_public_key),
+                    msg = mnemonic(message.deref()),
+                    "direct",
+                );
                 self.send_to_user(user_public_key, message);
             } else {
                 // If we don't have the stipulation to send it to ourselves only
                 // This is so we don't thrash between brokers
                 if !to_user_only {
+                    debug!(
+                        broker = %broker_identifier,
+                        msg = mnemonic(message.deref()),
+                        "direct",
+                    );
                     // Send to the broker responsible
                     self.send_to_broker(broker_identifier, message);
                 }
             }
         } else {
             // Debug warning if the recipient user did not exist.
-            debug!("user {} did not exist in map", mnemonic(&user_public_key));
+            debug!(id = mnemonic(&user_public_key), "user did not exist in map");
         }
     }
 
@@ -330,6 +335,13 @@ impl<BrokerProtocol: Protocol<Trusted>, UserProtocol: Protocol<Untrusted>>
             }
             user_recipients.extend(self.broadcast_map.users.read().get_keys_by_value(&topic));
         }
+
+        debug!(
+            num_brokers = broker_recipients.len(),
+            num_users = user_recipients.len(),
+            msg = mnemonic(message.deref()),
+            "broadcast",
+        );
 
         // If we can send to brokers, do so
         if !to_users_only {

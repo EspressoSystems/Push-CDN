@@ -4,13 +4,8 @@ use std::sync::Arc;
 
 use cdn_proto::{
     authenticate_with_broker, bail,
-    connection::{
-        auth::broker::BrokerAuth,
-        hooks::Trusted,
-        protocols::{Protocol, Receiver},
-        UserPublicKey,
-    },
-    def::RunDef,
+    connection::{auth::broker::BrokerAuth, protocols::Receiver as _, UserPublicKey},
+    def::{Receiver, RunDef, Sender},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
@@ -24,10 +19,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (
-            <Def::BrokerProtocol as Protocol<Trusted>>::Sender,
-            <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
-        ),
+        mut connection: (Sender<Def::Broker>, Receiver<Def::Broker>),
         is_outbound: bool,
     ) {
         // Acquire a permit to authenticate with a broker. Removes the possibility for race
@@ -41,9 +33,9 @@ impl<Def: RunDef> Inner<Def> {
         // flow.
         let broker_identifier = if is_outbound {
             // If we reached out to the other broker first, authenticate first.
-            let broker_address = authenticate_with_broker!(connection, self);
+            let broker_endpoint = authenticate_with_broker!(connection, self);
             verify_broker!(connection, self);
-            broker_address
+            broker_endpoint
         } else {
             // If the other broker reached out to us first, authenticate second.
             verify_broker!(connection, self);
@@ -91,17 +83,17 @@ impl<Def: RunDef> Inner<Def> {
             error!("failed to perform partial user sync: {err}");
         }
 
-        info!("connected to broker {}", broker_identifier);
+        info!(id = %broker_identifier, "connected to broker");
 
         // Increment our metric
         metrics::NUM_BROKERS_CONNECTED.inc();
 
         // If we error, come back to the callback so we can remove the connection from the list.
         if let Err(err) = self.broker_receive_loop(&broker_identifier, receiver).await {
-            error!("broker disconnected with error: {err}");
+            error!(id = %broker_identifier, "broker disconnected with error: {err}");
         };
 
-        info!("disconnected from broker {}", broker_identifier);
+        info!(id = %broker_identifier, "disconnected from broker");
 
         // Decrement our metric
         metrics::NUM_BROKERS_CONNECTED.dec();
@@ -114,7 +106,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: <Def::BrokerProtocol as Protocol<Trusted>>::Receiver,
+        receiver: Receiver<Def::Broker>,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

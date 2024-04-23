@@ -19,12 +19,12 @@ use tokio::spawn;
 use tokio::{task::AbortHandle, time::timeout};
 
 use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
-use crate::connection::hooks::Hooks;
 #[cfg(feature = "metrics")]
 use crate::connection::metrics;
+use crate::connection::middleware::Middleware;
 use crate::connection::Bytes;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
-use crate::parse_socket_address;
+use crate::parse_endpoint;
 use crate::{
     bail, bail_option,
     error::{Error, Result},
@@ -38,19 +38,19 @@ use crate::{
 pub struct Quic;
 
 #[async_trait]
-impl<H: Hooks> Protocol<H> for Quic {
+impl<M: Middleware> Protocol<M> for Quic {
     type Sender = QuicSender;
     type Receiver = QuicReceiver;
 
-    type UnfinalizedConnection = UnfinalizedQuicConnection<H>;
+    type UnfinalizedConnection = UnfinalizedQuicConnection<M>;
     type Listener = QuicListener;
 
     async fn connect(
         remote_endpoint: &str,
         use_local_authority: bool,
     ) -> Result<(QuicSender, QuicReceiver)> {
-        // Parse the socket address
-        let remote_address = bail_option!(
+        // Parse the endpoint
+        let remote_endpoint = bail_option!(
             bail!(
                 remote_endpoint.to_socket_addrs(),
                 Parse,
@@ -58,7 +58,7 @@ impl<H: Hooks> Protocol<H> for Quic {
             )
             .next(),
             Connection,
-            "did not find suitable address for endpoint"
+            "did not find suitable endpoint for endpoint"
         );
 
         // Create QUIC endpoint
@@ -66,10 +66,10 @@ impl<H: Hooks> Protocol<H> for Quic {
             Endpoint::client(bail!(
                 "0.0.0.0:0".parse(),
                 Parse,
-                "failed to parse local bind address"
+                "failed to parse local bind endpoint"
             )),
             Connection,
-            "failed to bind to local address"
+            "failed to bind to local endpoint"
         );
 
         // Pick which authority to trust based on whether or not we have requested
@@ -102,16 +102,16 @@ impl<H: Hooks> Protocol<H> for Quic {
         // Set default client config
         endpoint.set_default_client_config(config);
 
-        // Connect with QUIC endpoint to remote address
+        // Connect with QUIC endpoint to remote endpoint
         let connection = bail!(
             bail!(
-                endpoint.connect(remote_address, "espresso"),
+                endpoint.connect(remote_endpoint, "espresso"),
                 Connection,
-                "failed quic connect to remote address"
+                "failed quic connect to remote endpoint"
             )
             .await,
             Connection,
-            "failed quic connect to remote address"
+            "failed quic connect to remote endpoint"
         );
 
         // Open an outgoing bidirectional stream
@@ -130,25 +130,24 @@ impl<H: Hooks> Protocol<H> for Quic {
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels::<H>(sender, receiver);
+        let (sender, receiver) = into_channels::<M>(sender, receiver);
 
         Ok((sender, receiver))
     }
 
-    /// Binds to a local endpoint. Uses `maybe_tls_cert_path` and `maybe_tls_cert_key`
-    /// to conditionally load or generate the given (or not given) certificate.
+    /// Binds to a local endpoint using the given certificate and key.
     ///
     /// # Errors
-    /// - If we cannot parse the bind address
+    /// - If we cannot parse the bind endpoint
     /// - If we cannot load the certificate
     /// - If we cannot bind to the local interface
     async fn bind(
-        bind_address: &str,
+        bind_endpoint: &str,
         certificate: Certificate,
         key: PrivateKey,
     ) -> Result<Self::Listener> {
-        // Parse the bind address
-        let bind_address: SocketAddr = parse_socket_address!(bind_address);
+        // Parse the bind endpoint
+        let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);
 
         // Create server configuration from the loaded certificate
         let mut server_config = bail!(
@@ -165,11 +164,11 @@ impl<H: Hooks> Protocol<H> for Quic {
         server_config.transport_config(Arc::from(transport_config));
 
         // Create endpoint from the given server configuration and
-        // bind address
+        // bind endpoint
         Ok(QuicListener(bail!(
-            Endpoint::server(server_config, bind_address),
+            Endpoint::server(server_config, bind_endpoint),
             Connection,
-            "failed to bind to local address"
+            "failed to bind to local endpoint"
         )))
     }
 }
@@ -182,7 +181,7 @@ pub struct QuicSenderRef(AsyncSender<Bytes>, AbortHandle);
 /// Convert a Quic `SendStream` and `RecvStream` to use dedicated tasks and channels
 /// under the hood.
 /// TODO: this is almost the same as with TCP, figure out how to combine them
-fn into_channels<H: Hooks>(
+fn into_channels<M: Middleware>(
     mut write_half: quinn::SendStream,
     mut read_half: quinn::RecvStream,
 ) -> (QuicSender, QuicReceiver) {
@@ -321,10 +320,12 @@ impl Receiver for QuicReceiver {
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedQuicConnection<H: Hooks>(Connecting, PhantomData<H>);
+pub struct UnfinalizedQuicConnection<M: Middleware>(Connecting, PhantomData<M>);
 
 #[async_trait]
-impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQuicConnection<H> {
+impl<M: Middleware> UnfinalizedConnection<QuicSender, QuicReceiver>
+    for UnfinalizedQuicConnection<M>
+{
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
@@ -348,7 +349,7 @@ impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQu
         );
 
         // Convert to owned channel implementation
-        let (sender, receiver) = into_channels::<H>(sender, receiver);
+        let (sender, receiver) = into_channels::<M>(sender, receiver);
 
         // Clone and return the connection
         Ok((sender, receiver))
@@ -360,13 +361,13 @@ impl<H: Hooks> UnfinalizedConnection<QuicSender, QuicReceiver> for UnfinalizedQu
 pub struct QuicListener(pub quinn::Endpoint);
 
 #[async_trait]
-impl<H: Hooks> Listener<UnfinalizedQuicConnection<H>> for QuicListener {
+impl<M: Middleware> Listener<UnfinalizedQuicConnection<M>> for QuicListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
     /// TODO: be more descriptive with this
-    async fn accept(&self) -> Result<UnfinalizedQuicConnection<H>> {
+    async fn accept(&self) -> Result<UnfinalizedQuicConnection<M>> {
         // Try to accept a connection from the QUIC endpoint
         let connection = bail_option!(
             self.0.accept().await,

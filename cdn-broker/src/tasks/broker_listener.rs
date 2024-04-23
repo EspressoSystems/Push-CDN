@@ -3,11 +3,8 @@
 use std::sync::Arc;
 
 use cdn_proto::{
-    connection::{
-        hooks::Trusted,
-        protocols::{Listener, Protocol, UnfinalizedConnection},
-    },
-    def::RunDef,
+    connection::protocols::{Listener as _, UnfinalizedConnection},
+    def::{Listener, RunDef},
 };
 use tokio::spawn;
 use tracing::error;
@@ -17,10 +14,7 @@ use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
     /// Runs the broker listener task in a loop.
-    pub async fn run_broker_listener_task(
-        self: Arc<Self>,
-        listener: <Def::BrokerProtocol as Protocol<Trusted>>::Listener,
-    ) {
+    pub async fn run_broker_listener_task(self: Arc<Self>, listener: Listener<Def::Broker>) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
             let unfinalized_connection = match listener.accept().await {

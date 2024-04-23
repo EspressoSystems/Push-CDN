@@ -403,7 +403,7 @@ pub struct AuthenticateResponse {
     // if failed, `1` if successful, and neither if it is an actual permit.
     pub permit: u64,
     // The message context. Is an error reason if failed, or the endpoint
-    // address if successful.
+    // if successful.
     pub context: String,
 }
 

@@ -10,7 +10,7 @@ use cdn_proto::{
         Sender,
     },
     crypto::{rng::DeterministicRng, signature::KeyPair},
-    def::TestingDef,
+    def::TestingRunDef,
     discovery::BrokerIdentifier,
     message::{Message, Topic},
 };
@@ -25,7 +25,7 @@ mod broadcast;
 #[cfg(test)]
 mod direct;
 
-use crate::{connections::DirectMap, Broker, Config, ConfigBuilder};
+use crate::{connections::DirectMap, Broker, Config};
 
 /// An actor is a [user/broker] that we inject to test message send functionality.
 pub struct InjectedActor {
@@ -108,23 +108,26 @@ pub struct TestRun {
 impl TestDefinition {
     /// Creates a new broker under test. This configures and starts a local broker
     /// who will be deterministically tested.
-    async fn new_broker_under_test() -> Broker<TestingDef> {
+    async fn new_broker_under_test() -> Broker<TestingRunDef> {
         // Create a key for our broker [under test]
         let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
         // Build the broker's config
-        let broker_config: Config<BLS> = ConfigBuilder::default()
-            .public_advertise_address(String::new())
-            .public_bind_address(String::new())
-            .private_advertise_address(String::new())
-            .private_bind_address(String::new())
-            .discovery_endpoint("test.sqlite".to_string())
-            .keypair(KeyPair {
+        let broker_config: Config<TestingRunDef> = Config {
+            metrics_bind_endpoint: None,
+            public_advertise_endpoint: String::new(),
+            public_bind_endpoint: String::new(),
+            private_advertise_endpoint: String::new(),
+            private_bind_endpoint: String::new(),
+            discovery_endpoint: "test.sqlite".to_string(),
+            keypair: KeyPair {
                 public_key,
                 private_key,
-            })
-            .build()
-            .expect("failed to build broker config");
+            },
+
+            ca_cert_path: None,
+            ca_key_path: None,
+        };
 
         // Create the broker
         Broker::new(broker_config)
@@ -138,7 +141,7 @@ impl TestDefinition {
     ///
     /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`
     async fn inject_users(
-        broker_under_test: &Broker<TestingDef>,
+        broker_under_test: &Broker<TestingRunDef>,
         users: Vec<Vec<Topic>>,
     ) -> Vec<InjectedActor> {
         // Return this at the end, our running list of users
@@ -188,7 +191,7 @@ impl TestDefinition {
     /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`,
     /// and syncs the users up so the broker knows where to send messages.
     async fn inject_brokers(
-        broker_under_test: &Broker<TestingDef>,
+        broker_under_test: &Broker<TestingRunDef>,
         brokers: Vec<(Vec<u8>, Vec<Topic>)>,
     ) -> Vec<InjectedActor> {
         // Return this at the end, our running list of brokers

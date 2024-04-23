@@ -3,11 +3,8 @@
 use std::sync::Arc;
 
 use cdn_proto::{
-    connection::{
-        hooks::Untrusted,
-        protocols::{Listener, Protocol, UnfinalizedConnection},
-    },
-    def::RunDef,
+    connection::protocols::{Listener as _, UnfinalizedConnection},
+    def::{Listener, RunDef},
 };
 use tokio::spawn;
 use tracing::error;
@@ -16,10 +13,7 @@ use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
     // We run the user listener task in a loop, accepting and handling new connections as needed.
-    pub async fn run_user_listener_task(
-        self: Arc<Self>,
-        listener: <Def::UserProtocol as Protocol<Untrusted>>::Listener,
-    ) {
+    pub async fn run_user_listener_task(self: Arc<Self>, listener: Listener<Def::User>) {
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
             let unfinalized_connection = match listener.accept().await {

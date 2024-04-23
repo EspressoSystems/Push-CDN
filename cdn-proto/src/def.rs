@@ -1,49 +1,97 @@
-//! Definition of the run-time configuration for all CDN components.
+//! Compile-time run configuration for all CDN components.
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 
-use crate::connection::{
-    hooks::{Trusted, Untrusted},
-    protocols::{memory::Memory, quic::Quic, tcp::Tcp, Protocol},
+use crate::connection::middleware::{
+    Middleware as MiddlewareType, NoMiddleware, TrustedMiddleware, UntrustedMiddleware,
 };
+use crate::connection::protocols::memory::Memory;
+use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
-use crate::discovery::{embedded::Embedded, redis::Redis, DiscoveryClient};
+use crate::discovery::embedded::Embedded;
+use crate::discovery::{redis::Redis, DiscoveryClient};
 
-/// This trait defines the run-time configuration for all CDN components.
-pub trait RunDef: Send + Sync + 'static {
-    type BrokerScheme: SignatureScheme;
-    type BrokerProtocol: Protocol<Trusted>;
-
-    type UserScheme: SignatureScheme;
-    type UserProtocol: Protocol<Untrusted>;
-
+/// This trait defines the run configuration for all CDN components.
+pub trait RunDef: 'static {
+    type Broker: ConnectionDef;
+    type User: ConnectionDef;
     type DiscoveryClientType: DiscoveryClient;
 }
 
-/// The production run-time configuration.
-/// Uses the real network protocols and the real discovery client.
-pub struct ProductionDef {}
+/// This trait defines the connection configuration for a single CDN component.
+pub trait ConnectionDef: 'static {
+    type Scheme: SignatureScheme;
+    type Protocol: ProtocolType<Self::Middleware>;
+    type Middleware: MiddlewareType;
+}
 
-impl RunDef for ProductionDef {
-    type BrokerScheme = BLS;
-    type BrokerProtocol = Tcp;
-
-    type UserScheme = BLS;
-    type UserProtocol = Quic;
-
+/// The production run configuration.
+/// Uses the real network protocols and Redis for discovery.
+pub struct ProductionRunDef;
+impl RunDef for ProductionRunDef {
+    type Broker = ProductionBrokerConnection;
+    type User = ProductionUserConnection;
     type DiscoveryClientType = Redis;
 }
 
-/// The testing run-time configuration.
-/// Uses in-memory protocols and the embedded discovery client.
-pub struct TestingDef {}
+/// The production broker connection configuration.
+/// Uses BLS signatures, TCP, and trusted middleware.
+pub struct ProductionBrokerConnection;
+impl ConnectionDef for ProductionBrokerConnection {
+    type Scheme = BLS;
+    type Protocol = Tcp;
+    type Middleware = TrustedMiddleware;
+}
 
-impl RunDef for TestingDef {
-    type BrokerScheme = BLS;
-    type BrokerProtocol = Memory;
+/// The production user connection configuration.
+/// Uses BLS signatures, QUIC, and untrusted middleware.
+pub struct ProductionUserConnection;
+impl ConnectionDef for ProductionUserConnection {
+    type Scheme = BLS;
+    type Protocol = Quic;
+    type Middleware = UntrustedMiddleware;
+}
 
-    type UserScheme = BLS;
-    type UserProtocol = Memory;
+/// The production client connection configuration.
+/// Uses BLS signatures, QUIC, and no middleware.
+/// Differs from `ProductionUserConnection` in that this is used by
+/// the client, not the broker.
+pub struct ProductionClientConnection;
+impl ConnectionDef for ProductionClientConnection {
+    type Scheme = Scheme<<ProductionRunDef as RunDef>::User>;
+    type Protocol = Protocol<<ProductionRunDef as RunDef>::User>;
+    type Middleware = NoMiddleware;
+}
 
+/// The testing run configuration.
+/// Uses in-memory protocols and an embedded discovery client.
+pub struct TestingRunDef;
+impl RunDef for TestingRunDef {
+    type Broker = TestingConnection;
+    type User = TestingConnection;
     type DiscoveryClientType = Embedded;
 }
+
+/// The testing connection configuration.
+/// Uses BLS signatures, in-memory protocols, and no middleware.
+pub struct TestingConnection;
+impl ConnectionDef for TestingConnection {
+    type Scheme = BLS;
+    type Protocol = Memory;
+    type Middleware = NoMiddleware;
+}
+
+// Type aliases to automatically disambiguate usage
+pub type Scheme<A> = <A as ConnectionDef>::Scheme;
+pub type PublicKey<A> = <Scheme<A> as SignatureScheme>::PublicKey;
+
+// Type aliases to automatically disambiguate usage
+pub type Protocol<A> = <A as ConnectionDef>::Protocol;
+pub type Middleware<A> = <A as ConnectionDef>::Middleware;
+pub type Sender<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Sender;
+pub type Receiver<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Receiver;
+pub type Listener<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Listener;
+pub type Connection<A> = (
+    <Protocol<A> as ProtocolType<Middleware<A>>>::Sender,
+    <Protocol<A> as ProtocolType<Middleware<A>>>::Receiver,
+);
