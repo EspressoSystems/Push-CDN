@@ -320,6 +320,8 @@ pub enum Topic {
     /// The DA-specfic topic. Only participants in the DA committee should want to
     /// be subscribed to this.
     DA,
+    /// The topic with transactions. Only soon-to-be-leaders should want to be subscribed to this.
+    Transactions,
 }
 
 /// We need this because it allows conversions to and from the Cap'n' Proto version
@@ -329,6 +331,7 @@ impl From<messages_capnp::Topic> for Topic {
         match value {
             messages_capnp::Topic::Global => Self::Global,
             messages_capnp::Topic::Da => Self::DA,
+            messages_capnp::Topic::Transactions => Self::Transactions,
         }
     }
 }
@@ -340,6 +343,7 @@ impl From<Topic> for messages_capnp::Topic {
         match value {
             Topic::Global => Self::Global,
             Topic::DA => Self::Da,
+            Topic::Transactions => Self::Transactions,
         }
     }
 }
@@ -352,7 +356,7 @@ impl TryInto<Topic> for String {
         match self.as_str() {
             "DA" => Ok(Topic::DA),
             "Global" => Ok(Topic::Global),
-
+            "Transactions" => Ok(Topic::Transactions),
             _ => Err(Error::Parse(
                 "failed to parse topic: did not exist".to_string(),
             )),
@@ -366,6 +370,7 @@ impl Display for Topic {
         match self {
             Self::Global => write!(f, "Global"),
             Self::DA => write!(f, "DA"),
+            Self::Transactions => write!(f, "Transactions"),
         }
     }
 }

@@ -586,6 +586,7 @@ pub mod message {
 pub enum Topic {
   Global = 0,
   Da = 1,
+  Transactions = 2,
 }
 
 impl ::capnp::introspect::Introspect for Topic {
@@ -600,6 +601,7 @@ impl ::core::convert::TryFrom<u16> for Topic {
     match value {
       0 => ::core::result::Result::Ok(Self::Global),
       1 => ::core::result::Result::Ok(Self::Da),
+      2 => ::core::result::Result::Ok(Self::Transactions),
       n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
     }
   }
