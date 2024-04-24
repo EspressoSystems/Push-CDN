@@ -586,6 +586,7 @@ pub mod message {
 pub enum Topic {
   Global = 0,
   Da = 1,
+  Transactions = 2,
 }
 
 impl ::capnp::introspect::Introspect for Topic {
@@ -600,6 +601,7 @@ impl ::core::convert::TryFrom<u16> for Topic {
     match value {
       0 => ::core::result::Result::Ok(Self::Global),
       1 => ::core::result::Result::Ok(Self::Da),
+      2 => ::core::result::Result::Ok(Self::Transactions),
       n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
     }
   }
@@ -612,7 +614,7 @@ impl ::capnp::traits::HasTypeId for Topic {
   const TYPE_ID: u64 = 0xde3a_dca5_3496_8c3eu64;
 }
 mod topic {
-pub static ENCODED_NODE: [::capnp::Word; 25] = [
+pub static ENCODED_NODE: [::capnp::Word; 30] = [
   ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
   ::capnp::word(62, 140, 150, 52, 165, 220, 58, 222),
   ::capnp::word(15, 0, 0, 0, 2, 0, 0, 0),
@@ -622,22 +624,27 @@ pub static ENCODED_NODE: [::capnp::Word; 25] = [
   ::capnp::word(21, 0, 0, 0, 170, 0, 0, 0),
   ::capnp::word(29, 0, 0, 0, 7, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-  ::capnp::word(25, 0, 0, 0, 55, 0, 0, 0),
+  ::capnp::word(25, 0, 0, 0, 79, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
   ::capnp::word(109, 101, 115, 115, 97, 103, 101, 115),
   ::capnp::word(46, 99, 97, 112, 110, 112, 58, 84),
   ::capnp::word(111, 112, 105, 99, 0, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
-  ::capnp::word(8, 0, 0, 0, 1, 0, 2, 0),
+  ::capnp::word(12, 0, 0, 0, 1, 0, 2, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-  ::capnp::word(17, 0, 0, 0, 58, 0, 0, 0),
+  ::capnp::word(29, 0, 0, 0, 58, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
   ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
-  ::capnp::word(9, 0, 0, 0, 26, 0, 0, 0),
+  ::capnp::word(21, 0, 0, 0, 26, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(2, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(13, 0, 0, 0, 106, 0, 0, 0),
   ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
   ::capnp::word(103, 108, 111, 98, 97, 108, 0, 0),
   ::capnp::word(100, 97, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(116, 114, 97, 110, 115, 97, 99, 116),
+  ::capnp::word(105, 111, 110, 115, 0, 0, 0, 0),
 ];
 pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
   panic!("invalid annotation indices ({:?}, {}) ", child_index, index)

@@ -37,6 +37,10 @@ enum Topic {
     # The DA-specfic topic. Only participants in the DA committee should want to
     # be subscribed to this.
     da @1;
+
+    # The topic with transactions. Only soon-to-be-leaders should want to be
+    # subscribed to this.
+    transactions @2;
 }
 
 # This message is used to authenticate the client to a marshal or a broker
