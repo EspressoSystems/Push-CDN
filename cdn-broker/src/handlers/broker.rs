@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use cdn_proto::{
     authenticate_with_broker, bail,
-    connection::{auth::broker::BrokerAuth, protocols::Receiver as _, UserPublicKey},
-    def::{Receiver, RunDef, Sender},
+    connection::{auth::broker::BrokerAuth, protocols::Connection as _, UserPublicKey},
+    def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
@@ -19,7 +19,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: (Sender<Def::Broker>, Receiver<Def::Broker>),
+        mut connection: Connection<Def::Broker>,
         is_outbound: bool,
     ) {
         // Acquire a permit to authenticate with a broker. Removes the possibility for race
@@ -42,9 +42,6 @@ impl<Def: RunDef> Inner<Def> {
             authenticate_with_broker!(connection, self)
         };
 
-        // Create new batch sender
-        let (sender, receiver) = connection;
-
         // If we are already connected, ignore the new connection
         if self.connections.all_brokers().contains(&broker_identifier) {
             return;
@@ -53,7 +50,7 @@ impl<Def: RunDef> Inner<Def> {
         // Add to our brokers and remove the old one if it exists
         self.connections.remove_broker(&broker_identifier);
         self.connections
-            .add_broker(broker_identifier.clone(), sender);
+            .add_broker(broker_identifier.clone(), connection.clone());
 
         // Once we have added the broker, drop the authentication guard
         drop(auth_guard);
@@ -90,7 +87,10 @@ impl<Def: RunDef> Inner<Def> {
         metrics::NUM_BROKERS_CONNECTED.inc();
 
         // If we error, come back to the callback so we can remove the connection from the list.
-        if let Err(err) = self.broker_receive_loop(&broker_identifier, receiver).await {
+        if let Err(err) = self
+            .broker_receive_loop(&broker_identifier, connection)
+            .await
+        {
             error!(id = %broker_identifier, "broker disconnected with error: {err}");
         };
 
@@ -107,7 +107,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: Receiver<Def::Broker>,
+        receiver: Connection<Def::Broker>,
     ) -> Result<()> {
         while let Ok(raw_message) = receiver.recv_message_raw().await {
             // Attempt to deserialize the message

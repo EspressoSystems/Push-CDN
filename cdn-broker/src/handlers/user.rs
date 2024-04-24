@@ -4,9 +4,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdn_proto::connection::protocols::Receiver as _;
-use cdn_proto::connection::UserPublicKey;
-use cdn_proto::def::{Receiver, RunDef, Sender};
+use cdn_proto::connection::{protocols::Connection as _, UserPublicKey};
+use cdn_proto::def::{Connection, RunDef};
 #[cfg(feature = "strong-consistency")]
 use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
@@ -18,10 +17,7 @@ use crate::{metrics, Inner};
 
 impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
-    pub async fn handle_user_connection(
-        self: Arc<Self>,
-        connection: (Sender<Def::User>, Receiver<Def::User>),
-    ) {
+    pub async fn handle_user_connection(self: Arc<Self>, connection: Connection<Def::User>) {
         // Verify (authenticate) the connection. Needs to happen within 5 seconds
         let Ok(Ok((public_key, topics))) = timeout(
             Duration::from_secs(5),
@@ -42,21 +38,12 @@ impl<Def: RunDef> Inner<Def> {
         let user_identifier = mnemonic(&public_key);
         info!(id = user_identifier, "user connected");
 
-        // Create new sender
-        let (sender, receiver) = connection;
-
-        // Acquire a permit to add/remove a user
-        let add_guard = self.user_add_lock.acquire().await;
-
         // Add our user and remove the old one if it exists
-        self.connections.remove_user(public_key.clone());
-        self.connections.add_user(public_key.clone(), sender);
+        self.connections
+            .add_user(public_key.clone(), connection.clone());
 
         // Subscribe our user to their connections
         self.connections.subscribe_user_to(&public_key, topics);
-
-        // Drop the permit
-        drop(add_guard);
 
         // If we have `strong-consistency` enabled, send partials
         #[cfg(feature = "strong-consistency")]
@@ -85,7 +72,7 @@ impl<Def: RunDef> Inner<Def> {
         metrics::NUM_USERS_CONNECTED.inc();
 
         // This runs the main loop for receiving information from the user
-        let _ = self.user_receive_loop(&public_key, receiver).await;
+        let _ = self.user_receive_loop(&public_key, connection).await;
 
         info!(id = user_identifier, "user disconnected");
 
@@ -101,9 +88,9 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn user_receive_loop(
         &self,
         public_key: &UserPublicKey,
-        receiver: Receiver<Def::User>,
+        connection: Connection<Def::User>,
     ) -> Result<()> {
-        while let Ok(raw_message) = receiver.recv_message_raw().await {
+        while let Ok(raw_message) = connection.recv_message_raw().await {
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 

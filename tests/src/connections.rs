@@ -37,7 +37,7 @@ macro_rules! serialized_public_key_from_seed {
     }};
 }
 
-/// Get a path for a temporary SQLite database
+/// Get a path for a temporary `SQLite` database
 macro_rules! get_temp_db_path {
     () => {{
         // Get a temporary directory
@@ -175,10 +175,10 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert both clients can connect
-    let Ok(_) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
-    let Ok(_) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
@@ -209,7 +209,7 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert we can connect as client1
-    let Ok(_) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
 

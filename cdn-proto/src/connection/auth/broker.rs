@@ -9,9 +9,9 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Receiver as _, Sender as _},
+    connection::protocols::Connection as _,
     crypto::signature::SignatureScheme,
-    def::{Connection, PublicKey, Receiver, RunDef, Scheme, Sender},
+    def::{Connection, PublicKey, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
@@ -75,7 +75,7 @@ impl<R: RunDef> BrokerAuth<R> {
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -116,7 +116,7 @@ impl<R: RunDef> BrokerAuth<R> {
         });
 
         // Send the successful response to the user
-        let _ = connection.0.send_message(response_message).await;
+        let _ = connection.send_message(response_message).await;
 
         // Try to serialize the public key
         bail!(
@@ -127,7 +127,7 @@ impl<R: RunDef> BrokerAuth<R> {
 
         // Receive the subscribed topics
         let subscribed_topics_message = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -186,14 +186,14 @@ impl<R: RunDef> BrokerAuth<R> {
 
         // Create and send the authentication message from the above operations
         bail!(
-            connection.0.send_message(message).await,
+            connection.send_message(message).await,
             Connection,
             "failed to send auth message to broker"
         );
 
         // Wait for the response with the permit and endpoint
         let response = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from broker"
         );
@@ -231,13 +231,13 @@ impl<R: RunDef> BrokerAuth<R> {
     /// # Errors
     /// - If verification has failed
     pub async fn verify_broker(
-        connection: &(Sender<R::Broker>, Receiver<R::Broker>),
+        connection: &Connection<R::Broker>,
         our_identifier: &BrokerIdentifier,
         our_public_key: &PublicKey<R::Broker>,
     ) -> Result<()> {
         // Receive the signed message from the user
         let auth_message = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -284,7 +284,7 @@ impl<R: RunDef> BrokerAuth<R> {
         });
 
         // Send the permit to the user, along with the public broker advertise endpoint
-        let _ = connection.0.send_message(response_message).await;
+        let _ = connection.send_message(response_message).await;
 
         Ok(())
     }

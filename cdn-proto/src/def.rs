@@ -88,10 +88,5 @@ pub type PublicKey<A> = <Scheme<A> as SignatureScheme>::PublicKey;
 // Type aliases to automatically disambiguate usage
 pub type Protocol<A> = <A as ConnectionDef>::Protocol;
 pub type Middleware<A> = <A as ConnectionDef>::Middleware;
-pub type Sender<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Sender;
-pub type Receiver<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Receiver;
 pub type Listener<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Listener;
-pub type Connection<A> = (
-    <Protocol<A> as ProtocolType<Middleware<A>>>::Sender,
-    <Protocol<A> as ProtocolType<Middleware<A>>>::Receiver,
-);
+pub type Connection<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Connection;

@@ -10,7 +10,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
-        protocols::{Protocol as _, Receiver as _, Sender as _},
+        protocols::{Connection as _, Protocol as _},
     },
     crypto::signature::KeyPair,
     def::{Connection, ConnectionDef, Protocol, Scheme},
@@ -232,7 +232,6 @@ impl<C: ConnectionDef> Retry<C> {
             let out = connection_guard
                 .get_or_try_init(|| self.inner.connect())
                 .await?
-                .0
                 .send_message(message)
                 .await;
             drop(connection_guard);
@@ -258,7 +257,6 @@ impl<C: ConnectionDef> Retry<C> {
         let out = connection_guard
             .get_or_try_init(|| self.inner.connect())
             .await?
-            .1
             .recv_message()
             .await;
         drop(connection_guard);

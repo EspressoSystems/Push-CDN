@@ -11,23 +11,19 @@ pub mod quic;
 pub mod tcp;
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
-#[automock(type Sender=MockSender; type Receiver=MockReceiver; type UnfinalizedConnection=MockUnfinalizedConnection<MockSender, MockReceiver>; type Listener=MockListener<MockUnfinalizedConnection<MockSender, MockReceiver>>;)]
+#[automock(type Connection=MockConnection; type UnfinalizedConnection=MockUnfinalizedConnection<MockConnection>; type Listener=MockListener<MockUnfinalizedConnection<MockConnection>>;)]
 #[async_trait]
 pub trait Protocol<M: Middleware>: Send + Sync + 'static {
-    type Sender: Sender + Send + Sync + Clone;
-    type Receiver: Receiver + Send + Sync + Clone;
+    type Connection: Connection + Send + Sync + Clone;
 
-    type UnfinalizedConnection: UnfinalizedConnection<Self::Sender, Self::Receiver> + Send + Sync;
+    type UnfinalizedConnection: UnfinalizedConnection<Self::Connection> + Send + Sync;
     type Listener: Listener<Self::UnfinalizedConnection> + Send + Sync;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(
-        remote_endpoint: &str,
-        use_local_authority: bool,
-    ) -> Result<(Self::Sender, Self::Receiver)>;
+    async fn connect(remote_endpoint: &str, use_local_authority: bool) -> Result<Self::Connection>;
 
     /// Bind to the local endpoint, returning an instance of `Listener`.
     ///
@@ -42,7 +38,7 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
 
 #[automock]
 #[async_trait]
-pub trait Sender {
+pub trait Connection {
     /// Send an (unserialized) message over the stream.
     ///
     /// # Errors
@@ -55,13 +51,6 @@ pub trait Sender {
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()>;
 
-    /// Gracefully finish the connection, sending any remaining data.
-    async fn finish(&self);
-}
-
-#[automock]
-#[async_trait]
-pub trait Receiver {
     /// Receives message over the stream and deserializes it.
     ///
     /// # Errors
@@ -74,6 +63,9 @@ pub trait Receiver {
     /// # Errors
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes>;
+
+    /// Gracefully finish the connection, sending any remaining data.
+    async fn finish(&self);
 }
 
 #[automock]
@@ -89,22 +81,15 @@ pub trait Listener<UnfinalizedConnection: Send + Sync> {
 
 #[automock]
 #[async_trait]
-pub trait UnfinalizedConnection<Sender: Send + Sync, Receiver: Send + Sync> {
+pub trait UnfinalizedConnection<Connection: Send + Sync> {
     /// Finalize an incoming connection. This is separated so we can prevent
     /// actors who are slow from clogging up the incoming connection by offloading
     /// it to a separate task.
-    async fn finalize(self) -> Result<(Sender, Receiver)>;
+    async fn finalize(self) -> Result<Connection>;
 }
 
 /// We need to implement `clone` manually because we need it and `mockall` can't do it.
-impl Clone for MockSender {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
-
-/// We need to implement `clone` manually because we need it and `mockall` can't do it.
-impl Clone for MockReceiver {
+impl Clone for MockConnection {
     fn clone(&self) -> Self {
         Self::default()
     }
@@ -116,13 +101,16 @@ impl Clone for MockReceiver {
 macro_rules! read_length_delimited {
     ($stream: expr) => {{
         // Read the message size from the stream
-        let Ok(message_size) = $stream.read_u32().await else {
-            return;
-        };
+        let message_size = bail!(
+            $stream.read_u32().await,
+            Connection,
+            "failed to read message size from stream"
+        );
 
         // Make sure the message isn't too big
         if message_size > MAX_MESSAGE_SIZE {
-            return;
+            println!("message too big");
+            return Err(Error::Connection("message was too large".to_string()));
         }
 
         // Acquire the allocation if necessary
@@ -132,10 +120,18 @@ macro_rules! read_length_delimited {
         let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
         // Read the message from the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await
-        else {
-            return;
-        };
+        bail!(
+            bail!(
+                timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await,
+                Connection,
+                "timed out trying to read a message"
+            ),
+            Connection,
+            "failed to read message"
+        );
+
+        // Drop the stream since we're done with it
+        drop($stream);
 
         // Add to our metrics, if desired
         #[cfg(feature = "metrics")]
@@ -153,17 +149,29 @@ macro_rules! write_length_delimited {
         let message_len = $message.len() as u32;
 
         // Write the message size to the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await
-        else {
-            // We timed out
-            return;
-        };
+        bail!(
+            bail!(
+                timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await,
+                Connection,
+                "timed out trying to send message length"
+            ),
+            Connection,
+            "failed to send message length"
+        );
 
         // Write the message size to the stream
-        let Ok(Ok(_)) = timeout(Duration::from_secs(5), $stream.write_all(&$message)).await else {
-            // We timed out
-            return;
-        };
+        bail!(
+            bail!(
+                timeout(Duration::from_secs(5), $stream.write_all(&$message)).await,
+                Connection,
+                "timed out trying to send message"
+            ),
+            Connection,
+            "failed to send message"
+        );
+
+        // Drop the stream since we're done with it
+        drop($stream);
 
         // Increment the number of bytes we've sent by this amount
         #[cfg(feature = "metrics")]
@@ -176,7 +184,7 @@ pub mod tests {
     use anyhow::Result;
     use tokio::{join, spawn, task::JoinHandle};
 
-    use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
+    use super::{Connection, Listener, Protocol, UnfinalizedConnection};
     use crate::{
         connection::middleware::NoMiddleware,
         crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
@@ -216,16 +224,14 @@ pub mod tests {
             let unfinalized_connection = listener.accept().await?;
 
             // Finalize the connection
-            let (sender, receiver) = unfinalized_connection.finalize().await?;
+            let connection = unfinalized_connection.finalize().await?;
 
             // Send our message
-            sender.send_message(listener_to_new_connection_).await?;
+            connection.send_message(listener_to_new_connection_).await?;
 
             // Receive a message, assert it's the correct one
-            let message = receiver.recv_message().await?;
+            let message = connection.recv_message().await?;
             assert!(message == new_connection_to_listener_);
-
-            sender.finish().await;
 
             Ok(())
         });
@@ -233,16 +239,16 @@ pub mod tests {
         // Spawn a task to connect and send and receive the message
         let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
             // Connect to the remote
-            let (sender, receiver) = P::connect(bind_endpoint.as_str(), true).await?;
+            let connection = P::connect(bind_endpoint.as_str(), true).await?;
 
             // Receive a message, assert it's the correct one
-            let message = receiver.recv_message().await?;
+            let message = connection.recv_message().await?;
             assert!(message == listener_to_new_connection);
 
             // Send our message
-            sender.send_message(new_connection_to_listener).await?;
+            connection.send_message(new_connection_to_listener).await?;
 
-            sender.finish().await;
+            connection.finish().await;
 
             Ok(())
         });

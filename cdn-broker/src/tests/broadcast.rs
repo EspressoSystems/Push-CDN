@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::{protocols::Sender, Bytes},
+    connection::{protocols::Connection, Bytes},
     message::{Broadcast, Message, Topic},
 };
 use tokio::time::{sleep, timeout};

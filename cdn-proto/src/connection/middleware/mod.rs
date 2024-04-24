@@ -12,7 +12,7 @@ lazy_static! {
 
 /// A trait that defines middleware for a connection.
 #[async_trait]
-pub trait Middleware: 'static + Send + Sync {
+pub trait Middleware: 'static + Send + Sync + Clone {
     async fn allocate_message_bytes(num_bytes: u32) -> Option<AllocationPermit> {
         // Acquire and return a permit for the number of bytes requested
         let permit = MEMORY_POOL
@@ -25,6 +25,7 @@ pub trait Middleware: 'static + Send + Sync {
 }
 
 /// Middleware that does not do anything
+#[derive(Clone)]
 pub struct NoMiddleware;
 #[async_trait]
 impl Middleware for NoMiddleware {
@@ -34,11 +35,13 @@ impl Middleware for NoMiddleware {
 }
 
 /// Middleware for untrusted connections
+#[derive(Clone)]
 pub struct UntrustedMiddleware;
 #[async_trait]
 impl Middleware for UntrustedMiddleware {}
 
 /// Middleware for trusted connections
+#[derive(Clone)]
 pub struct TrustedMiddleware;
 #[async_trait]
 impl Middleware for TrustedMiddleware {}
