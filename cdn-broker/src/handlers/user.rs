@@ -10,6 +10,7 @@ use cdn_proto::def::{Connection, RunDef};
 use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
+use tokio::spawn;
 use tokio::time::timeout;
 use tracing::info;
 
@@ -36,14 +37,6 @@ impl<Def: RunDef> Inner<Def> {
         // Create a human-readable user identifier (by public key)
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
-        info!(id = user_identifier, "user connected");
-
-        // Add our user and remove the old one if it exists
-        self.connections
-            .add_user(public_key.clone(), connection.clone());
-
-        // Subscribe our user to their connections
-        self.connections.subscribe_user_to(&public_key, topics);
 
         // If we have `strong-consistency` enabled, send partials
         #[cfg(feature = "strong-consistency")]
@@ -59,28 +52,41 @@ impl<Def: RunDef> Inner<Def> {
         // We want to perform a heartbeat for every user connection so that the number
         // of users connected to brokers is always evenly distributed.
         #[cfg(feature = "strong-consistency")]
-        let _ = self
-            .discovery_client
-            .clone()
-            .perform_heartbeat(
-                self.connections.num_users() as u64,
-                std::time::Duration::from_secs(60),
-            )
-            .await;
+        {
+            let num_users = self.connections.read().num_users() as u64;
+            let _ = self
+                .discovery_client
+                .clone()
+                .perform_heartbeat(num_users, std::time::Duration::from_secs(60))
+                .await;
+        }
 
         // Increment our metric
         metrics::NUM_USERS_CONNECTED.inc();
 
-        // This runs the main loop for receiving information from the user
-        let _ = self.user_receive_loop(&public_key, connection).await;
+        let self_ = self.clone();
+        let public_key_ = public_key.clone();
+        let connection_ = connection.clone();
+        let receive_handle = spawn(async move {
+            info!(id = user_identifier, "user connected");
 
-        info!(id = user_identifier, "user disconnected");
+            // This runs the main loop for receiving information from the user
+            let _ = self_.user_receive_loop(&public_key_, connection_).await;
 
-        // Decrement our metric
-        metrics::NUM_USERS_CONNECTED.dec();
+            info!(id = user_identifier, "user disconnected");
 
-        // Once the main loop ends, we remove the connection
-        self.connections.remove_user(public_key);
+            // Decrement our metric
+            metrics::NUM_USERS_CONNECTED.dec();
+
+            // Once the main loop ends, we remove the connection
+            self_.connections.write().remove_user(public_key_);
+        })
+        .abort_handle();
+
+        // Add our user and remove the old one if it exists
+        self.connections
+            .write()
+            .add_user(&public_key, connection, &topics, receive_handle);
     }
 
     /// This is the main loop where we deal with user connectins. On exit, the calling function
@@ -112,12 +118,15 @@ impl<Def: RunDef> Inner<Def> {
 
                 // Subscribe messages from users will just update the state locally
                 Message::Subscribe(subscribe) => {
-                    self.connections.subscribe_user_to(public_key, subscribe);
+                    self.connections
+                        .write()
+                        .subscribe_user_to(public_key, subscribe);
                 }
 
                 // Unsubscribe messages from users will just update the state locally
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
+                        .write()
                         .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 

@@ -41,7 +41,7 @@ impl<Def: RunDef> Inner<Def> {
     /// - If we fail to serialize the message
     pub fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full user sync map
-        let full_sync_map = self.connections.get_full_user_sync();
+        let full_sync_map = self.connections.read().get_full_user_sync();
 
         // Serialize and send the message to the broker
         self.connections
@@ -57,7 +57,7 @@ impl<Def: RunDef> Inner<Def> {
     /// - If we fail to serialize the message
     pub fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
         // Get full user sync map
-        let partial_sync_map = self.connections.get_partial_user_sync();
+        let partial_sync_map = self.connections.write().get_partial_user_sync();
 
         // Return if we haven't had any changes
         if partial_sync_map.underlying_map.is_empty() {
@@ -80,7 +80,7 @@ impl<Def: RunDef> Inner<Def> {
     /// - if we fail to serialize the message
     pub fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full list of topics
-        let topics = self.connections.get_full_topic_sync();
+        let topics = self.connections.read().get_full_topic_sync();
 
         // Serialize and send the message
         self.connections.send_to_broker(
@@ -102,7 +102,7 @@ impl<Def: RunDef> Inner<Def> {
     /// - If we fail to serialize the message
     pub fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial list of topics
-        let (additions, removals) = self.connections.get_partial_topic_sync();
+        let (additions, removals) = self.connections.write().get_partial_topic_sync();
 
         // If we have some additions,
         if !additions.is_empty() {

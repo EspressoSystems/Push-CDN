@@ -11,6 +11,7 @@ use cdn_proto::{
     message::Message,
     verify_broker,
 };
+use tokio::spawn;
 use tracing::{error, info};
 
 use crate::{connections::DirectMap, metrics, Inner};
@@ -42,23 +43,10 @@ impl<Def: RunDef> Inner<Def> {
             authenticate_with_broker!(connection, self)
         };
 
-        // If we are already connected, ignore the new connection
-        if self.connections.all_brokers().contains(&broker_identifier) {
-            return;
-        }
-
-        // Add to our brokers and remove the old one if it exists
-        self.connections.remove_broker(&broker_identifier);
-        self.connections
-            .add_broker(broker_identifier.clone(), connection.clone());
-
-        // Once we have added the broker, drop the authentication guard
-        drop(auth_guard);
-
         // Send a full user sync
         if let Err(err) = self.full_user_sync(&broker_identifier) {
             error!("failed to perform full user sync: {err}");
-            self.connections.remove_broker(&broker_identifier);
+            self.connections.write().remove_broker(&broker_identifier);
             return;
         };
 
@@ -66,7 +54,7 @@ impl<Def: RunDef> Inner<Def> {
         // TODO: macro removals or something
         if let Err(err) = self.full_topic_sync(&broker_identifier) {
             error!("failed to perform full topic sync: {err}");
-            self.connections.remove_broker(&broker_identifier);
+            self.connections.write().remove_broker(&broker_identifier);
             return;
         };
 
@@ -81,27 +69,41 @@ impl<Def: RunDef> Inner<Def> {
             error!("failed to perform partial user sync: {err}");
         }
 
-        info!(id = %broker_identifier, "connected to broker");
-
         // Increment our metric
         metrics::NUM_BROKERS_CONNECTED.inc();
 
-        // If we error, come back to the callback so we can remove the connection from the list.
-        if let Err(err) = self
-            .broker_receive_loop(&broker_identifier, connection)
-            .await
-        {
-            error!(id = %broker_identifier, "broker disconnected with error: {err}");
-        };
+        let self_ = self.clone();
+        let broker_identifier_ = broker_identifier.clone();
+        let connection_ = connection.clone();
+        let receive_handle = spawn(async move {
+            info!(id = %broker_identifier_, "connected to broker");
 
-        info!(id = %broker_identifier, "disconnected from broker");
+            // If we error, come back to the callback so we can remove the connection from the list.
+            if let Err(err) = self_
+                .broker_receive_loop(&broker_identifier_, connection_)
+                .await
+            {
+                error!(id = %broker_identifier_, "broker disconnected with error: {err}");
+            };
 
-        // Decrement our metric
-        metrics::NUM_BROKERS_CONNECTED.dec();
+            info!(id = %broker_identifier_, "disconnected from broker");
 
-        // Remove from the connected broker identities so that we may
-        // try to reconnect inthe future.
-        self.connections.remove_broker(&broker_identifier);
+            // Decrement our metric
+            metrics::NUM_BROKERS_CONNECTED.dec();
+
+            // Remove from the connected broker identities so that we may
+            // try to reconnect inthe future.
+            self_.connections.write().remove_broker(&broker_identifier_);
+        })
+        .abort_handle();
+
+        // Add to our brokers and remove the old one if it exists
+        self.connections
+            .write()
+            .add_broker(broker_identifier, connection, receive_handle);
+
+        // Once we have added the broker, drop the authentication guard
+        drop(auth_guard);
     }
 
     pub async fn broker_receive_loop(
@@ -132,12 +134,14 @@ impl<Def: RunDef> Inner<Def> {
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
                 Message::Subscribe(subscribe) => {
                     self.connections
+                        .write()
                         .subscribe_broker_to(broker_identifier, subscribe);
                 }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
+                        .write()
                         .unsubscribe_broker_from(broker_identifier, &unsubscribe);
                 }
 
@@ -150,7 +154,7 @@ impl<Def: RunDef> Inner<Def> {
                         "failed to deserialize user sync message"
                     );
 
-                    self.connections.apply_user_sync(user_sync);
+                    self.connections.write().apply_user_sync(user_sync);
                 }
 
                 // Do nothing if we receive an unexpected message

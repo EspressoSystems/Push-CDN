@@ -77,10 +77,6 @@ struct Inner<R: RunDef> {
     /// Only lets us authenticate to one broker at a time.
     broker_auth_lock: Semaphore,
 
-    /// A lock so we don't encounter UB when adding users.
-    /// Only lets us add/remove one user to our state at a time.
-    user_add_lock: Semaphore,
-
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
     connections: Arc<Connections<R>>,
@@ -218,7 +214,6 @@ impl<R: RunDef> Broker<R> {
                 identity: identity.clone(),
                 keypair,
                 broker_auth_lock: Semaphore::const_new(1),
-                user_add_lock: Semaphore::const_new(1),
                 connections: Arc::from(Connections::new(identity)),
             }),
             metrics_bind_endpoint,
@@ -239,7 +234,6 @@ impl<R: RunDef> Broker<R> {
     pub async fn start(self) -> Result<()> {
         // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
-        // let heartbeat_task = ;
         let heartbeat_task = spawn(self.inner.clone().run_heartbeat_task());
 
         // Spawn the sync task, which updates other brokers with our keys periodically.

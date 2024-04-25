@@ -6,24 +6,23 @@ use std::{
 };
 
 use cdn_proto::{connection::UserPublicKey, discovery::BrokerIdentifier, message::Topic};
-use parking_lot::RwLock;
 
 /// Our broadcast map is just two associative (bidirectional, multi) maps:
 /// one for brokers and one for users.
 pub struct BroadcastMap {
-    pub users: RwLock<RelationalMap<UserPublicKey, Topic>>,
-    pub brokers: RwLock<RelationalMap<BrokerIdentifier, Topic>>,
+    pub users: RelationalMap<UserPublicKey, Topic>,
+    pub brokers: RelationalMap<BrokerIdentifier, Topic>,
 
-    pub previous_subscribed_topics: RwLock<HashSet<Topic>>,
+    pub previous_subscribed_topics: HashSet<Topic>,
 }
 
 /// Default for our map just wraps the items with locks.
 impl Default for BroadcastMap {
     fn default() -> Self {
         Self {
-            users: RwLock::from(RelationalMap::new()),
-            brokers: RwLock::from(RelationalMap::new()),
-            previous_subscribed_topics: RwLock::from(HashSet::new()),
+            users: RelationalMap::new(),
+            brokers: RelationalMap::new(),
+            previous_subscribed_topics: HashSet::new(),
         }
     }
 }
