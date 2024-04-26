@@ -109,7 +109,6 @@ macro_rules! read_length_delimited {
 
         // Make sure the message isn't too big
         if message_size > MAX_MESSAGE_SIZE {
-            println!("message too big");
             return Err(Error::Connection("message was too large".to_string()));
         }
 
