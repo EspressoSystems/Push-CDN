@@ -55,7 +55,7 @@ impl<M: Middleware> Protocol<M> for Quic {
             )
             .next(),
             Connection,
-            "did not find suitable endpoint for endpoint"
+            "did not find suitable endpoint for address"
         );
 
         // Create QUIC endpoint
