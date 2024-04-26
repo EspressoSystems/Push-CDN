@@ -3,6 +3,7 @@
 //! logic.
 
 use std::marker::PhantomData;
+use std::ops::DerefMut;
 use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
@@ -14,11 +15,11 @@ use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, V
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
-use tokio::time::timeout;
 
-use super::{Connection, Listener, Protocol, UnfinalizedConnection};
-#[cfg(feature = "metrics")]
-use crate::connection::metrics;
+use super::{
+    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
+    UnfinalizedConnection,
+};
 use crate::connection::middleware::Middleware;
 use crate::connection::Bytes;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
@@ -27,7 +28,6 @@ use crate::{
     bail, bail_option,
     error::{Error, Result},
     message::Message,
-    read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
 };
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
@@ -205,10 +205,7 @@ impl<M: Middleware> Connection for QuicConnection<M> {
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Write the message length-delimited
-        let mut stream = self.sender.lock().await;
-        write_length_delimited!(stream, raw_message);
-
-        Ok(())
+        write_length_delimited(self.sender.lock().await.deref_mut(), raw_message).await
     }
 
     /// Receives a single message over the stream and deserializes
@@ -236,10 +233,7 @@ impl<M: Middleware> Connection for QuicConnection<M> {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive the length-delimited message
-        let mut stream = self.receiver.lock().await;
-        let raw_message = read_length_delimited!(stream);
-
-        Ok(raw_message)
+        read_length_delimited::<_, M>(self.receiver.lock().await.deref_mut()).await
     }
 
     /// Gracefully finish the connection, sending any remaining data.

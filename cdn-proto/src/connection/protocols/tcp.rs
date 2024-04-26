@@ -3,7 +3,8 @@
 //! logic.
 
 use std::marker::PhantomData;
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::ops::DerefMut;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
@@ -11,21 +12,21 @@ use rustls::{Certificate, PrivateKey};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::{TcpSocket, TcpStream},
-    time::timeout,
 };
 
-use super::{Connection, Listener, Protocol, UnfinalizedConnection};
-#[cfg(feature = "metrics")]
-use crate::connection::metrics;
+use super::{
+    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
+    UnfinalizedConnection,
+};
 use crate::connection::middleware::Middleware;
 use crate::{
     bail, bail_option,
     connection::Bytes,
     error::{Error, Result},
     message::Message,
-    parse_endpoint, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    parse_endpoint,
 };
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
@@ -137,10 +138,7 @@ impl<M: Middleware> Connection for TcpConnection<M> {
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Write the message length-delimited
-        let mut stream = self.sender.lock().await;
-        write_length_delimited!(stream, raw_message);
-
-        Ok(())
+        write_length_delimited(self.sender.lock().await.deref_mut(), raw_message).await
     }
 
     /// Gracefully finish the connection, sending any remaining data.
@@ -174,10 +172,7 @@ impl<M: Middleware> Connection for TcpConnection<M> {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive the length-delimited message
-        let mut stream = self.receiver.lock().await;
-        let raw_message = read_length_delimited!(stream);
-
-        Ok(raw_message)
+        read_length_delimited::<_, M>(self.receiver.lock().await.deref_mut()).await
     }
 }
 

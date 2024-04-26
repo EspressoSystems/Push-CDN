@@ -1,11 +1,26 @@
 //! This module defines connections, listeners, and their implementations.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use mockall::automock;
 use rustls::{Certificate, PrivateKey};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    time::timeout,
+};
 
 use super::{middleware::Middleware, Bytes};
-use crate::{error::Result, message::Message};
+use crate::{
+    bail,
+    error::{Error, Result},
+    message::Message,
+    MAX_MESSAGE_SIZE,
+};
+
+#[cfg(feature = "metrics")]
+use crate::connection::metrics;
+
 pub mod memory;
 pub mod quic;
 pub mod tcp;
@@ -95,87 +110,88 @@ impl Clone for MockConnection {
     }
 }
 
-/// A macro to read a length-delimited (serialized) message from a stream.
+/// Read a length-delimited (serialized) message from a stream.
 /// Has a bounds check for if the message is too big
-#[macro_export]
-macro_rules! read_length_delimited {
-    ($stream: expr) => {{
-        // Read the message size from the stream
-        let message_size = bail!(
-            $stream.read_u32().await,
-            Connection,
-            "failed to read message size from stream"
-        );
+async fn read_length_delimited<R: AsyncReadExt + Unpin, M: Middleware>(
+    mut stream: R,
+) -> Result<Bytes> {
+    // Read the message size from the stream
+    let message_size = bail!(
+        stream.read_u32().await,
+        Connection,
+        "failed to read message size from stream"
+    );
 
-        // Make sure the message isn't too big
-        if message_size > MAX_MESSAGE_SIZE {
-            return Err(Error::Connection("message was too large".to_string()));
-        }
+    // Make sure the message isn't too big
+    if message_size > MAX_MESSAGE_SIZE {
+        return Err(Error::Connection("message was too large".to_string()));
+    }
 
-        // Acquire the allocation if necessary
-        let permit = M::allocate_message_bytes(message_size).await;
+    // Acquire the allocation if necessary
+    let permit = M::allocate_message_bytes(message_size).await;
 
-        // Create buffer of the proper size
-        let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
+    // Create buffer of the proper size
+    let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
 
-        // Read the message from the stream
+    // Read the message from the stream
+    bail!(
         bail!(
-            bail!(
-                timeout(Duration::from_secs(5), $stream.read_exact(&mut buffer)).await,
-                Connection,
-                "timed out trying to read a message"
-            ),
+            timeout(Duration::from_secs(5), stream.read_exact(&mut buffer)).await,
             Connection,
-            "failed to read message"
-        );
+            "timed out trying to read a message"
+        ),
+        Connection,
+        "failed to read message"
+    );
 
-        // Drop the stream since we're done with it
-        drop($stream);
+    // Drop the stream since we're done with it
+    drop(stream);
 
-        // Add to our metrics, if desired
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_RECV.add(message_size as f64);
+    // Add to our metrics, if desired
+    #[cfg(feature = "metrics")]
+    metrics::BYTES_RECV.add(message_size as f64);
 
-        Bytes::from(buffer, permit)
-    }};
+    Ok(Bytes::from(buffer, permit))
 }
 
-/// A macro to write a length-delimited (serialized) message to a stream.
-#[macro_export]
-macro_rules! write_length_delimited {
-    ($stream: expr, $message:expr) => {
-        // Get the length of the message
-        let message_len = $message.len() as u32;
+/// Write a length-delimited (serialized) message to a stream.
+async fn write_length_delimited<W: AsyncWriteExt + Unpin>(
+    mut stream: W,
+    message: Bytes,
+) -> Result<()> {
+    // Get the length of the message
+    let message_len = message.len() as u32;
 
-        // Write the message size to the stream
+    // Write the message size to the stream
+    bail!(
         bail!(
-            bail!(
-                timeout(Duration::from_secs(5), $stream.write_u32(message_len)).await,
-                Connection,
-                "timed out trying to send message length"
-            ),
+            timeout(Duration::from_secs(5), stream.write_u32(message_len)).await,
             Connection,
-            "failed to send message length"
-        );
+            "timed out trying to send message length"
+        ),
+        Connection,
+        "failed to send message length"
+    );
 
-        // Write the message size to the stream
+    // Write the message size to the stream
+    bail!(
         bail!(
-            bail!(
-                timeout(Duration::from_secs(5), $stream.write_all(&$message)).await,
-                Connection,
-                "timed out trying to send message"
-            ),
+            timeout(Duration::from_secs(5), stream.write_all(&message)).await,
             Connection,
-            "failed to send message"
-        );
+            "timed out trying to send message"
+        ),
+        Connection,
+        "failed to send message"
+    );
 
-        // Drop the stream since we're done with it
-        drop($stream);
+    // Drop the stream since we're done with it
+    drop(stream);
 
-        // Increment the number of bytes we've sent by this amount
-        #[cfg(feature = "metrics")]
-        metrics::BYTES_SENT.add(message_len as f64);
-    };
+    // Increment the number of bytes we've sent by this amount
+    #[cfg(feature = "metrics")]
+    metrics::BYTES_SENT.add(message_len as f64);
+
+    Ok(())
 }
 
 #[cfg(test)]
