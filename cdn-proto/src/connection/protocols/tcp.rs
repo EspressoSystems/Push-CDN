@@ -3,30 +3,30 @@
 //! logic.
 
 use std::marker::PhantomData;
-use std::{net::SocketAddr, result::Result as StdResult, time::Duration};
+use std::net::SocketAddr;
+use std::ops::DerefMut;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
-use kanal::{bounded_async, AsyncReceiver, AsyncSender};
 use rustls::{Certificate, PrivateKey};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::Mutex;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::{TcpSocket, TcpStream},
-    spawn,
-    task::AbortHandle,
-    time::timeout,
 };
 
-use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
-#[cfg(feature = "metrics")]
-use crate::connection::metrics;
+use super::{
+    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
+    UnfinalizedConnection,
+};
 use crate::connection::middleware::Middleware;
 use crate::{
     bail, bail_option,
     connection::Bytes,
     error::{Error, Result},
     message::Message,
-    parse_endpoint, read_length_delimited, write_length_delimited, MAX_MESSAGE_SIZE,
+    parse_endpoint,
 };
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
@@ -36,21 +36,17 @@ pub struct Tcp;
 
 #[async_trait]
 impl<M: Middleware> Protocol<M> for Tcp {
-    type Sender = TcpSender;
-    type Receiver = TcpReceiver;
+    type Connection = TcpConnection<M>;
 
     type Listener = TcpListener;
-    type UnfinalizedConnection = UnfinalizedTcpConnection<M>;
+    type UnfinalizedConnection = UnfinalizedTcpConnection;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     /// With TCP, this requires just connecting to the remote endpoint.
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(
-        remote_endpoint: &str,
-        _use_local_authority: bool,
-    ) -> Result<(Self::Sender, Self::Receiver)>
+    async fn connect(remote_endpoint: &str, _use_local_authority: bool) -> Result<Self::Connection>
     where
         Self: Sized,
     {
@@ -80,12 +76,13 @@ impl<M: Middleware> Protocol<M> for Tcp {
             "failed tcp connect to remote endpoint"
         );
 
-        // Split the connection into a `ReadHalf` and `WriteHalf`, spawning tasks so we can operate
-        // concurrently over both
-        let (sender, receiver) = into_split::<M>(stream);
-
-        // Return the sender and receiver
-        Ok((sender, receiver))
+        // Split the connection and create our wrapper
+        let (receiver, sender) = stream.into_split();
+        Ok(TcpConnection {
+            sender: Arc::from(Mutex::from(sender)),
+            receiver: Arc::from(Mutex::from(receiver)),
+            pd: PhantomData,
+        })
     }
 
     /// Binds to a local endpoint. Does not use a TLS configuration.
@@ -111,65 +108,14 @@ impl<M: Middleware> Protocol<M> for Tcp {
 }
 
 #[derive(Clone)]
-pub struct TcpSender(Arc<TcpSenderRef>);
-
-struct TcpSenderRef(AsyncSender<Bytes>, AbortHandle);
-
-fn into_split<M: Middleware>(connection: TcpStream) -> (TcpSender, TcpReceiver) {
-    // Create a channel for sending messages to the task
-    let (send_to_task, receive_as_task) = bounded_async(0);
-
-    // Create a channel for receiving messages from the task
-    let (send_as_task, receive_from_task) = bounded_async(0);
-
-    // Split the connection into owned halves
-    let (mut read_half, mut write_half) = connection.into_split();
-
-    // Start the sending task
-    let sending_handle = spawn(async move {
-        loop {
-            // Receive a message from our code
-            let Ok(message): StdResult<Bytes, _> = receive_as_task.recv().await else {
-                // If the channel is closed, stop.
-                return;
-            };
-
-            // If the message is empty, it's a signal to finish the connection
-            if message.len() == 0 {
-                // Finish the connection
-                let _ = write_half.flush().await;
-                return;
-            }
-
-            // Send a message over the real connection
-            write_length_delimited!(write_half, message);
-        }
-    })
-    .abort_handle();
-
-    // Start the receiving task
-    let receiving_handle = spawn(async move {
-        loop {
-            // Receive a message from the real connection
-            let message = read_length_delimited!(read_half);
-
-            // Send a message to our code
-            if send_as_task.send(message).await.is_err() {
-                // If the channel is closed, stop
-                return;
-            };
-        }
-    })
-    .abort_handle();
-
-    (
-        TcpSender(Arc::from(TcpSenderRef(send_to_task, receiving_handle))),
-        TcpReceiver(Arc::from(TcpReceiverRef(receive_from_task, sending_handle))),
-    )
+pub struct TcpConnection<M: Middleware> {
+    sender: Arc<Mutex<OwnedWriteHalf>>,
+    receiver: Arc<Mutex<OwnedReadHalf>>,
+    pd: PhantomData<M>,
 }
 
 #[async_trait]
-impl Sender for TcpSender {
+impl<M: Middleware> Connection for TcpConnection<M> {
     /// Send an unserialized message over the stream.
     ///
     /// # Errors
@@ -186,36 +132,21 @@ impl Sender for TcpSender {
         self.send_message_raw(raw_message).await
     }
 
-    /// Send a raw (already serialized) message over the stream.
+    /// Send a pre-serialized message over the connection.
     ///
     /// # Errors
-    /// If we fail to send the message
+    /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
-        // Send the message over our channel
-        bail!(
-            self.0 .0.send(raw_message).await,
-            Connection,
-            "failed to send message: connection closed"
-        );
-
-        Ok(())
+        // Write the message length-delimited
+        write_length_delimited(self.sender.lock().await.deref_mut(), raw_message).await
     }
 
     /// Gracefully finish the connection, sending any remaining data.
     /// This is done by sending two empty messages.
     async fn finish(&self) {
-        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
-        let _ = self.0 .0.send(Bytes::from_unchecked(Vec::new())).await;
+        let _ = self.sender.lock().await.flush().await;
     }
-}
 
-#[derive(Clone)]
-pub struct TcpReceiver(Arc<TcpReceiverRef>);
-
-struct TcpReceiverRef(AsyncReceiver<Bytes>, AbortHandle);
-
-#[async_trait]
-impl Receiver for TcpReceiver {
     /// Receives a single message over the stream and deserializes
     /// it.
     ///
@@ -240,34 +171,31 @@ impl Receiver for TcpReceiver {
     /// # Errors
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes> {
-        // Receive the message
-        let raw_message = bail!(
-            self.0 .0.recv().await,
-            Connection,
-            "failed to receive message: connection closed"
-        );
-
-        Ok(raw_message)
+        // Receive the length-delimited message
+        read_length_delimited::<_, M>(self.receiver.lock().await.deref_mut()).await
     }
 }
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedTcpConnection<M>(TcpStream, PhantomData<M>);
+pub struct UnfinalizedTcpConnection(TcpStream);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<TcpSender, TcpReceiver> for UnfinalizedTcpConnection<M> {
+impl<M: Middleware> UnfinalizedConnection<TcpConnection<M>> for UnfinalizedTcpConnection {
     /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
     ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
-    async fn finalize(self) -> Result<(TcpSender, TcpReceiver)> {
-        // Split the connection and start the sending and receiving tasks
-        let (sender, receiver) = into_split::<M>(self.0);
+    async fn finalize(self) -> Result<TcpConnection<M>> {
+        // Split the connection and create our wrapper
+        let (receiver, sender) = self.0.into_split();
 
-        // Wrap and return the finalized connection
-        Ok((sender, receiver))
+        Ok(TcpConnection {
+            sender: Arc::from(Mutex::from(sender)),
+            receiver: Arc::from(Mutex::from(receiver)),
+            pd: PhantomData,
+        })
     }
 }
 
@@ -276,12 +204,12 @@ impl<M: Middleware> UnfinalizedConnection<TcpSender, TcpReceiver> for Unfinalize
 pub struct TcpListener(pub tokio::net::TcpListener);
 
 #[async_trait]
-impl<M: Middleware> Listener<UnfinalizedTcpConnection<M>> for TcpListener {
+impl Listener<UnfinalizedTcpConnection> for TcpListener {
     /// Accept an unfinalized connection from the listener.
     ///
     /// # Errors
     /// - If we fail to accept a connection from the listener.
-    async fn accept(&self) -> Result<UnfinalizedTcpConnection<M>> {
+    async fn accept(&self) -> Result<UnfinalizedTcpConnection> {
         // Try to accept a connection from the underlying endpoint
         // Split into reader and writer half
         let connection = bail!(
@@ -291,27 +219,7 @@ impl<M: Middleware> Listener<UnfinalizedTcpConnection<M>> for TcpListener {
         );
 
         // Return the unfinalized connection
-        Ok(UnfinalizedTcpConnection(connection.0, PhantomData))
-    }
-}
-
-/// If we drop the sender, we want to close the connection (to prevent us from sending data
-/// to a stale connection)
-impl Drop for TcpSenderRef {
-    fn drop(&mut self) {
-        // Close the channel and abort the receiving task
-        self.0.close();
-        self.1.abort();
-    }
-}
-
-/// If we drop the receiver, we want to close the connection (to prevent us from sending data
-/// to a stale connection)
-impl Drop for TcpReceiverRef {
-    fn drop(&mut self) {
-        // Close the channel and abort the sending task
-        self.0.close();
-        self.1.abort();
+        Ok(UnfinalizedTcpConnection(connection.0))
     }
 }
 

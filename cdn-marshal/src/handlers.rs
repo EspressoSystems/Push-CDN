@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::{auth::marshal::MarshalAuth, protocols::Sender as _},
+    connection::{auth::marshal::MarshalAuth, protocols::Connection as _},
     def::{Connection, RunDef},
     mnemonic,
 };
@@ -26,7 +26,7 @@ impl<R: RunDef> Marshal<R> {
             info!(id = mnemonic(&user_public_key), "user authenticated");
         }
 
-        // Finish the connection to ensure all data is sent
-        connection.0.finish().await;
+        // Finish the connection, ensuring all data was sent
+        connection.finish().await;
     }
 }

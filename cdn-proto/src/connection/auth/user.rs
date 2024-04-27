@@ -6,10 +6,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::connection::protocols::Connection as _;
 use crate::crypto::signature::Serializable;
 use crate::{
     bail,
-    connection::protocols::{Receiver as _, Sender as _},
     crypto::signature::{KeyPair, SignatureScheme},
     def::{Connection, ConnectionDef, Scheme},
     error::{Error, Result},
@@ -63,14 +63,14 @@ impl<C: ConnectionDef> UserAuth<C> {
 
         // Create and send the authentication message from the above operations
         bail!(
-            connection.0.send_message(message).await,
+            connection.send_message(message).await,
             Connection,
             "failed to send auth message to marshal"
         );
 
         // Wait for the response with the permit and endpoint
         let response = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from marshal"
         );
@@ -112,14 +112,14 @@ impl<C: ConnectionDef> UserAuth<C> {
 
         // Send the authentication message to the broker
         bail!(
-            connection.0.send_message(auth_message).await,
+            connection.send_message(auth_message).await,
             Connection,
             "failed to send message to broker"
         );
 
         // Wait for a response
         let response_message = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive response message from broker"
         );
@@ -142,7 +142,7 @@ impl<C: ConnectionDef> UserAuth<C> {
         // Send our interested topics to the broker
         let topic_message = Message::Subscribe(Vec::from_iter(subscribed_topics));
         bail!(
-            connection.0.send_message(topic_message).await,
+            connection.send_message(topic_message).await,
             Connection,
             "failed to send topics to broker"
         );

@@ -1,11 +1,11 @@
 //! This module defines almost all of the connection lookup, addition,
 //! and removal process.
 
-use std::{collections::HashSet, ops::Deref, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use cdn_proto::{
-    connection::{protocols::Sender as _, Bytes, UserPublicKey},
-    def::{RunDef, Sender},
+    connection::{protocols::Connection as _, Bytes, UserPublicKey},
+    def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
@@ -28,9 +28,9 @@ pub struct Connections<Def: RunDef> {
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<UserPublicKey, Sender<Def::User>>,
+    users: DashMap<UserPublicKey, Connection<Def::User>>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, Sender<Def::Broker>>,
+    brokers: DashMap<BrokerIdentifier, Connection<Def::Broker>>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: RwLock<DirectMap>,
@@ -123,7 +123,7 @@ impl<Def: RunDef> Connections<Def> {
     pub fn add_broker(
         self: &Arc<Self>,
         broker_identifier: BrokerIdentifier,
-        connection: Sender<Def::Broker>,
+        connection: Connection<Def::Broker>,
     ) {
         self.brokers.insert(broker_identifier, connection);
     }
@@ -133,7 +133,7 @@ impl<Def: RunDef> Connections<Def> {
     pub fn add_user(
         self: &Arc<Self>,
         user_public_key: UserPublicKey,
-        connection: Sender<Def::User>,
+        connection: Connection<Def::User>,
     ) {
         // Add to our map
         self.users.insert(user_public_key.clone(), connection);
@@ -288,7 +288,7 @@ impl<Def: RunDef> Connections<Def> {
                 // We own the user, send it this way
                 debug!(
                     user = mnemonic(&user_public_key),
-                    msg = mnemonic(message.deref()),
+                    msg = mnemonic(&*message),
                     "direct",
                 );
                 self.send_to_user(user_public_key, message);
@@ -298,7 +298,7 @@ impl<Def: RunDef> Connections<Def> {
                 if !to_user_only {
                     debug!(
                         broker = %broker_identifier,
-                        msg = mnemonic(message.deref()),
+                        msg = mnemonic(&*message),
                         "direct",
                     );
                     // Send to the broker responsible
@@ -339,7 +339,7 @@ impl<Def: RunDef> Connections<Def> {
         debug!(
             num_brokers = broker_recipients.len(),
             num_users = user_recipients.len(),
-            msg = mnemonic(message.deref()),
+            msg = mnemonic(&**message),
             "broadcast",
         );
 

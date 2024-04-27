@@ -11,7 +11,7 @@ use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use rustls::{Certificate, PrivateKey};
 use tokio::{sync::RwLock, task::spawn_blocking};
 
-use super::{Listener, Protocol, Receiver, Sender, UnfinalizedConnection};
+use super::{Connection, Listener, Protocol, UnfinalizedConnection};
 #[cfg(feature = "metrics")]
 use crate::connection::metrics::{BYTES_RECV, BYTES_SENT};
 use crate::{
@@ -36,8 +36,7 @@ pub struct Memory;
 
 #[async_trait]
 impl<M: Middleware> Protocol<M> for Memory {
-    type Sender = MemorySender;
-    type Receiver = MemoryReceiver;
+    type Connection = MemoryConnection;
 
     type UnfinalizedConnection = UnfinalizedMemoryConnection;
     type Listener = MemoryListener;
@@ -49,7 +48,7 @@ impl<M: Middleware> Protocol<M> for Memory {
     async fn connect(
         remote_endpoint: &str,
         _use_local_authority: bool,
-    ) -> Result<(MemorySender, MemoryReceiver)> {
+    ) -> Result<MemoryConnection> {
         // If the peer is not listening, return an error
         // Get or initialize the channels as a static value
         let listeners = LISTENERS.get_or_init(RwLock::default).read().await;
@@ -79,10 +78,10 @@ impl<M: Middleware> Protocol<M> for Memory {
         );
 
         // Return the conmunication channels
-        Ok((
-            MemorySender(Arc::from(MemorySenderRef(send_to_them))),
-            MemoryReceiver(Arc::from(MemoryReceiverRef(receive_from_them))),
-        ))
+        Ok(MemoryConnection {
+            sender: Arc::from(MemorySenderRef(send_to_them)),
+            receiver: Arc::from(MemoryReceiverRef(receive_from_them)),
+        })
     }
 
     /// Binds to a local endpoint. The bind endpoint should be numeric.
@@ -113,13 +112,16 @@ impl<M: Middleware> Protocol<M> for Memory {
 }
 
 #[derive(Clone)]
-pub struct MemorySender(Arc<MemorySenderRef>);
+pub struct MemoryConnection {
+    pub sender: Arc<MemorySenderRef>,
+    pub receiver: Arc<MemoryReceiverRef>,
+}
 
 #[derive(Clone)]
 pub struct MemorySenderRef(AsyncSender<Bytes>);
 
 #[async_trait]
-impl Sender for MemorySender {
+impl Connection for MemoryConnection {
     /// Send an (unserialized) message over the stream.
     ///
     /// # Errors
@@ -147,7 +149,7 @@ impl Sender for MemorySender {
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message over the channel
         bail!(
-            self.0 .0.send(raw_message).await,
+            self.sender.0.send(raw_message).await,
             Connection,
             "failed to send message over connection"
         );
@@ -155,19 +157,6 @@ impl Sender for MemorySender {
         Ok(())
     }
 
-    /// Finish the connection, sending any remaining data.
-    /// Is a no-op for memory connections.
-    async fn finish(&self) {}
-}
-
-#[derive(Clone)]
-pub struct MemoryReceiver(pub Arc<MemoryReceiverRef>);
-
-#[derive(Clone)]
-pub struct MemoryReceiverRef(pub AsyncReceiver<Bytes>);
-
-#[async_trait]
-impl Receiver for MemoryReceiver {
     /// Receives a single message from our channel and deserializes
     /// it.
     ///
@@ -195,7 +184,7 @@ impl Receiver for MemoryReceiver {
     async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive a message from the channel
         let raw_message = bail!(
-            self.0 .0.recv().await,
+            self.receiver.0.recv().await,
             Connection,
             "failed to receive message from connection"
         );
@@ -206,7 +195,14 @@ impl Receiver for MemoryReceiver {
 
         Ok(raw_message)
     }
+
+    /// Finish the connection, sending any remaining data.
+    /// Is a no-op for memory connections.
+    async fn finish(&self) {}
 }
+
+#[derive(Clone)]
+pub struct MemoryReceiverRef(pub AsyncReceiver<Bytes>);
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
@@ -216,13 +212,13 @@ pub struct UnfinalizedMemoryConnection {
 }
 
 #[async_trait]
-impl UnfinalizedConnection<MemorySender, MemoryReceiver> for UnfinalizedMemoryConnection {
+impl UnfinalizedConnection<MemoryConnection> for UnfinalizedMemoryConnection {
     /// Prepares the `MemoryConnection` for usage by `Arc()ing` things.
-    async fn finalize(self) -> Result<(MemorySender, MemoryReceiver)> {
-        Ok((
-            MemorySender(Arc::from(MemorySenderRef(self.bytes_sender))),
-            MemoryReceiver(Arc::from(MemoryReceiverRef(self.bytes_receiver))),
-        ))
+    async fn finalize(self) -> Result<MemoryConnection> {
+        Ok(MemoryConnection {
+            sender: Arc::from(MemorySenderRef(self.bytes_sender)),
+            receiver: Arc::from(MemoryReceiverRef(self.bytes_receiver)),
+        })
     }
 }
 
@@ -300,14 +296,14 @@ impl Memory {
     /// Generate a testing pair of channels for sending and receiving in memory.
     /// This is particularly useful for tests.
     #[must_use]
-    pub fn gen_testing_pair() -> (MemorySender, MemoryReceiver) {
+    pub fn gen_testing_connection() -> MemoryConnection {
         // Create channels
         let (sender, receiver) = unbounded_async();
 
-        (
-            MemorySender(Arc::from(MemorySenderRef(sender))),
-            MemoryReceiver(Arc::from(MemoryReceiverRef(receiver))),
-        )
+        MemoryConnection {
+            sender: Arc::from(MemorySenderRef(sender)),
+            receiver: Arc::from(MemoryReceiverRef(receiver)),
+        }
     }
 }
 

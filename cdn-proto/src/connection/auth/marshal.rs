@@ -9,7 +9,7 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::{Receiver, Sender},
+    connection::protocols::Connection as _,
     def::{Connection, PublicKey, RunDef, Scheme},
     discovery::DiscoveryClient,
     error::{Error, Result},
@@ -40,7 +40,7 @@ impl<R: RunDef> MarshalAuth<R> {
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
         let auth_message = bail!(
-            connection.1.recv_message().await,
+            connection.recv_message().await,
             Connection,
             "failed to receive message from user"
         );
@@ -133,7 +133,7 @@ impl<R: RunDef> MarshalAuth<R> {
         });
 
         // Send the permit to the user, along with the public broker advertise endpoint
-        let _ = connection.0.send_message(response_message).await;
+        let _ = connection.send_message(response_message).await;
 
         Ok(UserPublicKey::from(public_key))
     }

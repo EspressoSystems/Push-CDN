@@ -3,9 +3,7 @@
 use cdn_proto::{
     connection::{
         middleware::NoMiddleware,
-        protocols::{
-            quic::Quic, tcp::Tcp, Listener, Protocol, Receiver, Sender, UnfinalizedConnection,
-        },
+        protocols::{quic::Quic, tcp::Tcp, Connection, Listener, Protocol, UnfinalizedConnection},
         Bytes,
     },
     crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
@@ -18,14 +16,13 @@ use tokio::{join, runtime::Runtime, spawn};
 /// Transfer a message `raw_message` from `conn1` to `conn2.` This is the primary
 /// function used for testing network protocol speed.
 async fn transfer<Proto: Protocol<NoMiddleware>>(
-    conn1: (Proto::Sender, Proto::Receiver),
-    conn2: (Proto::Sender, Proto::Receiver),
+    conn1: Proto::Connection,
+    conn2: Proto::Connection,
     raw_message: Bytes,
 ) {
     // Send from the first connection
     let conn1_jh = spawn(async move {
         conn1
-            .0
             .send_message_raw(raw_message.clone())
             .await
             .expect("failed to send message");
@@ -34,7 +31,6 @@ async fn transfer<Proto: Protocol<NoMiddleware>>(
     // Receive from the second connection
     let conn2_jh = spawn(async move {
         conn2
-            .1
             .recv_message_raw()
             .await
             .expect("failed to receive message");
@@ -48,12 +44,7 @@ async fn transfer<Proto: Protocol<NoMiddleware>>(
 /// to test.
 fn set_up_bench<Proto: Protocol<NoMiddleware>>(
     message_size: usize,
-) -> (
-    Runtime,
-    (Proto::Sender, Proto::Receiver),
-    (Proto::Sender, Proto::Receiver),
-    Bytes,
-) {
+) -> (Runtime, Proto::Connection, Proto::Connection, Bytes) {
     // Create new tokio runtime
     let benchmark_runtime = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
 

@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use cdn_proto::{
     connection::protocols::{
-        memory::{Memory, MemoryReceiver, MemorySender},
-        Sender,
+        memory::{Memory, MemoryConnection},
+        Connection,
     },
     crypto::{rng::DeterministicRng, signature::KeyPair},
     def::TestingRunDef,
@@ -31,9 +31,9 @@ use crate::{connections::DirectMap, Broker, Config};
 /// An actor is a [user/broker] that we inject to test message send functionality.
 pub struct InjectedActor {
     /// The in-memory sender that sends to the broker under test
-    pub sender: MemorySender,
+    pub sender: MemoryConnection,
     /// The in-memory receiver that receives from the broker under test
-    pub receiver: MemoryReceiver,
+    pub receiver: MemoryConnection,
 }
 
 /// This lets us send a message as a particular network actor. It just helps
@@ -61,7 +61,7 @@ macro_rules! assert_received {
     // Make sure we haven't received this message
     (no, $actor: expr) => {
         assert!(
-            $actor.receiver.0 .0.is_empty(),
+            $actor.receiver.receiver.0.is_empty(),
             "wasn't supposed to receive a message but did"
         )
     };
@@ -69,7 +69,8 @@ macro_rules! assert_received {
     // Make sure we have received the message in a timeframe of 50ms
     (yes, $actor: expr, $message:expr) => {
         // Receive the message with a timeout
-        let Ok(message) = timeout(Duration::from_millis(50), $actor.receiver.0 .0.recv()).await
+        let Ok(message) =
+            timeout(Duration::from_millis(50), $actor.receiver.receiver.0.recv()).await
         else {
             panic!("timed out trying to receive message");
         };
@@ -162,24 +163,24 @@ impl TestDefinition {
             let identifier: Arc<Vec<u8>> = Arc::from(vec![i as u8]);
 
             // Generate a testing pair of memory network channels
-            let (to_broker, from_tester) = Memory::gen_testing_pair();
-            let (to_tester, from_broker) = Memory::gen_testing_pair();
+            let connection1 = Memory::gen_testing_connection();
+            let connection2 = Memory::gen_testing_connection();
 
             // Create our user object
             let injected_user = InjectedActor {
-                sender: to_broker,
-                receiver: from_broker,
+                sender: connection1.clone(),
+                receiver: connection2.clone(),
             };
 
             // Inject our user into the connections
             broker_under_test
                 .inner
                 .connections
-                .add_user(identifier.clone(), to_tester);
+                .add_user(identifier.clone(), connection2);
 
             // Spawn our user receiver in the broker under test
             let inner = broker_under_test.inner.clone();
-            spawn(async move { inner.user_receive_loop(&identifier, from_tester).await });
+            spawn(async move { inner.user_receive_loop(&identifier, connection1).await });
 
             // Create and send subscription messages to the broker under test
             let subscribe_message = Message::Subscribe(topics.clone());
@@ -213,27 +214,27 @@ impl TestDefinition {
                 .expect("failed to create broker identifier");
 
             // Generate a testing pair of memory network channels
-            let (to_broker, from_tester) = Memory::gen_testing_pair();
-            let (to_tester, from_broker) = Memory::gen_testing_pair();
+            let connection1 = Memory::gen_testing_connection();
+            let connection2 = Memory::gen_testing_connection();
 
             // Create our broker object
             let injected_broker = InjectedActor {
-                sender: to_broker,
-                receiver: from_broker,
+                sender: connection1.clone(),
+                receiver: connection2.clone(),
             };
 
             // Inject our broker into the connections
             broker_under_test
                 .inner
                 .connections
-                .add_broker(identifier.clone(), to_tester);
+                .add_broker(identifier.clone(), connection2);
 
             // Spawn our receiver in the broker under test
             let inner = broker_under_test.inner.clone();
             let identifier_ = identifier.clone();
             spawn(async move {
                 inner
-                    .broker_receive_loop(&identifier_, from_tester)
+                    .broker_receive_loop(&identifier_, connection1)
                     .await
                     .unwrap();
             });
