@@ -12,7 +12,7 @@ use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
 use tokio::time::timeout;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{metrics, Inner};
 
@@ -70,10 +70,14 @@ impl<Def: RunDef> Inner<Def> {
         let receive_handle = spawn(async move {
             info!(id = user_identifier, "user connected");
 
-            // This runs the main loop for receiving information from the user
-            let _ = self_.user_receive_loop(&public_key_, connection_).await;
-
-            info!(id = user_identifier, "user disconnected");
+            // If we error, come back to the callback so we can remove the connection from the list.
+            if let Err(err) = self_.user_receive_loop(&public_key_, connection_).await {
+                warn!(
+                    id = user_identifier,
+                    error = err.to_string(),
+                    "user disconnected"
+                );
+            };
 
             // Decrement our metric
             metrics::NUM_USERS_CONNECTED.dec();
@@ -96,7 +100,10 @@ impl<Def: RunDef> Inner<Def> {
         public_key: &UserPublicKey,
         connection: Connection<Def::User>,
     ) -> Result<()> {
-        while let Ok(raw_message) = connection.recv_message_raw().await {
+        loop {
+            // Receive a message from the user
+            let raw_message = connection.recv_message_raw().await?;
+
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 
@@ -129,9 +136,8 @@ impl<Def: RunDef> Inner<Def> {
                         .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 
-                _ => return Err(Error::Connection("connection closed".to_string())),
+                _ => return Err(Error::Connection("invalid message received".to_string())),
             }
         }
-        Err(Error::Connection("connection closed".to_string()))
     }
 }

@@ -9,7 +9,7 @@ use cdn_proto::{
     mnemonic,
 };
 use tokio::spawn;
-use tracing::{debug, error};
+use tracing::{debug, warn};
 
 use crate::Inner;
 
@@ -29,7 +29,7 @@ impl<R: RunDef> Inner<R> {
             spawn(async move {
                 if let Err(err) = connection.send_message_raw(message).await {
                     // If we fail, remove the broker from our map.
-                    error!("broker send failed: {err}");
+                    warn!("failed to send message to broker: {err}");
                     connections.write().remove_broker(&broker_identifier);
                 };
             });
@@ -39,7 +39,8 @@ impl<R: RunDef> Inner<R> {
     /// Send a message to a particular broker. If it fails, remove the broker from our map.
     pub fn send_to_broker(self: &Arc<Self>, broker_identifier: &BrokerIdentifier, message: Bytes) {
         // If we are connected to them,
-        if let Some(connection) = self.connections.read().brokers.get(broker_identifier) {
+        let connections = self.connections.read();
+        if let Some(connection) = connections.brokers.get(broker_identifier) {
             // Clone things we need
             let connection = connection.0.clone();
             let connections = self.connections.clone();
@@ -49,10 +50,14 @@ impl<R: RunDef> Inner<R> {
             spawn(async move {
                 if let Err(err) = connection.send_message_raw(message).await {
                     // Remove them if we failed to send it
-                    error!("broker send failed: {err}");
+                    warn!("failed to send message to broker: {err}");
                     connections.write().remove_broker(&broker_identifier);
                 };
             });
+        } else {
+            // Remove the broker if they are not connected
+            drop(connections);
+            self.connections.write().remove_broker(broker_identifier);
         }
     }
 
@@ -60,18 +65,24 @@ impl<R: RunDef> Inner<R> {
     /// If it fails, the user is removed from our map.
     pub fn send_to_user(self: &Arc<Self>, user_public_key: UserPublicKey, message: Bytes) {
         // See if the user is connected
-        if let Some((connection, _)) = self.connections.read().users.get(&user_public_key) {
+        let connections = self.connections.read();
+        if let Some((connection, _)) = connections.users.get(&user_public_key) {
             // If they are, clone things we will need
             let connection = connection.clone();
             let connections = self.connections.clone();
 
             // Spawn a task to send the message
             spawn(async move {
-                if connection.send_message_raw(message).await.is_err() {
+                if let Err(err) = connection.send_message_raw(message).await {
                     // If we fail to send the message, remove the user.
+                    warn!("failed to send message to user: {err}");
                     connections.write().remove_user(user_public_key);
                 };
             });
+        } else {
+            // Remove the user if they are not connected
+            drop(connections);
+            self.connections.write().remove_user(user_public_key);
         }
     }
 

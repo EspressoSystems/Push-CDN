@@ -83,7 +83,7 @@ impl<
                     entry.version += 1;
                 }
 
-                // Set the versional equal to the one we supplied
+                // Set the version equal to the one we supplied
                 entry.value = v;
             }
 
@@ -121,6 +121,23 @@ impl<
             if vv.value == Some(v) {
                 self.remove(k);
             }
+        }
+    }
+
+    /// Remove all entries from the map where the value equals `V`.
+    /// TODO: see if we can remove some `.clone()`s here.
+    pub fn remove_by_value(&mut self, v: &V) {
+        // Get all the keys that have the value we want to purge
+        let keys: Vec<K> = self
+            .underlying_map
+            .iter()
+            .filter(|(_, vv)| vv.value == Some(v.clone()))
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        // Remove all associated keys
+        for key in keys {
+            self.remove(key);
         }
     }
 
@@ -308,5 +325,31 @@ pub mod tests {
         assert!(map_0.get(&"user0").is_none());
     }
 
-    // TODO: fuzzy tests for this
+    #[test]
+    fn test_purge() {
+        // Create the map under test
+        let mut map: VersionedMap<&str, &str, u64> = VersionedMap::new(0);
+
+        // Insert "user0" as having "broker0" value
+        map.insert("user0", "broker0");
+        assert!(map.get(&"user0") == Some(&"broker0"));
+
+        // Insert "user0" as having "broker0" value
+        map.insert("user1", "broker0");
+        assert!(map.get(&"user1") == Some(&"broker0"));
+
+        // Insert "user2" as having "broker1" value
+        map.insert("user2", "broker1");
+        assert!(map.get(&"user2") == Some(&"broker1"));
+
+        // Purge all values that are "broker0"
+        map.remove_by_value(&"broker0");
+
+        // Expect user0 and user1 to be gone
+        assert!(map.get(&"user0").is_none());
+        assert!(map.get(&"user1").is_none());
+
+        // Expect user2 to still be present
+        assert!(map.get(&"user2") == Some(&"broker1"));
+    }
 }

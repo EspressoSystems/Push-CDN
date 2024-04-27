@@ -12,7 +12,7 @@ use cdn_proto::{
     verify_broker,
 };
 use tokio::spawn;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{connections::DirectMap, metrics, Inner};
 
@@ -76,17 +76,19 @@ impl<Def: RunDef> Inner<Def> {
         let broker_identifier_ = broker_identifier.clone();
         let connection_ = connection.clone();
         let receive_handle = spawn(async move {
-            info!(id = %broker_identifier_, "connected to broker");
+            info!(id = %broker_identifier_, "broker connected");
 
             // If we error, come back to the callback so we can remove the connection from the list.
             if let Err(err) = self_
                 .broker_receive_loop(&broker_identifier_, connection_)
                 .await
             {
-                error!(id = %broker_identifier_, "broker disconnected with error: {err}");
+                warn!(
+                    id = %broker_identifier_,
+                    error = err.to_string(),
+                    "broker disconnected"
+                );
             };
-
-            info!(id = %broker_identifier_, "disconnected from broker");
 
             // Decrement our metric
             metrics::NUM_BROKERS_CONNECTED.dec();
@@ -109,9 +111,12 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: Connection<Def::Broker>,
+        connection: Connection<Def::Broker>,
     ) -> Result<()> {
-        while let Ok(raw_message) = receiver.recv_message_raw().await {
+        loop {
+            // Receive a message from the broker
+            let raw_message = connection.recv_message_raw().await?;
+
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 
@@ -160,7 +165,5 @@ impl<Def: RunDef> Inner<Def> {
                 _ => {}
             }
         }
-
-        Err(Error::Connection("connection closed".to_string()))
     }
 }
