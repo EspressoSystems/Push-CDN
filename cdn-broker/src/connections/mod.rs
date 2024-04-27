@@ -16,8 +16,8 @@ use self::broadcast::BroadcastMap;
 
 mod broadcast;
 mod direct;
-mod versioned;
 mod logic;
+mod versioned;
 pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
