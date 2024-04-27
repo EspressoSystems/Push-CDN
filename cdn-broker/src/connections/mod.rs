@@ -1,190 +1,24 @@
 //! This module defines almost all of the connection lookup, addition,
 //! and removal process.
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
-
-use derive_more::Deref;
+use std::collections::{HashMap, HashSet};
 
 use cdn_proto::{
-    connection::{protocols::Connection as _, Bytes, UserPublicKey},
+    connection::UserPublicKey,
     def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     message::Topic,
-    mnemonic,
 };
 pub use direct::DirectMap;
-use parking_lot::RwLock;
-use tokio::{spawn, task::AbortHandle};
-use tracing::{debug, error};
+use tokio::task::AbortHandle;
 
 use self::broadcast::BroadcastMap;
 
 mod broadcast;
 mod direct;
 mod versioned;
-
-/// Stores information about all current connections.
-#[derive(Deref)]
-pub struct Connections<Def: RunDef>(Arc<RwLock<ConnectionsInner<Def>>>);
-
-impl<Def: RunDef> Connections<Def> {
-    /// Create a new `Connections`. Requires an identity for
-    /// version vector conflict resolution.
-    pub fn new(identity: BrokerIdentifier) -> Self {
-        Self(Arc::from(RwLock::from(ConnectionsInner {
-            identity: identity.clone(),
-            users: HashMap::new(),
-            brokers: HashMap::new(),
-            direct_map: DirectMap::new(identity),
-            broadcast_map: BroadcastMap::new(),
-        })))
-    }
-
-    /// Send a message to all currently connected brokers. On failure,
-    /// the broker will be removed.
-    pub fn send_to_brokers(&self, message: &Bytes) {
-        // For each broker,
-        for connection in &self.0.read().brokers {
-            // Clone things we will need downstream
-            let message = message.clone();
-            let broker_identifier = connection.0.clone();
-            let connection = connection.1 .0.clone();
-            let inner = self.0.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if let Err(err) = connection.send_message_raw(message).await {
-                    // If we fail, remove the broker from our map.
-                    error!("broker send failed: {err}");
-                    inner.write().remove_broker(&broker_identifier);
-                };
-            });
-        }
-    }
-
-    /// Send a message to a particular broker. If it fails, remove the broker from our map.
-    pub fn send_to_broker(&self, broker_identifier: &BrokerIdentifier, message: Bytes) {
-        // If we are connected to them,
-        if let Some(connection) = self.0.read().brokers.get(broker_identifier) {
-            // Clone things we need
-            let connection = connection.0.clone();
-            let inner = self.0.clone();
-            let broker_identifier = broker_identifier.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if let Err(err) = connection.send_message_raw(message).await {
-                    // Remove them if we failed to send it
-                    error!("broker send failed: {err}");
-                    inner.write().remove_broker(&broker_identifier);
-                };
-            });
-        }
-    }
-
-    /// Send a message to a user connected to us.
-    /// If it fails, the user is removed from our map.
-    pub fn send_to_user(&self, user_public_key: UserPublicKey, message: Bytes) {
-        // See if the user is connected
-        if let Some((connection, _)) = self.0.read().users.get(&user_public_key) {
-            // If they are, clone things we will need
-            let connection = connection.clone();
-            let inner = self.0.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if connection.send_message_raw(message).await.is_err() {
-                    // If we fail to send the message, remove the user.
-                    inner.write().remove_user(user_public_key);
-                };
-            });
-        }
-    }
-
-    /// Send a direct message to either a user or a broker. First figures out where the message
-    /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
-    /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub fn send_direct(&self, user_public_key: UserPublicKey, message: Bytes, to_user_only: bool) {
-        // Look up from our map
-        if let Some(broker_identifier) = self.0.read().direct_map.get(&user_public_key) {
-            if *broker_identifier == self.0.read().identity {
-                // We own the user, send it this way
-                debug!(
-                    user = mnemonic(&user_public_key),
-                    msg = mnemonic(&*message),
-                    "direct",
-                );
-                self.send_to_user(user_public_key, message);
-            } else {
-                // If we don't have the stipulation to send it to ourselves only
-                // This is so we don't thrash between brokers
-                if !to_user_only {
-                    debug!(
-                        broker = %broker_identifier,
-                        msg = mnemonic(&*message),
-                        "direct",
-                    );
-                    // Send to the broker responsible
-                    self.send_to_broker(broker_identifier, message);
-                }
-            }
-        } else {
-            // Debug warning if the recipient user did not exist.
-            debug!(id = mnemonic(&user_public_key), "user did not exist in map");
-        }
-    }
-
-    /// Send a broadcast message to both users and brokers. First figures out where the message
-    /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
-    /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub fn send_broadcast(&self, mut topics: Vec<Topic>, message: &Bytes, to_users_only: bool) {
-        // Deduplicate topics
-        topics.dedup();
-
-        // Aggregate recipients
-        let mut broker_recipients = HashSet::new();
-        let mut user_recipients = HashSet::new();
-
-        for topic in topics {
-            // If we can send to brokers, we should do it
-            if !to_users_only {
-                broker_recipients.extend(
-                    self.0
-                        .read()
-                        .broadcast_map
-                        .brokers
-                        .get_keys_by_value(&topic),
-                );
-            }
-            user_recipients.extend(self.0.read().broadcast_map.users.get_keys_by_value(&topic));
-        }
-
-        debug!(
-            num_brokers = broker_recipients.len(),
-            num_users = user_recipients.len(),
-            msg = mnemonic(&**message),
-            "broadcast",
-        );
-
-        // If we can send to brokers, do so
-        if !to_users_only {
-            // Send to all brokers
-            for broker in broker_recipients {
-                self.send_to_broker(&broker, message.clone());
-            }
-        }
-
-        // Send to all aggregated users
-        for user in user_recipients {
-            self.send_to_user(user, message.clone());
-        }
-    }
-}
-
-pub struct ConnectionsInner<Def: RunDef> {
+mod logic;
+pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
@@ -199,7 +33,19 @@ pub struct ConnectionsInner<Def: RunDef> {
     broadcast_map: BroadcastMap,
 }
 
-impl<Def: RunDef> ConnectionsInner<Def> {
+impl<Def: RunDef> Connections<Def> {
+    /// Create a new `Connections`. Requires an identity for
+    /// version vector conflict resolution.
+    pub fn new(identity: BrokerIdentifier) -> Self {
+        Self {
+            identity: identity.clone(),
+            users: HashMap::new(),
+            brokers: HashMap::new(),
+            direct_map: DirectMap::new(identity),
+            broadcast_map: BroadcastMap::new(),
+        }
+    }
+
     /// Get the number of users connected to us at any given time.
     pub fn num_users(&self) -> usize {
         self.users.len()
@@ -308,7 +154,6 @@ impl<Def: RunDef> ConnectionsInner<Def> {
         // Remove from broker list, cancelling the previous task if it exists
         if let Some(previous_handle) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
             // Cancel the broker's task
-            println!("aborting broker");
             previous_handle.abort();
         };
 
@@ -325,8 +170,6 @@ impl<Def: RunDef> ConnectionsInner<Def> {
     pub fn remove_user(&mut self, user_public_key: UserPublicKey) {
         // Remove from user list, returning the previous handle if it exists
         if let Some(previous_handle) = self.users.remove(&user_public_key).map(|(_, h)| h) {
-            println!("aborting user");
-
             // Cancel the user's task
             previous_handle.abort();
         };

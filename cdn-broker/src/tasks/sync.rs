@@ -44,8 +44,7 @@ impl<Def: RunDef> Inner<Def> {
         let full_sync_map = self.connections.read().get_full_user_sync();
 
         // Serialize and send the message to the broker
-        self.connections
-            .send_to_broker(broker, prepare_sync_message!(full_sync_map));
+        self.send_to_broker(broker, prepare_sync_message!(full_sync_map));
 
         Ok(())
     }
@@ -68,7 +67,7 @@ impl<Def: RunDef> Inner<Def> {
         let raw_message = prepare_sync_message!(partial_sync_map);
 
         // Send it to all brokers
-        self.connections.send_to_brokers(&raw_message);
+        self.send_to_brokers(&raw_message);
 
         Ok(())
     }
@@ -83,7 +82,7 @@ impl<Def: RunDef> Inner<Def> {
         let topics = self.connections.read().get_full_topic_sync();
 
         // Serialize and send the message
-        self.connections.send_to_broker(
+        self.send_to_broker(
             broker,
             Bytes::from_unchecked(bail!(
                 Message::Subscribe(topics).serialize(),
@@ -112,7 +111,7 @@ impl<Def: RunDef> Inner<Def> {
                 Serialize,
                 "failed to serialize topics"
             ));
-            self.connections.send_to_brokers(&raw_subscribe_message);
+            self.send_to_brokers(&raw_subscribe_message);
         }
 
         // If we have some removals,
@@ -125,7 +124,7 @@ impl<Def: RunDef> Inner<Def> {
             ));
 
             // Send to all brokers
-            self.connections.send_to_brokers(&raw_unsubscribe_message);
+            self.send_to_brokers(&raw_unsubscribe_message);
         }
 
         Ok(())

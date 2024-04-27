@@ -120,15 +120,14 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.connections
-                        .send_direct(user_public_key, raw_message, true);
+                    self.send_direct(user_public_key, raw_message, true);
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &raw_message, true);
+                    self.send_broadcast(topics, &raw_message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.

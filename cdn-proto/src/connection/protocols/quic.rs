@@ -3,7 +3,6 @@
 //! logic.
 
 use std::marker::PhantomData;
-use std::ops::DerefMut;
 use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
@@ -205,7 +204,7 @@ impl<M: Middleware> Connection for QuicConnection<M> {
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Write the message length-delimited
-        write_length_delimited(self.sender.lock().await.deref_mut(), raw_message).await
+        write_length_delimited(&mut *self.sender.lock().await, raw_message).await
     }
 
     /// Receives a single message over the stream and deserializes
@@ -233,7 +232,7 @@ impl<M: Middleware> Connection for QuicConnection<M> {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive the length-delimited message
-        read_length_delimited::<_, M>(self.receiver.lock().await.deref_mut()).await
+        read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
     }
 
     /// Gracefully finish the connection, sending any remaining data.

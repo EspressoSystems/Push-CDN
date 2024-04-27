@@ -92,7 +92,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This is the main loop where we deal with user connectins. On exit, the calling function
     /// should remove the user from the map.
     pub async fn user_receive_loop(
-        &self,
+        self: &Arc<Self>,
         public_key: &UserPublicKey,
         connection: Connection<Def::User>,
     ) -> Result<()> {
@@ -105,15 +105,14 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.connections
-                        .send_direct(user_public_key, raw_message, false);
+                    self.send_direct(user_public_key, raw_message, false);
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &raw_message, false);
+                    self.send_broadcast(topics, &raw_message, false);
                 }
 
                 // Subscribe messages from users will just update the state locally

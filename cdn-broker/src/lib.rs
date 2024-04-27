@@ -29,6 +29,7 @@ use cdn_proto::{
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
+use parking_lot::RwLock;
 use tokio::{select, spawn, sync::Semaphore};
 use tracing::info;
 
@@ -79,7 +80,7 @@ struct Inner<R: RunDef> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<R>>,
+    connections: Arc<RwLock<Connections<R>>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -214,7 +215,7 @@ impl<R: RunDef> Broker<R> {
                 identity: identity.clone(),
                 keypair,
                 broker_auth_lock: Semaphore::const_new(1),
-                connections: Arc::from(Connections::new(identity)),
+                connections: Arc::from(RwLock::from(Connections::new(identity))),
             }),
             metrics_bind_endpoint,
             user_listener,

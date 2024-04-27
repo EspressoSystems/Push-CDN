@@ -4,7 +4,6 @@
 
 use std::marker::PhantomData;
 use std::net::SocketAddr;
-use std::ops::DerefMut;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
@@ -138,7 +137,7 @@ impl<M: Middleware> Connection for TcpConnection<M> {
     /// - If we fail to deliver the message. This usually means a connection problem.
     async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Write the message length-delimited
-        write_length_delimited(self.sender.lock().await.deref_mut(), raw_message).await
+        write_length_delimited(&mut *self.sender.lock().await, raw_message).await
     }
 
     /// Gracefully finish the connection, sending any remaining data.
@@ -172,7 +171,7 @@ impl<M: Middleware> Connection for TcpConnection<M> {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive the length-delimited message
-        read_length_delimited::<_, M>(self.receiver.lock().await.deref_mut()).await
+        read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
     }
 }
 
