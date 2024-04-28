@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cdn_proto::{
-    connection::{Bytes, UserPublicKey, protocols::Connection},
+    connection::{protocols::Connection, Bytes, UserPublicKey},
     def::RunDef,
     error::{Error, Result},
 };

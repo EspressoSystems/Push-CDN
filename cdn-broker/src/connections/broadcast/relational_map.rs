@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
 
 /// A relational, bidirectional multimap that relates keys to a set of values,
 /// and values to a set of keys.
