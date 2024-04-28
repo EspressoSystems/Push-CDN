@@ -120,7 +120,7 @@ impl<R: RunDef> Inner<R> {
             }
         } else {
             // Debug warning if the recipient user did not exist.
-            debug!(id = mnemonic(&user_public_key), "user did not exist in map");
+            warn!(id = mnemonic(&user_public_key), "user did not exist in map");
         }
     }
 

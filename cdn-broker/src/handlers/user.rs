@@ -12,7 +12,7 @@ use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{metrics, Inner};
 
@@ -38,29 +38,6 @@ impl<Def: RunDef> Inner<Def> {
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
 
-        // If we have `strong-consistency` enabled, send partials
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_topic_sync() {
-            tracing::error!("failed to perform partial topic sync: {err}");
-        }
-
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_user_sync() {
-            tracing::error!("failed to perform partial user sync: {err}");
-        }
-
-        // We want to perform a heartbeat for every user connection so that the number
-        // of users connected to brokers is always evenly distributed.
-        #[cfg(feature = "strong-consistency")]
-        {
-            let num_users = self.connections.read().num_users() as u64;
-            let _ = self
-                .discovery_client
-                .clone()
-                .perform_heartbeat(num_users, std::time::Duration::from_secs(60))
-                .await;
-        }
-
         // Increment our metric
         metrics::NUM_USERS_CONNECTED.inc();
 
@@ -81,9 +58,6 @@ impl<Def: RunDef> Inner<Def> {
 
             // Decrement our metric
             metrics::NUM_USERS_CONNECTED.dec();
-
-            // Once the main loop ends, we remove the connection
-            self_.connections.write().remove_user(public_key_);
         })
         .abort_handle();
 
@@ -91,6 +65,29 @@ impl<Def: RunDef> Inner<Def> {
         self.connections
             .write()
             .add_user(&public_key, connection, &topics, receive_handle);
+
+        // If we have `strong-consistency` enabled, send partials
+        #[cfg(feature = "strong-consistency")]
+        if let Err(err) = self.partial_topic_sync() {
+            error!("failed to perform partial topic sync: {err}");
+        }
+
+        #[cfg(feature = "strong-consistency")]
+        if let Err(err) = self.partial_user_sync() {
+            error!("failed to perform partial user sync: {err}");
+        }
+
+        // We want to perform a heartbeat for every user connection so that the number
+        // of users connected to brokers is always evenly distributed.
+        #[cfg(feature = "strong-consistency")]
+        {
+            let num_users = self.connections.read().num_users() as u64;
+            let _ = self
+                .discovery_client
+                .clone()
+                .perform_heartbeat(num_users, std::time::Duration::from_secs(60))
+                .await;
+        }
     }
 
     /// This is the main loop where we deal with user connectins. On exit, the calling function

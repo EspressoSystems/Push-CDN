@@ -43,32 +43,6 @@ impl<Def: RunDef> Inner<Def> {
             authenticate_with_broker!(connection, self)
         };
 
-        // Send a full user sync
-        if let Err(err) = self.full_user_sync(&broker_identifier) {
-            error!("failed to perform full user sync: {err}");
-            self.connections.write().remove_broker(&broker_identifier);
-            return;
-        };
-
-        // Send a full topic sync
-        // TODO: macro removals or something
-        if let Err(err) = self.full_topic_sync(&broker_identifier) {
-            error!("failed to perform full topic sync: {err}");
-            self.connections.write().remove_broker(&broker_identifier);
-            return;
-        };
-
-        // If we have `strong-consistency` enabled, send partials
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_topic_sync() {
-            error!("failed to perform partial topic sync: {err}");
-        }
-
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_user_sync() {
-            error!("failed to perform partial user sync: {err}");
-        }
-
         // Increment our metric
         metrics::NUM_BROKERS_CONNECTED.inc();
 
@@ -92,17 +66,37 @@ impl<Def: RunDef> Inner<Def> {
 
             // Decrement our metric
             metrics::NUM_BROKERS_CONNECTED.dec();
-
-            // Remove from the connected broker identities so that we may
-            // try to reconnect inthe future.
-            self_.connections.write().remove_broker(&broker_identifier_);
         })
         .abort_handle();
 
         // Add to our brokers and remove the old one if it exists
         self.connections
             .write()
-            .add_broker(broker_identifier, connection, receive_handle);
+            .add_broker(broker_identifier.clone(), connection, receive_handle);
+
+        // Send a full user sync
+        if let Err(err) = self.full_user_sync(&broker_identifier) {
+            error!("failed to perform full user sync: {err}");
+            return;
+        };
+
+        // Send a full topic sync
+        // TODO: macro removals or something
+        if let Err(err) = self.full_topic_sync(&broker_identifier) {
+            error!("failed to perform full topic sync: {err}");
+            return;
+        };
+
+        // If we have `strong-consistency` enabled, send partials
+        #[cfg(feature = "strong-consistency")]
+        if let Err(err) = self.partial_topic_sync() {
+            error!("failed to perform partial topic sync: {err}");
+        }
+
+        #[cfg(feature = "strong-consistency")]
+        if let Err(err) = self.partial_user_sync() {
+            error!("failed to perform partial user sync: {err}");
+        }
 
         // Once we have added the broker, drop the authentication guard
         drop(auth_guard);

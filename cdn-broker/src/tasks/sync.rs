@@ -55,7 +55,7 @@ impl<Def: RunDef> Inner<Def> {
     /// # Errors
     /// - If we fail to serialize the message
     pub fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
-        // Get full user sync map
+        // Get partial user sync map
         let partial_sync_map = self.connections.write().get_partial_user_sync();
 
         // Return if we haven't had any changes
