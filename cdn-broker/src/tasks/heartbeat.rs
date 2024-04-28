@@ -9,7 +9,7 @@ use cdn_proto::{
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use tokio::{spawn, time::sleep};
-use tracing::{error, warn};
+use tracing::error;
 
 use crate::Inner;
 
@@ -22,7 +22,7 @@ impl<Def: RunDef> Inner<Def> {
 
         // Run this forever, unless we run into a panic (e.g. the "as" conversion.)
         loop {
-            let num_connections = self.connections.read().num_users() as u64;
+            let num_connections = self.connections.read().await.num_users() as u64;
             // Register with the discovery service every n seconds, updating our number of connected users
             if let Err(err) = discovery_client
                 .perform_heartbeat(num_connections, Duration::from_secs(60))
@@ -37,7 +37,7 @@ impl<Def: RunDef> Inner<Def> {
                 Ok(brokers) => {
                     // Calculate which brokers to connect to by taking the difference
                     let mut brokers_to_connect_to: Vec<BrokerIdentifier> = brokers
-                        .difference(&HashSet::from_iter(self.connections.read().all_brokers()))
+                        .difference(&HashSet::from_iter(self.connections.read().await.all_brokers()))
                         .cloned()
                         .collect();
 
@@ -63,7 +63,7 @@ impl<Def: RunDef> Inner<Def> {
                                 {
                                     Ok(connection) => connection,
                                     Err(err) => {
-                                        warn!("failed to connect to broker: {err}");
+                                        error!("failed to connect to broker: {err}");
                                         return;
                                     }
                                 };

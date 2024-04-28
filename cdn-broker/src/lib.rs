@@ -29,8 +29,10 @@ use cdn_proto::{
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
-use parking_lot::RwLock;
-use tokio::{select, spawn, sync::Semaphore};
+use tokio::{
+    select, spawn,
+    sync::{RwLock, Semaphore},
+};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.

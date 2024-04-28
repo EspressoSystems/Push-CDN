@@ -12,9 +12,9 @@ use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
-use crate::{metrics, Inner};
+use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
@@ -38,50 +38,45 @@ impl<Def: RunDef> Inner<Def> {
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
 
-        // Increment our metric
-        metrics::NUM_USERS_CONNECTED.inc();
-
+        // Clone the necessary data for the broker receive loop
         let self_ = self.clone();
         let public_key_ = public_key.clone();
         let connection_ = connection.clone();
-        let receive_handle = spawn(async move {
-            info!(id = user_identifier, "user connected");
 
+        // Spawn the user receive loop
+        let receive_handle = spawn(async move {
             // If we error, come back to the callback so we can remove the connection from the list.
             if let Err(err) = self_.user_receive_loop(&public_key_, connection_).await {
-                warn!(
-                    id = user_identifier,
-                    error = err.to_string(),
-                    "user disconnected"
-                );
-            };
+                warn!(id = user_identifier, error = err.to_string(), "user error");
 
-            // Decrement our metric
-            metrics::NUM_USERS_CONNECTED.dec();
+                // Remove the user from the map
+                self_.connections.write().await.remove_user(public_key_);
+            };
         })
         .abort_handle();
 
         // Add our user and remove the old one if it exists
         self.connections
             .write()
+            .await
             .add_user(&public_key, connection, &topics, receive_handle);
 
-        // If we have `strong-consistency` enabled, send partials
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_topic_sync() {
-            error!("failed to perform partial topic sync: {err}");
-        }
-
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_user_sync() {
-            error!("failed to perform partial user sync: {err}");
-        }
-
-        // We want to perform a heartbeat for every user connection so that the number
-        // of users connected to brokers is always evenly distributed.
+        // If we have `strong-consistency` enabled,
         #[cfg(feature = "strong-consistency")]
         {
-            let num_users = self.connections.read().num_users() as u64;
+            // Send partial topic data
+            if let Err(err) = self.partial_topic_sync().await {
+                error!("failed to perform partial topic sync: {err}");
+            }
+
+            // Send partial user data
+            if let Err(err) = self.partial_user_sync().await {
+                error!("failed to perform partial user sync: {err}");
+            }
+
+            // We want to perform a heartbeat for every user connection so that the number
+            // of users connected to brokers is usually evenly distributed.
+            let num_users = self.connections.read().await.num_users() as u64;
             let _ = self
                 .discovery_client
                 .clone()
@@ -109,20 +104,24 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.send_direct(user_public_key, raw_message, false);
+                    self.handle_direct_message(user_public_key, raw_message, false)
+                        .await;
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.send_broadcast(topics, &raw_message, false);
+                    self.handle_broadcast_message(topics, &raw_message, false)
+                        .await;
                 }
 
                 // Subscribe messages from users will just update the state locally
                 Message::Subscribe(subscribe) => {
+                    // TODO: add handle functions for this to make it easier to read
                     self.connections
                         .write()
+                        .await
                         .subscribe_user_to(public_key, subscribe);
                 }
 
@@ -130,6 +129,7 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
                         .write()
+                        .await
                         .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 

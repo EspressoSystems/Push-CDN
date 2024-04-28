@@ -39,12 +39,14 @@ impl<Def: RunDef> Inner<Def> {
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
+    /// - If we fail to send the message
+    pub async fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full user sync map
-        let full_sync_map = self.connections.read().get_full_user_sync();
+        let full_sync_map = self.connections.read().await.get_full_user_sync();
 
         // Serialize and send the message to the broker
-        self.send_to_broker(broker, prepare_sync_message!(full_sync_map));
+        self.send_to_broker(broker, prepare_sync_message!(full_sync_map))
+            .await?;
 
         Ok(())
     }
@@ -54,9 +56,9 @@ impl<Def: RunDef> Inner<Def> {
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
+    pub async fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial user sync map
-        let partial_sync_map = self.connections.write().get_partial_user_sync();
+        let partial_sync_map = self.connections.write().await.get_partial_user_sync();
 
         // Return if we haven't had any changes
         if partial_sync_map.underlying_map.is_empty() {
@@ -67,7 +69,7 @@ impl<Def: RunDef> Inner<Def> {
         let raw_message = prepare_sync_message!(partial_sync_map);
 
         // Send it to all brokers
-        self.send_to_brokers(&raw_message);
+        self.spawn_send_to_brokers(&raw_message).await;
 
         Ok(())
     }
@@ -77,9 +79,9 @@ impl<Def: RunDef> Inner<Def> {
     ///
     /// # Errors
     /// - if we fail to serialize the message
-    pub fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
+    pub async fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full list of topics
-        let topics = self.connections.read().get_full_topic_sync();
+        let topics = self.connections.read().await.get_full_topic_sync();
 
         // Serialize and send the message
         self.send_to_broker(
@@ -89,7 +91,8 @@ impl<Def: RunDef> Inner<Def> {
                 Serialize,
                 "failed to serialize topics"
             )),
-        );
+        )
+        .await?;
 
         Ok(())
     }
@@ -99,9 +102,9 @@ impl<Def: RunDef> Inner<Def> {
     ///
     /// # Errors
     /// - If we fail to serialize the message
-    pub fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
+    pub async fn partial_topic_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial list of topics
-        let (additions, removals) = self.connections.write().get_partial_topic_sync();
+        let (additions, removals) = self.connections.write().await.get_partial_topic_sync();
 
         // If we have some additions,
         if !additions.is_empty() {
@@ -111,7 +114,7 @@ impl<Def: RunDef> Inner<Def> {
                 Serialize,
                 "failed to serialize topics"
             ));
-            self.send_to_brokers(&raw_subscribe_message);
+            self.spawn_send_to_brokers(&raw_subscribe_message).await;
         }
 
         // If we have some removals,
@@ -124,7 +127,7 @@ impl<Def: RunDef> Inner<Def> {
             ));
 
             // Send to all brokers
-            self.send_to_brokers(&raw_unsubscribe_message);
+            self.spawn_send_to_brokers(&raw_unsubscribe_message).await;
         }
 
         Ok(())
@@ -135,12 +138,12 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn run_sync_task(self: Arc<Self>) {
         loop {
             // Perform user sync
-            if let Err(err) = self.partial_user_sync() {
+            if let Err(err) = self.partial_user_sync().await {
                 error!("failed to perform partial user sync: {err}");
             }
 
             // Perform topic sync
-            if let Err(err) = self.partial_topic_sync() {
+            if let Err(err) = self.partial_topic_sync().await {
                 error!("failed to perform partial user sync: {err}");
             };
 

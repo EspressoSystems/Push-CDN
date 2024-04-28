@@ -8,16 +8,22 @@ use cdn_proto::{
     def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     message::Topic,
+    mnemonic,
 };
 pub use direct::DirectMap;
 use tokio::task::AbortHandle;
+use tracing::{error, info, warn};
+
+use crate::metrics;
 
 use self::broadcast::BroadcastMap;
 
 mod broadcast;
 mod direct;
-mod logic;
-mod versioned;
+
+mod broker;
+mod user;
+
 pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
@@ -116,6 +122,10 @@ impl<Def: RunDef> Connections<Def> {
         connection: Connection<Def::Broker>,
         handle: AbortHandle,
     ) {
+        // Increment the metric for the number of brokers connected
+        metrics::NUM_BROKERS_CONNECTED.inc();
+        info!(id = %broker_identifier, "broker connected");
+
         // Remove the old broker if it exists
         self.remove_broker(&broker_identifier);
 
@@ -131,6 +141,10 @@ impl<Def: RunDef> Connections<Def> {
         topics: &[Topic],
         handle: AbortHandle,
     ) {
+        // Increment the metric for the number of brokers connected
+        metrics::NUM_USERS_CONNECTED.inc();
+        info!(id = mnemonic(user_public_key), "user connected");
+
         // Remove the old user if it exists
         self.remove_user(user_public_key.clone());
 
@@ -153,6 +167,10 @@ impl<Def: RunDef> Connections<Def> {
     pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier) {
         // Remove from broker list, cancelling the previous task if it exists
         if let Some(previous_handle) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
+            // Decrement the metric for the number of brokers connected
+            metrics::NUM_BROKERS_CONNECTED.dec();
+            error!(id = %broker_identifier, "broker disconnected");
+
             // Cancel the broker's task
             previous_handle.abort();
         };
@@ -171,6 +189,10 @@ impl<Def: RunDef> Connections<Def> {
     pub fn remove_user(&mut self, user_public_key: UserPublicKey) {
         // Remove from user list, returning the previous handle if it exists
         if let Some(previous_handle) = self.users.remove(&user_public_key).map(|(_, h)| h) {
+            // Decrement the metric for the number of users connected
+            metrics::NUM_USERS_CONNECTED.dec();
+            warn!(id = mnemonic(&user_public_key), "user disconnected");
+
             // Cancel the user's task
             previous_handle.abort();
         };
