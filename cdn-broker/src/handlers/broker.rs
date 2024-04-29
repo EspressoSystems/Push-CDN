@@ -11,9 +11,10 @@ use cdn_proto::{
     message::Message,
     verify_broker,
 };
-use tracing::{error, info};
+use tokio::{spawn, sync::Notify};
+use tracing::error;
 
-use crate::{connections::DirectMap, metrics, Inner};
+use crate::{connections::DirectMap, Inner};
 
 impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
@@ -28,7 +29,6 @@ impl<Def: RunDef> Inner<Def> {
             error!("needed semaphore has been closed");
             std::process::exit(-1);
         };
-
         // Depending on which way the direction came in, we will want to authenticate with a different
         // flow.
         let broker_identifier = if is_outbound {
@@ -42,74 +42,87 @@ impl<Def: RunDef> Inner<Def> {
             authenticate_with_broker!(connection, self)
         };
 
-        // If we are already connected, ignore the new connection
-        if self.connections.all_brokers().contains(&broker_identifier) {
-            return;
-        }
+        // Create a notifier for the broker receive loop to wait for
+        let notify_initialized = Arc::new(Notify::new());
+        let wait_initialized = notify_initialized.clone();
 
-        // Add to our brokers and remove the old one if it exists
-        self.connections.remove_broker(&broker_identifier);
-        self.connections
-            .add_broker(broker_identifier.clone(), connection.clone());
+        // Clone the necessary data for the broker receive loop
+        let self_ = self.clone();
+        let broker_identifier_ = broker_identifier.clone();
+        let connection_ = connection.clone();
 
-        // Once we have added the broker, drop the authentication guard
-        drop(auth_guard);
+        // Spawn the broker receive loop
+        let receive_handle = spawn(async move {
+            // Wait for the handler to have finished initialization
+            wait_initialized.notified().await;
+
+            // If we error, come back to the callback so we can remove the connection from the list.
+            if let Err(err) = self_
+                .broker_receive_loop(&broker_identifier_, connection_)
+                .await
+            {
+                error!(
+                    id = %broker_identifier_,
+                    error = err.to_string(),
+                    "broker error"
+                );
+
+                // Remove the broker from the map
+                self_
+                    .connections
+                    .write()
+                    .await
+                    .remove_broker(&broker_identifier_);
+            };
+        })
+        .abort_handle();
+
+        // Add to our broker and remove the old one if it exists
+        self.connections.write().await.add_broker(
+            broker_identifier.clone(),
+            connection,
+            receive_handle,
+        );
 
         // Send a full user sync
-        if let Err(err) = self.full_user_sync(&broker_identifier) {
+        if let Err(err) = self.full_user_sync(&broker_identifier).await {
             error!("failed to perform full user sync: {err}");
-            self.connections.remove_broker(&broker_identifier);
             return;
         };
 
         // Send a full topic sync
-        // TODO: macro removals or something
-        if let Err(err) = self.full_topic_sync(&broker_identifier) {
+        if let Err(err) = self.full_topic_sync(&broker_identifier).await {
             error!("failed to perform full topic sync: {err}");
-            self.connections.remove_broker(&broker_identifier);
             return;
         };
 
         // If we have `strong-consistency` enabled, send partials
         #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_topic_sync() {
-            error!("failed to perform partial topic sync: {err}");
-        }
-
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_user_sync() {
-            error!("failed to perform partial user sync: {err}");
-        }
-
-        info!(id = %broker_identifier, "connected to broker");
-
-        // Increment our metric
-        metrics::NUM_BROKERS_CONNECTED.inc();
-
-        // If we error, come back to the callback so we can remove the connection from the list.
-        if let Err(err) = self
-            .broker_receive_loop(&broker_identifier, connection)
-            .await
         {
-            error!(id = %broker_identifier, "broker disconnected with error: {err}");
-        };
+            if let Err(err) = self.partial_topic_sync().await {
+                error!("failed to perform partial topic sync: {err}");
+            }
+            if let Err(err) = self.partial_user_sync().await {
+                error!("failed to perform partial user sync: {err}");
+            }
+        }
 
-        info!(id = %broker_identifier, "disconnected from broker");
+        // Notify the broker receive loop that we are initialized
+        notify_initialized.notify_one();
 
-        // Decrement our metric
-        metrics::NUM_BROKERS_CONNECTED.dec();
-
-        // Remove from the connected broker identities so that we may
-        // try to reconnect inthe future.
-        self.connections.remove_broker(&broker_identifier);
+        // Once we have added the broker, drop the authentication guard
+        drop(auth_guard);
     }
 
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        receiver: Connection<Def::Broker>,
+        connection: Connection<Def::Broker>,
     ) -> Result<()> {
-        while let Ok(raw_message) = receiver.recv_message_raw().await {
+        loop {
+            // Receive a message from the broker
+            let raw_message = connection.recv_message_raw().await?;
+
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 
@@ -118,26 +131,31 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.connections
-                        .send_direct(user_public_key, raw_message, true);
+                    self.handle_direct_message(user_public_key, raw_message, true)
+                        .await;
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &raw_message, true);
+                    self.handle_broadcast_message(topics, &raw_message, true)
+                        .await;
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
                 Message::Subscribe(subscribe) => {
                     self.connections
+                        .write()
+                        .await
                         .subscribe_broker_to(broker_identifier, subscribe);
                 }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
+                        .write()
+                        .await
                         .unsubscribe_broker_from(broker_identifier, &unsubscribe);
                 }
 
@@ -150,14 +168,12 @@ impl<Def: RunDef> Inner<Def> {
                         "failed to deserialize user sync message"
                     );
 
-                    self.connections.apply_user_sync(user_sync);
+                    self.connections.write().await.apply_user_sync(user_sync);
                 }
 
                 // Do nothing if we receive an unexpected message
                 _ => {}
             }
         }
-
-        Err(Error::Connection("connection closed".to_string()))
     }
 }

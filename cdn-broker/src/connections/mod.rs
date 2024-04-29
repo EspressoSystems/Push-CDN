@@ -1,39 +1,40 @@
 //! This module defines almost all of the connection lookup, addition,
 //! and removal process.
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::{HashMap, HashSet};
 
 use cdn_proto::{
-    connection::{protocols::Connection as _, Bytes, UserPublicKey},
+    connection::UserPublicKey,
     def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
 };
-use dashmap::DashMap;
 pub use direct::DirectMap;
-use parking_lot::RwLock;
-use tokio::spawn;
-use tracing::{debug, error};
+use tokio::task::AbortHandle;
+use tracing::{error, info, warn};
 
-use self::{broadcast::BroadcastMap, versioned::VersionedMap};
+use crate::metrics;
+
+use self::broadcast::BroadcastMap;
 
 mod broadcast;
 mod direct;
-mod versioned;
 
-/// Stores information about all current connections.
+mod broker;
+mod user;
+
 pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us
-    users: DashMap<UserPublicKey, Connection<Def::User>>,
+    users: HashMap<UserPublicKey, (Connection<Def::User>, AbortHandle)>,
     // The current brokers connected to us
-    brokers: DashMap<BrokerIdentifier, Connection<Def::Broker>>,
+    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, AbortHandle)>,
 
     // The versioned vector for looking up where direct messages should go
-    direct_map: RwLock<DirectMap>,
+    direct_map: DirectMap,
     // The map for looking up where broadcast messages should go.
     broadcast_map: BroadcastMap,
 }
@@ -44,35 +45,35 @@ impl<Def: RunDef> Connections<Def> {
     pub fn new(identity: BrokerIdentifier) -> Self {
         Self {
             identity: identity.clone(),
-            users: DashMap::new(),
-            brokers: DashMap::new(),
-            direct_map: RwLock::from(VersionedMap::new(identity)),
+            users: HashMap::new(),
+            brokers: HashMap::new(),
+            direct_map: DirectMap::new(identity),
             broadcast_map: BroadcastMap::new(),
         }
     }
 
     /// Get the number of users connected to us at any given time.
-    pub fn num_users(self: &Arc<Self>) -> usize {
+    pub fn num_users(&self) -> usize {
         self.users.len()
     }
 
     /// Get the full versioned vector map of user -> broker.
     /// We send this to other brokers so they can merge it.
-    pub fn get_full_user_sync(self: &Arc<Self>) -> DirectMap {
-        self.direct_map.read().get_full()
+    pub fn get_full_user_sync(&self) -> DirectMap {
+        self.direct_map.get_full()
     }
 
     /// Get the differences in the versioned vector map of user -> broker
     /// We send this to other brokers so they can merge it.
-    pub fn get_partial_user_sync(self: &Arc<Self>) -> DirectMap {
-        self.direct_map.write().diff()
+    pub fn get_partial_user_sync(&mut self) -> DirectMap {
+        self.direct_map.diff()
     }
 
     /// Apply a received user sync map. Overwrites our values if they are old.
     /// Kicks off users that are now connected elsewhere.
-    pub fn apply_user_sync(self: &Arc<Self>, map: DirectMap) {
+    pub fn apply_user_sync(&mut self, map: DirectMap) {
         // Merge the maps, returning the difference
-        let users_to_remove = self.direct_map.write().merge(map);
+        let users_to_remove = self.direct_map.merge(map);
 
         // We should remove the users that are different, if they exist locally.
         for user in users_to_remove {
@@ -82,20 +83,20 @@ impl<Def: RunDef> Connections<Def> {
 
     /// Get the full list of topics that we are interested in.
     /// We send this to new brokers when they start.
-    pub fn get_full_topic_sync(self: &Arc<Self>) -> Vec<Topic> {
-        self.broadcast_map.users.read().get_values()
+    pub fn get_full_topic_sync(&self) -> Vec<Topic> {
+        self.broadcast_map.users.get_values()
     }
 
     /// Get the partial list of topics that we are interested in. Returns the
     /// additions and removals as a tuple `(a, r)` in that order. We send this
     /// to other brokers whenever there are changes.
-    pub fn get_partial_topic_sync(self: &Arc<Self>) -> (Vec<Topic>, Vec<Topic>) {
+    pub fn get_partial_topic_sync(&mut self) -> (Vec<Topic>, Vec<Topic>) {
         // Lock the maps
-        let mut previous = self.broadcast_map.previous_subscribed_topics.write();
-        let now = HashSet::from_iter(self.broadcast_map.users.read().get_values());
+        let previous = &mut self.broadcast_map.previous_subscribed_topics;
+        let now = HashSet::from_iter(self.broadcast_map.users.get_values());
 
         // Calculate additions and removals
-        let added = now.difference(&previous);
+        let added = now.difference(previous);
         let removed = previous.difference(&now);
 
         // Clone them
@@ -110,250 +111,133 @@ impl<Def: RunDef> Connections<Def> {
 
     /// Get all the brokers we are connected to. We use this to forward
     /// sync messages to all existing brokers.
-    pub fn all_brokers(self: &Arc<Self>) -> Vec<BrokerIdentifier> {
-        self.brokers
-            .clone()
-            .into_read_only()
-            .keys()
-            .cloned()
-            .collect()
+    pub fn all_brokers(&self) -> Vec<BrokerIdentifier> {
+        self.brokers.keys().cloned().collect()
     }
 
     /// Insert a broker with its connection into our map.
     pub fn add_broker(
-        self: &Arc<Self>,
+        &mut self,
         broker_identifier: BrokerIdentifier,
         connection: Connection<Def::Broker>,
+        handle: AbortHandle,
     ) {
-        self.brokers.insert(broker_identifier, connection);
+        // Increment the metric for the number of brokers connected
+        metrics::NUM_BROKERS_CONNECTED.inc();
+        info!(id = %broker_identifier, "broker connected");
+
+        // Remove the old broker if it exists
+        self.remove_broker(&broker_identifier);
+
+        self.brokers.insert(broker_identifier, (connection, handle));
     }
 
     /// Insert a user into our map. Updates the versioned vector that
     /// keeps track of which users are connected where.
     pub fn add_user(
-        self: &Arc<Self>,
-        user_public_key: UserPublicKey,
+        &mut self,
+        user_public_key: &UserPublicKey,
         connection: Connection<Def::User>,
+        topics: &[Topic],
+        handle: AbortHandle,
     ) {
-        // Add to our map
-        self.users.insert(user_public_key.clone(), connection);
+        // Increment the metric for the number of brokers connected
+        metrics::NUM_USERS_CONNECTED.inc();
+        info!(id = mnemonic(user_public_key), "user connected");
+
+        // Remove the old user if it exists
+        self.remove_user(user_public_key.clone());
+
+        // Add to our map. Remove the old one if it exists
+        self.users
+            .insert(user_public_key.clone(), (connection, handle));
 
         // Insert into our direct map
         self.direct_map
-            .write()
-            .insert(user_public_key, self.identity.clone());
+            .insert(user_public_key.clone(), self.identity.clone());
+
+        // Subscribe user to topics
+        self.broadcast_map
+            .users
+            .associate_key_with_values(user_public_key, topics.to_vec());
     }
 
     /// Remove a broker from our map by their identifier. Also removes them
     /// from our broadcast map, in case they were subscribed to any topics.
-    pub fn remove_broker(self: &Arc<Self>, broker_identifier: &BrokerIdentifier) {
-        // Remove from broker list
-        self.brokers.remove(broker_identifier);
+    pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier) {
+        // Remove from broker list, cancelling the previous task if it exists
+        if let Some(previous_handle) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
+            // Decrement the metric for the number of brokers connected
+            metrics::NUM_BROKERS_CONNECTED.dec();
+            error!(id = %broker_identifier, "broker disconnected");
+
+            // Cancel the broker's task
+            previous_handle.abort();
+        };
 
         // Remove from all topics
-        self.broadcast_map
-            .brokers
-            .write()
-            .remove_key(broker_identifier);
+        self.broadcast_map.brokers.remove_key(broker_identifier);
+
+        // TODO: Remove all users from the direct map that are connected to this broker
+        // self.direct_map.remove_by_value_no_modify(broker_identifier);
     }
 
     /// Remove a user from our map by their public key. Also removes them
     /// from our broadcast map, in case they were subscribed to any topics, and
     /// the versioned vector map. This is so other brokers don't keep trying
     /// to send us messages for a disconnected user.
-    pub fn remove_user(self: &Arc<Self>, user_public_key: UserPublicKey) {
-        // Remove from user list
-        self.users.remove(&user_public_key);
+    pub fn remove_user(&mut self, user_public_key: UserPublicKey) {
+        // Remove from user list, returning the previous handle if it exists
+        if let Some(previous_handle) = self.users.remove(&user_public_key).map(|(_, h)| h) {
+            // Decrement the metric for the number of users connected
+            metrics::NUM_USERS_CONNECTED.dec();
+            warn!(id = mnemonic(&user_public_key), "user disconnected");
+
+            // Cancel the user's task
+            previous_handle.abort();
+        };
 
         // Remove from user topics
-        self.broadcast_map
-            .users
-            .write()
-            .remove_key(&user_public_key);
+        self.broadcast_map.users.remove_key(&user_public_key);
 
         // Remove from direct map if they're connected to us
         self.direct_map
-            .write()
             .remove_if_equals(user_public_key, self.identity.clone());
     }
 
     /// Locally subscribe a broker to some topics.
-    pub fn subscribe_broker_to(&self, broker_identifier: &BrokerIdentifier, topics: Vec<Topic>) {
+    pub fn subscribe_broker_to(
+        &mut self,
+        broker_identifier: &BrokerIdentifier,
+        topics: Vec<Topic>,
+    ) {
         self.broadcast_map
             .brokers
-            .write()
             .associate_key_with_values(broker_identifier, topics);
     }
 
     /// Locally subscribe a user to some topics.
-    pub fn subscribe_user_to(&self, user_public_key: &UserPublicKey, topics: Vec<Topic>) {
+    pub fn subscribe_user_to(&mut self, user_public_key: &UserPublicKey, topics: Vec<Topic>) {
         self.broadcast_map
             .users
-            .write()
             .associate_key_with_values(user_public_key, topics);
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub fn unsubscribe_broker_from(&self, broker_identifier: &BrokerIdentifier, topics: &[Topic]) {
+    pub fn unsubscribe_broker_from(
+        &mut self,
+        broker_identifier: &BrokerIdentifier,
+        topics: &[Topic],
+    ) {
         self.broadcast_map
             .brokers
-            .write()
             .dissociate_keys_from_value(broker_identifier, topics);
     }
 
     /// Locally unsubscribe a broker from some topics.
-    pub fn unsubscribe_user_from(&self, user_public_key: &UserPublicKey, topics: &[Topic]) {
+    pub fn unsubscribe_user_from(&mut self, user_public_key: &UserPublicKey, topics: &[Topic]) {
         self.broadcast_map
             .users
-            .write()
             .dissociate_keys_from_value(user_public_key, topics);
-    }
-
-    /// Send a message to all currently connected brokers. On failure,
-    /// the broker will be removed.
-    pub fn send_to_brokers(self: &Arc<Self>, message: &Bytes) {
-        // Get our list of brokers
-        let brokers = self.brokers.clone().into_read_only();
-
-        // For each broker,
-        for connection in brokers.iter() {
-            // Clone things we will need downstream
-            let message = message.clone();
-            let broker_identifier = connection.0.clone();
-            let connection = connection.1.clone();
-            let inner = self.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if let Err(err) = connection.send_message_raw(message).await {
-                    // If we fail, remove the broker from our map.
-                    error!("broker send failed: {err}");
-                    inner.remove_broker(&broker_identifier);
-                };
-            });
-        }
-    }
-
-    /// Send a message to a particular broker. If it fails, remove the broker from our map.
-    pub fn send_to_broker(self: &Arc<Self>, broker_identifier: &BrokerIdentifier, message: Bytes) {
-        // If we are connected to them,
-        if let Some(connection) = self.brokers.get(broker_identifier) {
-            // Clone things we need
-            let connection = connection.clone();
-            let inner = self.clone();
-            let broker_identifier = broker_identifier.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if let Err(err) = connection.send_message_raw(message).await {
-                    // Remove them if we failed to send it
-                    error!("broker send failed: {err}");
-                    inner.remove_broker(&broker_identifier);
-                };
-            });
-        }
-    }
-
-    /// Send a message to a user connected to us.
-    /// If it fails, the user is removed from our map.
-    pub fn send_to_user(self: &Arc<Self>, user_public_key: UserPublicKey, message: Bytes) {
-        // See if the user is connected
-        if let Some(connection) = self.users.get(&user_public_key) {
-            // If they are, clone things we will need
-            let connection = connection.clone();
-            let inner = self.clone();
-
-            // Spawn a task to send the message
-            spawn(async move {
-                if connection.send_message_raw(message).await.is_err() {
-                    // If we fail to send the message, remove the user.
-                    inner.remove_user(user_public_key);
-                };
-            });
-        }
-    }
-
-    /// Send a direct message to either a user or a broker. First figures out where the message
-    /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
-    /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub fn send_direct(
-        self: &Arc<Self>,
-        user_public_key: UserPublicKey,
-        message: Bytes,
-        to_user_only: bool,
-    ) {
-        // Look up from our map
-        if let Some(broker_identifier) = self.direct_map.read().get(&user_public_key) {
-            if *broker_identifier == self.identity {
-                // We own the user, send it this way
-                debug!(
-                    user = mnemonic(&user_public_key),
-                    msg = mnemonic(&*message),
-                    "direct",
-                );
-                self.send_to_user(user_public_key, message);
-            } else {
-                // If we don't have the stipulation to send it to ourselves only
-                // This is so we don't thrash between brokers
-                if !to_user_only {
-                    debug!(
-                        broker = %broker_identifier,
-                        msg = mnemonic(&*message),
-                        "direct",
-                    );
-                    // Send to the broker responsible
-                    self.send_to_broker(broker_identifier, message);
-                }
-            }
-        } else {
-            // Debug warning if the recipient user did not exist.
-            debug!(id = mnemonic(&user_public_key), "user did not exist in map");
-        }
-    }
-
-    /// Send a broadcast message to both users and brokers. First figures out where the message
-    /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
-    /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub fn send_broadcast(
-        self: &Arc<Self>,
-        mut topics: Vec<Topic>,
-        message: &Bytes,
-        to_users_only: bool,
-    ) {
-        // Deduplicate topics
-        topics.dedup();
-
-        // Aggregate recipients
-        let mut broker_recipients = HashSet::new();
-        let mut user_recipients = HashSet::new();
-
-        for topic in topics {
-            // If we can send to brokers, we should do it
-            if !to_users_only {
-                broker_recipients
-                    .extend(self.broadcast_map.brokers.read().get_keys_by_value(&topic));
-            }
-            user_recipients.extend(self.broadcast_map.users.read().get_keys_by_value(&topic));
-        }
-
-        debug!(
-            num_brokers = broker_recipients.len(),
-            num_users = user_recipients.len(),
-            msg = mnemonic(&**message),
-            "broadcast",
-        );
-
-        // If we can send to brokers, do so
-        if !to_users_only {
-            // Send to all brokers
-            for broker in broker_recipients {
-                self.send_to_broker(&broker, message.clone());
-            }
-        }
-
-        // Send to all aggregated users
-        for user in user_recipients {
-            self.send_to_user(user, message.clone());
-        }
     }
 }

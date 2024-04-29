@@ -10,10 +10,11 @@ use cdn_proto::def::{Connection, RunDef};
 use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
+use tokio::spawn;
 use tokio::time::timeout;
-use tracing::info;
+use tracing::{error, warn};
 
-use crate::{metrics, Inner};
+use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
@@ -36,61 +37,65 @@ impl<Def: RunDef> Inner<Def> {
         // Create a human-readable user identifier (by public key)
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
-        info!(id = user_identifier, "user connected");
+
+        // Clone the necessary data for the broker receive loop
+        let self_ = self.clone();
+        let public_key_ = public_key.clone();
+        let connection_ = connection.clone();
+
+        // Spawn the user receive loop
+        let receive_handle = spawn(async move {
+            // If we error, come back to the callback so we can remove the connection from the list.
+            if let Err(err) = self_.user_receive_loop(&public_key_, connection_).await {
+                warn!(id = user_identifier, error = err.to_string(), "user error");
+
+                // Remove the user from the map
+                self_.connections.write().await.remove_user(public_key_);
+            };
+        })
+        .abort_handle();
 
         // Add our user and remove the old one if it exists
         self.connections
-            .add_user(public_key.clone(), connection.clone());
+            .write()
+            .await
+            .add_user(&public_key, connection, &topics, receive_handle);
 
-        // Subscribe our user to their connections
-        self.connections.subscribe_user_to(&public_key, topics);
-
-        // If we have `strong-consistency` enabled, send partials
+        // If we have `strong-consistency` enabled,
         #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_topic_sync() {
-            tracing::error!("failed to perform partial topic sync: {err}");
+        {
+            // Send partial topic data
+            if let Err(err) = self.partial_topic_sync().await {
+                error!("failed to perform partial topic sync: {err}");
+            }
+
+            // Send partial user data
+            if let Err(err) = self.partial_user_sync().await {
+                error!("failed to perform partial user sync: {err}");
+            }
+
+            // We want to perform a heartbeat for every user connection so that the number
+            // of users connected to brokers is usually evenly distributed.
+            let num_users = self.connections.read().await.num_users() as u64;
+            let _ = self
+                .discovery_client
+                .clone()
+                .perform_heartbeat(num_users, std::time::Duration::from_secs(60))
+                .await;
         }
-
-        #[cfg(feature = "strong-consistency")]
-        if let Err(err) = self.partial_user_sync() {
-            tracing::error!("failed to perform partial user sync: {err}");
-        }
-
-        // We want to perform a heartbeat for every user connection so that the number
-        // of users connected to brokers is always evenly distributed.
-        #[cfg(feature = "strong-consistency")]
-        let _ = self
-            .discovery_client
-            .clone()
-            .perform_heartbeat(
-                self.connections.num_users() as u64,
-                std::time::Duration::from_secs(60),
-            )
-            .await;
-
-        // Increment our metric
-        metrics::NUM_USERS_CONNECTED.inc();
-
-        // This runs the main loop for receiving information from the user
-        let _ = self.user_receive_loop(&public_key, connection).await;
-
-        info!(id = user_identifier, "user disconnected");
-
-        // Decrement our metric
-        metrics::NUM_USERS_CONNECTED.dec();
-
-        // Once the main loop ends, we remove the connection
-        self.connections.remove_user(public_key);
     }
 
     /// This is the main loop where we deal with user connectins. On exit, the calling function
     /// should remove the user from the map.
     pub async fn user_receive_loop(
-        &self,
+        self: &Arc<Self>,
         public_key: &UserPublicKey,
         connection: Connection<Def::User>,
     ) -> Result<()> {
-        while let Ok(raw_message) = connection.recv_message_raw().await {
+        loop {
+            // Receive a message from the user
+            let raw_message = connection.recv_message_raw().await?;
+
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 
@@ -99,31 +104,37 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.connections
-                        .send_direct(user_public_key, raw_message, false);
+                    self.handle_direct_message(user_public_key, raw_message, false)
+                        .await;
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.connections.send_broadcast(topics, &raw_message, false);
+                    self.handle_broadcast_message(topics, &raw_message, false)
+                        .await;
                 }
 
                 // Subscribe messages from users will just update the state locally
                 Message::Subscribe(subscribe) => {
-                    self.connections.subscribe_user_to(public_key, subscribe);
+                    // TODO: add handle functions for this to make it easier to read
+                    self.connections
+                        .write()
+                        .await
+                        .subscribe_user_to(public_key, subscribe);
                 }
 
                 // Unsubscribe messages from users will just update the state locally
                 Message::Unsubscribe(unsubscribe) => {
                     self.connections
+                        .write()
+                        .await
                         .unsubscribe_user_from(public_key, &unsubscribe);
                 }
 
-                _ => return Err(Error::Connection("connection closed".to_string())),
+                _ => return Err(Error::Connection("invalid message received".to_string())),
             }
         }
-        Err(Error::Connection("connection closed".to_string()))
     }
 }

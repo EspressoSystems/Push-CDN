@@ -112,7 +112,7 @@ impl Clone for MockConnection {
 
 /// Read a length-delimited (serialized) message from a stream.
 /// Has a bounds check for if the message is too big
-async fn read_length_delimited<R: AsyncReadExt + Unpin, M: Middleware>(
+async fn read_length_delimited<R: AsyncReadExt + Unpin + Send, M: Middleware>(
     mut stream: R,
 ) -> Result<Bytes> {
     // Read the message size from the stream
@@ -155,12 +155,16 @@ async fn read_length_delimited<R: AsyncReadExt + Unpin, M: Middleware>(
 }
 
 /// Write a length-delimited (serialized) message to a stream.
-async fn write_length_delimited<W: AsyncWriteExt + Unpin>(
+async fn write_length_delimited<W: AsyncWriteExt + Unpin + Send>(
     mut stream: W,
     message: Bytes,
 ) -> Result<()> {
     // Get the length of the message
-    let message_len = message.len() as u32;
+    let message_len = bail!(
+        u32::try_from(message.len()),
+        Connection,
+        "message was too large"
+    );
 
     // Write the message size to the stream
     bail!(

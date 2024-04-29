@@ -151,7 +151,7 @@ impl TestDefinition {
     /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`
     async fn inject_users(
         broker_under_test: &Broker<TestingRunDef>,
-        users: Vec<Vec<Topic>>,
+        users: &[Vec<Topic>],
     ) -> Vec<InjectedActor> {
         // Return this at the end, our running list of users
         let mut injected_users: Vec<InjectedActor> = Vec::new();
@@ -172,19 +172,20 @@ impl TestDefinition {
                 receiver: connection2.clone(),
             };
 
-            // Inject our user into the connections
-            broker_under_test
-                .inner
-                .connections
-                .add_user(identifier.clone(), connection2);
-
             // Spawn our user receiver in the broker under test
             let inner = broker_under_test.inner.clone();
-            spawn(async move { inner.user_receive_loop(&identifier, connection1).await });
+            let identifier_ = identifier.clone();
+            let receive_handle =
+                spawn(async move { inner.user_receive_loop(&identifier_, connection1).await })
+                    .abort_handle();
 
-            // Create and send subscription messages to the broker under test
-            let subscribe_message = Message::Subscribe(topics.clone());
-            send_message_as!(injected_user, subscribe_message);
+            // Inject our user into the connections
+            broker_under_test.inner.connections.write().await.add_user(
+                &identifier,
+                connection2,
+                topics,
+                receive_handle,
+            );
 
             // Add to our running total
             injected_users.push(injected_user);
@@ -223,21 +224,24 @@ impl TestDefinition {
                 receiver: connection2.clone(),
             };
 
-            // Inject our broker into the connections
-            broker_under_test
-                .inner
-                .connections
-                .add_broker(identifier.clone(), connection2);
-
             // Spawn our receiver in the broker under test
             let inner = broker_under_test.inner.clone();
             let identifier_ = identifier.clone();
-            spawn(async move {
+            let receive_handle = spawn(async move {
                 inner
                     .broker_receive_loop(&identifier_, connection1)
                     .await
                     .unwrap();
-            });
+            })
+            .abort_handle();
+
+            // Inject our broker into the connections
+            broker_under_test
+                .inner
+                .connections
+                .write()
+                .await
+                .add_broker(identifier.clone(), connection2, receive_handle);
 
             // Send our subscriptions to it
             let subscribe_message = Message::Subscribe(broker.1.clone());
@@ -282,7 +286,7 @@ impl TestDefinition {
             Self::inject_brokers(&broker_under_test, self.connected_brokers).await;
 
         // Inject our users
-        run.connected_users = Self::inject_users(&broker_under_test, self.connected_users).await;
+        run.connected_users = Self::inject_users(&broker_under_test, &self.connected_users).await;
 
         // Return our injected brokers and users
         run

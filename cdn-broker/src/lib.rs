@@ -29,7 +29,10 @@ use cdn_proto::{
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
-use tokio::{select, spawn, sync::Semaphore};
+use tokio::{
+    select, spawn,
+    sync::{RwLock, Semaphore},
+};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
@@ -79,7 +82,7 @@ struct Inner<R: RunDef> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<Connections<R>>,
+    connections: Arc<RwLock<Connections<R>>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -214,7 +217,7 @@ impl<R: RunDef> Broker<R> {
                 identity: identity.clone(),
                 keypair,
                 broker_auth_lock: Semaphore::const_new(1),
-                connections: Arc::from(Connections::new(identity)),
+                connections: Arc::from(RwLock::from(Connections::new(identity))),
             }),
             metrics_bind_endpoint,
             user_listener,
@@ -234,7 +237,6 @@ impl<R: RunDef> Broker<R> {
     pub async fn start(self) -> Result<()> {
         // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
-        // let heartbeat_task = ;
         let heartbeat_task = spawn(self.inner.clone().run_heartbeat_task());
 
         // Spawn the sync task, which updates other brokers with our keys periodically.
