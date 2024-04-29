@@ -77,7 +77,7 @@ impl<Def: RunDef> Connections<Def> {
 
         // We should remove the users that are different, if they exist locally.
         for user in users_to_remove {
-            self.remove_user(user);
+            self.remove_user(user, "user connected elsewhere");
         }
     }
 
@@ -127,7 +127,7 @@ impl<Def: RunDef> Connections<Def> {
         info!(id = %broker_identifier, "broker connected");
 
         // Remove the old broker if it exists
-        self.remove_broker(&broker_identifier);
+        self.remove_broker(&broker_identifier, "already existed");
 
         self.brokers.insert(broker_identifier, (connection, handle));
     }
@@ -146,7 +146,7 @@ impl<Def: RunDef> Connections<Def> {
         info!(id = mnemonic(user_public_key), "user connected");
 
         // Remove the old user if it exists
-        self.remove_user(user_public_key.clone());
+        self.remove_user(user_public_key.clone(), "already existed");
 
         // Add to our map. Remove the old one if it exists
         self.users
@@ -164,12 +164,12 @@ impl<Def: RunDef> Connections<Def> {
 
     /// Remove a broker from our map by their identifier. Also removes them
     /// from our broadcast map, in case they were subscribed to any topics.
-    pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier) {
+    pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier, reason: &str) {
         // Remove from broker list, cancelling the previous task if it exists
         if let Some(previous_handle) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
             // Decrement the metric for the number of brokers connected
             metrics::NUM_BROKERS_CONNECTED.dec();
-            error!(id = %broker_identifier, "broker disconnected");
+            error!(id = %broker_identifier, reason = reason, "broker disconnected");
 
             // Cancel the broker's task
             previous_handle.abort();
@@ -186,12 +186,16 @@ impl<Def: RunDef> Connections<Def> {
     /// from our broadcast map, in case they were subscribed to any topics, and
     /// the versioned vector map. This is so other brokers don't keep trying
     /// to send us messages for a disconnected user.
-    pub fn remove_user(&mut self, user_public_key: UserPublicKey) {
+    pub fn remove_user(&mut self, user_public_key: UserPublicKey, reason: &str) {
         // Remove from user list, returning the previous handle if it exists
         if let Some(previous_handle) = self.users.remove(&user_public_key).map(|(_, h)| h) {
             // Decrement the metric for the number of users connected
             metrics::NUM_USERS_CONNECTED.dec();
-            warn!(id = mnemonic(&user_public_key), "user disconnected");
+            warn!(
+                id = mnemonic(&user_public_key),
+                reason = reason,
+                "user disconnected"
+            );
 
             // Cancel the user's task
             previous_handle.abort();

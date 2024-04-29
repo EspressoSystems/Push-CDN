@@ -28,7 +28,10 @@ impl<R: RunDef> Inner<R> {
                 if let Err(err) = connection.send_message_raw(message).await {
                     // If we fail, remove the broker from our map.
                     error!("failed to send message to broker: {err}");
-                    connections.write().await.remove_broker(&broker_identifier);
+                    connections
+                        .write()
+                        .await
+                        .remove_broker(&broker_identifier, "failed to send message");
                 };
             });
         }
@@ -51,7 +54,7 @@ impl<R: RunDef> Inner<R> {
                 self.connections
                     .write()
                     .await
-                    .remove_broker(broker_identifier);
+                    .remove_broker(broker_identifier, "failed to send message");
 
                 // Return an error
                 return Err(Error::Connection(
@@ -63,7 +66,7 @@ impl<R: RunDef> Inner<R> {
             self.connections
                 .write()
                 .await
-                .remove_broker(broker_identifier);
+                .remove_broker(broker_identifier, "not connected");
 
             // Return an error
             return Err(Error::Connection(

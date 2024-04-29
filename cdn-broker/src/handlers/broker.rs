@@ -72,7 +72,7 @@ impl<Def: RunDef> Inner<Def> {
                     .connections
                     .write()
                     .await
-                    .remove_broker(&broker_identifier_);
+                    .remove_broker(&broker_identifier_, "failed to receive message");
             };
         })
         .abort_handle();
@@ -83,6 +83,9 @@ impl<Def: RunDef> Inner<Def> {
             connection,
             receive_handle,
         );
+
+        // Notify the broker receive loop that we are initialized
+        notify_initialized.notify_one();
 
         // Send a full user sync
         if let Err(err) = self.full_user_sync(&broker_identifier).await {
@@ -106,9 +109,6 @@ impl<Def: RunDef> Inner<Def> {
                 error!("failed to perform partial user sync: {err}");
             }
         }
-
-        // Notify the broker receive loop that we are initialized
-        notify_initialized.notify_one();
 
         // Once we have added the broker, drop the authentication guard
         drop(auth_guard);

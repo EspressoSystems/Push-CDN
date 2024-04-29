@@ -11,6 +11,7 @@ use cdn_proto::discovery::DiscoveryClient;
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tracing::{error, warn};
 
@@ -38,6 +39,10 @@ impl<Def: RunDef> Inner<Def> {
         let public_key = UserPublicKey::from(public_key);
         let user_identifier = mnemonic(&public_key);
 
+        // Create a notifier for the user receive loop to wait for
+        let notify_initialized = Arc::new(Notify::new());
+        let wait_initialized = notify_initialized.clone();
+
         // Clone the necessary data for the broker receive loop
         let self_ = self.clone();
         let public_key_ = public_key.clone();
@@ -45,12 +50,19 @@ impl<Def: RunDef> Inner<Def> {
 
         // Spawn the user receive loop
         let receive_handle = spawn(async move {
+            // Wait for the handler to have finished initialization
+            wait_initialized.notified().await;
+
             // If we error, come back to the callback so we can remove the connection from the list.
             if let Err(err) = self_.user_receive_loop(&public_key_, connection_).await {
                 warn!(id = user_identifier, error = err.to_string(), "user error");
 
                 // Remove the user from the map
-                self_.connections.write().await.remove_user(public_key_);
+                self_
+                    .connections
+                    .write()
+                    .await
+                    .remove_user(public_key_, "failed to receive message");
             };
         })
         .abort_handle();
@@ -60,6 +72,9 @@ impl<Def: RunDef> Inner<Def> {
             .write()
             .await
             .add_user(&public_key, connection, &topics, receive_handle);
+
+        // Notify the user receive loop that we are initialized
+        notify_initialized.notify_one();
 
         // If we have `strong-consistency` enabled,
         #[cfg(feature = "strong-consistency")]

@@ -28,7 +28,10 @@ impl<Def: RunDef> Inner<Def> {
             if let Err(err) = connection.send_message_raw(message).await {
                 // If we fail to send the message, remove the user.
                 warn!("failed to send message to user: {err}");
-                connections.write().await.remove_user(user_public_key);
+                connections
+                    .write()
+                    .await
+                    .remove_user(user_public_key, "failed to send message");
 
                 // Return an error
                 return Err(Error::Connection(
@@ -37,7 +40,10 @@ impl<Def: RunDef> Inner<Def> {
             };
         } else {
             // Remove the user if they are not connected
-            self.connections.write().await.remove_user(user_public_key);
+            self.connections
+                .write()
+                .await
+                .remove_user(user_public_key, "not connected");
 
             // Return an error
             return Err(Error::Connection(
