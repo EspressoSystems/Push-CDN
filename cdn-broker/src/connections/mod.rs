@@ -178,8 +178,8 @@ impl<Def: RunDef> Connections<Def> {
         // Remove from all topics
         self.broadcast_map.brokers.remove_key(broker_identifier);
 
-        // Remove all users from the direct map that are connected to this broker
-        self.direct_map.remove_by_value_no_modify(broker_identifier);
+        // TODO: Remove all users from the direct map that are connected to this broker
+        // self.direct_map.remove_by_value_no_modify(broker_identifier);
     }
 
     /// Remove a user from our map by their public key. Also removes them
