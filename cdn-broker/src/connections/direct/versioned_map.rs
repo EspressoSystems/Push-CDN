@@ -125,8 +125,9 @@ impl<
     }
 
     /// Remove all entries from the map where the value equals `V`.
+    /// Does not count as a local modification.
     /// TODO: see if we can remove some `.clone()`s here.
-    pub fn remove_by_value(&mut self, v: &V) {
+    pub fn remove_by_value_no_modify(&mut self, v: &V) {
         // Get all the keys that have the value we want to purge
         let keys: Vec<K> = self
             .underlying_map
@@ -137,7 +138,7 @@ impl<
 
         // Remove all associated keys
         for key in keys {
-            self.remove(key);
+            self.underlying_map.remove(&key);
         }
     }
 
@@ -343,7 +344,7 @@ pub mod tests {
         assert!(map.get(&"user2") == Some(&"broker1"));
 
         // Purge all values that are "broker0"
-        map.remove_by_value(&"broker0");
+        map.remove_by_value_no_modify(&"broker0");
 
         // Expect user0 and user1 to be gone
         assert!(map.get(&"user0").is_none());
@@ -351,5 +352,9 @@ pub mod tests {
 
         // Expect user2 to still be present
         assert!(map.get(&"user2") == Some(&"broker1"));
+
+        // Test that the removes didn't count as local modifications
+        let diff = map.diff();
+        assert!(diff.underlying_map.len() == 1);
     }
 }
