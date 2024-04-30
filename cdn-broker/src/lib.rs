@@ -29,10 +29,7 @@ use cdn_proto::{
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
-use tokio::{
-    select, spawn,
-    sync::{RwLock, Semaphore},
-};
+use tokio::{select, spawn, sync::RwLock};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
@@ -75,10 +72,6 @@ struct Inner<R: RunDef> {
 
     /// The underlying (public) verification key, used to authenticate with other brokers.
     keypair: KeyPair<Scheme<R::Broker>>,
-
-    /// A lock on authentication so we don't thrash when authenticating with brokers.
-    /// Only lets us authenticate to one broker at a time.
-    broker_auth_lock: Semaphore,
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
@@ -216,7 +209,6 @@ impl<R: RunDef> Broker<R> {
                 discovery_client,
                 identity: identity.clone(),
                 keypair,
-                broker_auth_lock: Semaphore::const_new(1),
                 connections: Arc::from(RwLock::from(Connections::new(identity))),
             }),
             metrics_bind_endpoint,

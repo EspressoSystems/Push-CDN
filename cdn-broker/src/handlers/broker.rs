@@ -23,12 +23,6 @@ impl<Def: RunDef> Inner<Def> {
         mut connection: Connection<Def::Broker>,
         is_outbound: bool,
     ) {
-        // Acquire a permit to authenticate with a broker. Removes the possibility for race
-        // conditions when doing so.
-        let Ok(auth_guard) = self.broker_auth_lock.acquire().await else {
-            error!("needed semaphore has been closed");
-            std::process::exit(-1);
-        };
         // Depending on which way the direction came in, we will want to authenticate with a different
         // flow.
         let broker_identifier = if is_outbound {
@@ -109,9 +103,6 @@ impl<Def: RunDef> Inner<Def> {
                 error!("failed to perform partial user sync: {err}");
             }
         }
-
-        // Once we have added the broker, drop the authentication guard
-        drop(auth_guard);
     }
 
     pub async fn broker_receive_loop(

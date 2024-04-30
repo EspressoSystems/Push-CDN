@@ -36,10 +36,12 @@ impl<Def: RunDef> Inner<Def> {
             match discovery_client.get_other_brokers().await {
                 Ok(brokers) => {
                     // Calculate which brokers to connect to by taking the difference
+                    // Only connect to brokers with a larger identifier
                     let mut brokers_to_connect_to: Vec<BrokerIdentifier> = brokers
                         .difference(&HashSet::from_iter(
                             self.connections.read().await.all_brokers(),
                         ))
+                        .filter(|broker| broker >= &&self.identity)
                         .cloned()
                         .collect();
 
