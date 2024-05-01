@@ -18,14 +18,19 @@ impl<Def: RunDef> Inner<Def> {
         user_public_key: UserPublicKey,
         message: Bytes,
     ) -> Result<()> {
+        // Acquire the read guard for connections
+        let connections_read_guard = self.connections.read().await;
         // See if the user is connected
-        if let Some((connection, _)) = self.connections.read().await.users.get(&user_public_key) {
+        if let Some((connection, _)) = connections_read_guard.users.get(&user_public_key) {
             // If they are, clone things we will need
             let connection = connection.clone();
             let connections = self.connections.clone();
 
             // Send the message
             if let Err(err) = connection.send_message_raw(message).await {
+                // Drop the read guard
+                drop(connections_read_guard);
+
                 // If we fail to send the message, remove the user.
                 warn!("failed to send message to user: {err}");
                 connections
@@ -39,6 +44,9 @@ impl<Def: RunDef> Inner<Def> {
                 ));
             };
         } else {
+            // Drop the read guard
+            drop(connections_read_guard);
+
             // Remove the user if they are not connected
             self.connections
                 .write()

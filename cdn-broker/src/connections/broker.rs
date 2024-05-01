@@ -44,13 +44,17 @@ impl<R: RunDef> Inner<R> {
         broker_identifier: &BrokerIdentifier,
         message: Bytes,
     ) -> Result<()> {
+        let connections_read_guard = self.connections.read().await;
         // If we are connected to them,
-        if let Some((connection, _)) = self.connections.read().await.brokers.get(broker_identifier)
-        {
+        if let Some((connection, _)) = connections_read_guard.brokers.get(broker_identifier) {
             // Send the message
             if let Err(err) = connection.send_message_raw(message).await {
                 // Remove them if we failed to send it
                 error!("failed to send message to broker: {err}");
+
+                // Drop the read guard before acquiring the write lock
+                drop(connections_read_guard);
+
                 self.connections
                     .write()
                     .await
@@ -62,6 +66,9 @@ impl<R: RunDef> Inner<R> {
                 ));
             };
         } else {
+            // Drop the read guard before acquiring the write lock
+            drop(connections_read_guard);
+
             // Remove the broker if they are not connected
             self.connections
                 .write()
