@@ -36,7 +36,7 @@ processes:
   #     --private-advertise-endpoint local_ip:1743
 
   # bad_broker:
-  #   command: cargo run --bin bad-broker -d "redis://:changeme!@localhost:6379"
+  #   command: cargo run --bin bad-broker -- -d "redis://:changeme!@localhost:6379"
 
   # bad_connector:
   #   command: cargo run --bin bad-connector -- -m "127.0.0.1:1737"
