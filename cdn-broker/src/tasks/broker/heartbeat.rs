@@ -95,10 +95,10 @@ impl<Def: RunDef> Inner<Def> {
 
                     inner.handle_broker_connection(connection, true).await;
                 });
-
-                // Sleep for 10 seconds
-                sleep(Duration::from_secs(10)).await;
             }
+
+            // Sleep for 10 seconds
+            sleep(Duration::from_secs(10)).await;
         }
     }
 }
