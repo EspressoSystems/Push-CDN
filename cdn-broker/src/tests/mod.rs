@@ -149,7 +149,7 @@ impl TestDefinition {
     /// and adds the user to the internal state.
     ///
     /// Then, it sends subscription messages to the broker for the topics described in `TestDefinition`
-    async fn inject_users(
+    fn inject_users(
         broker_under_test: &Broker<TestingRunDef>,
         users: &[Vec<Topic>],
     ) -> Vec<InjectedActor> {
@@ -285,7 +285,7 @@ impl TestDefinition {
             Self::inject_brokers(&broker_under_test, self.connected_brokers).await;
 
         // Inject our users
-        run.connected_users = Self::inject_users(&broker_under_test, &self.connected_users).await;
+        run.connected_users = Self::inject_users(&broker_under_test, &self.connected_users);
 
         // Return our injected brokers and users
         run

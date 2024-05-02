@@ -25,10 +25,10 @@ pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
-    // The current users connected to us
-    users: HashMap<UserPublicKey, (Connection<Def::User>, Vec<AbortHandle>)>,
-    // The current brokers connected to us
-    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, Vec<AbortHandle>)>,
+    // The current users connected to us, along with their running tasks
+    users: HashMap<UserPublicKey, (Connection<Def::User>, HashMap<u128, AbortHandle>)>,
+    // The current brokers connected to us, along with their running tasks
+    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, HashMap<u128, AbortHandle>)>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: DirectMap,
@@ -72,29 +72,51 @@ impl<Def: RunDef> Connections<Def> {
         self.brokers.keys().cloned().collect()
     }
 
-    /// Add a task to the list of tasks for a broker. This is used to
-    /// cancel the task if the broker disconnects.
-    /// TODO: macro this?
-    pub fn add_broker_task(&mut self, broker_identifier: &BrokerIdentifier, handle: AbortHandle) {
+    /// Add a task to the list of tasks for a broker along with a unique ID
+    /// This is used to cancel the task if the broker disconnects.
+    pub fn add_broker_task(
+        &mut self,
+        broker_identifier: &BrokerIdentifier,
+        id: u128,
+        handle: AbortHandle,
+    ) {
         if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
-            // If the broker exists, add the handle to the list of tasks
-            handles.push(handle);
+            // If the broker exists, add the handle to the map of tasks
+            handles.insert(id, handle);
         } else {
             // Otherwise, cancel the task
             handle.abort();
         }
     }
 
-    /// Add a task to the list of tasks for a user. This is used to
-    /// cancel the task if the user disconnects.
+    /// Add a task to the list of tasks for a user along with a unique ID
+    /// This is used to cancel the task if the user disconnects.
     /// TODO: macro this?
-    pub fn add_user_task(&mut self, user: &UserPublicKey, handle: AbortHandle) {
+    pub fn add_user_task(&mut self, user: &UserPublicKey, id: u128, handle: AbortHandle) {
         if let Some((_, handles)) = self.users.get_mut(user) {
-            // If the user exists, add the handle to the list of tasks
-            handles.push(handle);
+            // If the user exists, add the handle to the map of tasks
+            handles.insert(id, handle);
         } else {
             // Otherwise, cancel the task
             handle.abort();
+        }
+    }
+
+    /// Remove a task from the list of tasks for a broker.
+    /// Does not abort the task.
+    pub fn remove_broker_task(&mut self, broker_identifier: &BrokerIdentifier, id: u128) {
+        if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
+            // If the broker exists, remove the handle from the map of tasks
+            handles.remove(&id);
+        }
+    }
+
+    /// Remove a task from the list of tasks for a user.
+    /// Does not abort the task.
+    pub fn remove_user_task(&mut self, user: &UserPublicKey, id: u128) {
+        if let Some((_, handles)) = self.users.get_mut(user) {
+            // If the broker exists, remove the handle from the map of tasks
+            handles.remove(&id);
         }
     }
 
@@ -208,8 +230,10 @@ impl<Def: RunDef> Connections<Def> {
         // Remove the old broker if it exists
         self.remove_broker(&broker_identifier, "already existed");
 
-        self.brokers
-            .insert(broker_identifier, (connection, vec![handle]));
+        self.brokers.insert(
+            broker_identifier,
+            (connection, HashMap::from([(0, handle)])),
+        );
     }
 
     /// Insert a user into our map. Updates the versioned vector that
@@ -229,8 +253,10 @@ impl<Def: RunDef> Connections<Def> {
         self.remove_user(user_public_key.clone(), "already existed");
 
         // Add to our map. Remove the old one if it exists
-        self.users
-            .insert(user_public_key.clone(), (connection, vec![handle]));
+        self.users.insert(
+            user_public_key.clone(),
+            (connection, HashMap::from([(0, handle)])),
+        );
 
         // Insert into our direct map
         self.direct_map
@@ -252,7 +278,7 @@ impl<Def: RunDef> Connections<Def> {
             error!(id = %broker_identifier, reason = reason, "broker disconnected");
 
             // Cancel all tasks
-            for handle in task_handles {
+            for (_, handle) in task_handles {
                 handle.abort();
             }
         };
@@ -280,7 +306,7 @@ impl<Def: RunDef> Connections<Def> {
             );
 
             // Cancel all tasks
-            for handle in task_handles {
+            for (_, handle) in task_handles {
                 handle.abort();
             }
         };
