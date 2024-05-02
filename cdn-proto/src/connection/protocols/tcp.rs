@@ -4,12 +4,14 @@
 
 use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
 use rustls::{Certificate, PrivateKey};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpSocket, TcpStream},
@@ -70,9 +72,13 @@ impl<M: Middleware> Protocol<M> for Tcp {
 
         // Connect the stream to the local socket
         let stream = bail!(
-            socket.connect(remote_endpoint).await,
+            bail!(
+                timeout(Duration::from_secs(5), socket.connect(remote_endpoint)).await,
+                Connection,
+                "timed out connecting to tcp endpoint"
+            ),
             Connection,
-            "failed tcp connect to remote endpoint"
+            "failed to connect to tcp endpoint"
         );
 
         // Split the connection and create our wrapper

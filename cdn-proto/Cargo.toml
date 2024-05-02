@@ -64,4 +64,3 @@ rkyv.workspace = true
 mnemonic = "1"
 rcgen.workspace = true
 derivative.workspace = true
-parking_lot.workspace = true

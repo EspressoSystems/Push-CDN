@@ -2,19 +2,9 @@
 
 mod relational_map;
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
-use cdn_proto::{
-    connection::{Bytes, UserPublicKey},
-    def::RunDef,
-    discovery::BrokerIdentifier,
-    message::Topic,
-    mnemonic,
-};
-use tokio::spawn;
-use tracing::debug;
-
-use crate::Inner;
+use cdn_proto::{connection::UserPublicKey, discovery::BrokerIdentifier, message::Topic};
 
 use self::relational_map::RelationalMap;
 
@@ -42,76 +32,5 @@ impl Default for BroadcastMap {
 impl BroadcastMap {
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl<Def: RunDef> Inner<Def> {
-    /// Send a broadcast message to both users and brokers. First figures out where the message
-    /// is supposed to go, and then sends it. We have `to_user_only` bounds so we can stop thrashing;
-    /// if we receive a message from a broker we should only be forwarding it to applicable users.
-    pub async fn handle_broadcast_message(
-        self: &Arc<Self>,
-        mut topics: Vec<Topic>,
-        message: &Bytes,
-        to_users_only: bool,
-    ) {
-        // Deduplicate topics
-        topics.dedup();
-
-        // Aggregate recipients
-        let mut broker_recipients = HashSet::new();
-        let mut user_recipients = HashSet::new();
-
-        for topic in topics {
-            // If we can send to brokers, we should do it
-            if !to_users_only {
-                broker_recipients.extend(
-                    self.connections
-                        .read()
-                        .await
-                        .broadcast_map
-                        .brokers
-                        .get_keys_by_value(&topic),
-                );
-            }
-            user_recipients.extend(
-                self.connections
-                    .read()
-                    .await
-                    .broadcast_map
-                    .users
-                    .get_keys_by_value(&topic),
-            );
-        }
-
-        debug!(
-            num_brokers = broker_recipients.len(),
-            num_users = user_recipients.len(),
-            msg = mnemonic(&**message),
-            "broadcast",
-        );
-
-        // If we can send to brokers, do so
-        if !to_users_only {
-            // Send to all brokers
-            for broker in broker_recipients {
-                let self_ = self.clone();
-                let broker_ = broker.clone();
-                let message_ = message.clone();
-                spawn(async move {
-                    let _ = self_.send_to_broker(&broker_, message_).await;
-                });
-            }
-        }
-
-        // Send to all aggregated users
-        for user in user_recipients {
-            // Send to the corresponding user
-            let self_ = self.clone();
-            let message_ = message.clone();
-            spawn(async move {
-                let _ = self_.send_to_user(user, message_).await;
-            });
-        }
     }
 }

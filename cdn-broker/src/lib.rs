@@ -4,7 +4,6 @@
 #![forbid(unsafe_code)]
 
 mod connections;
-mod handlers;
 pub mod reexports;
 mod tasks;
 
@@ -29,7 +28,8 @@ use cdn_proto::{
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
-use tokio::{select, spawn, sync::RwLock};
+use parking_lot::RwLock;
+use tokio::{select, spawn};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
@@ -229,25 +229,21 @@ impl<R: RunDef> Broker<R> {
     pub async fn start(self) -> Result<()> {
         // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
-        let heartbeat_task = spawn(self.inner.clone().run_heartbeat_task());
+        let inner_ = self.inner.clone();
+        let heartbeat_task = spawn(inner_.run_heartbeat_task());
 
         // Spawn the sync task, which updates other brokers with our keys periodically.
-        let sync_task = spawn(self.inner.clone().run_sync_task());
+        let inner_ = self.inner.clone();
+        let sync_task = spawn(inner_.run_sync_task());
 
         // Spawn the public (user) listener task
         // TODO: maybe macro this, since it's repeat code with the private listener task
-        let user_listener_task = spawn(
-            self.inner
-                .clone()
-                .run_user_listener_task(self.user_listener),
-        );
+        let inner_ = self.inner.clone();
+        let user_listener_task = spawn(inner_.clone().run_user_listener_task(self.user_listener));
 
         // Spawn the private (broker) listener task
-        let broker_listener_task = spawn(
-            self.inner
-                .clone()
-                .run_broker_listener_task(self.broker_listener),
-        );
+        let inner_ = self.inner.clone();
+        let broker_listener_task = spawn(inner_.run_broker_listener_task(self.broker_listener));
 
         // Serve the (possible) metrics task
         if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {

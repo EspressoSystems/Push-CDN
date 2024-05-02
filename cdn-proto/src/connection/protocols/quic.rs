@@ -14,6 +14,7 @@ use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, V
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 
 use super::{
     read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
@@ -101,18 +102,29 @@ impl<M: Middleware> Protocol<M> for Quic {
         // Connect with QUIC endpoint to remote endpoint
         let connection = bail!(
             bail!(
-                endpoint.connect(remote_endpoint, "espresso"),
+                timeout(
+                    Duration::from_secs(5),
+                    bail!(
+                        endpoint.connect(remote_endpoint, "espresso"),
+                        Connection,
+                        "timed out connecting to remote endpoint"
+                    )
+                )
+                .await,
                 Connection,
                 "failed quic connect to remote endpoint"
-            )
-            .await,
+            ),
             Connection,
             "failed quic connect to remote endpoint"
         );
 
         // Open an outgoing bidirectional stream
         let (mut sender, receiver) = bail!(
-            connection.open_bi().await,
+            bail!(
+                timeout(Duration::from_secs(5), connection.open_bi()).await,
+                Connection,
+                "timed out accepting stream"
+            ),
             Connection,
             "failed to accept bidirectional stream"
         );

@@ -1,5 +1,8 @@
-//! The following is the main `Broker` binary, which just instantiates and runs
-//! a `Broker` object.
+//! `bad-broker` is a simple binary that starts a broker with a random key and
+//! attempts to start a broker every 100ms. This is useful for testing the
+//! broker's ability to handle multiple brokers connecting to it.
+use std::time::Duration;
+
 use cdn_broker::{Broker, Config};
 use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
 use clap::Parser;
@@ -7,6 +10,7 @@ use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
 };
 use rand::{rngs::StdRng, SeedableRng};
+use tokio::{spawn, time::sleep};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -18,6 +22,11 @@ struct Args {
     /// With the remote (redis) discovery feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
     #[arg(short, long)]
     discovery_endpoint: String,
+
+    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
+    /// metrics are not exposed.
+    #[arg(short, long)]
+    metrics_bind_endpoint: Option<String>,
 
     /// The user-facing endpoint in `IP:port` form to bind to for connections from users
     #[arg(long, default_value = "0.0.0.0:1738")]
@@ -35,11 +44,6 @@ struct Args {
     /// The broker-facing endpoint in `IP:port` form to advertise
     #[arg(long, default_value = "local_ip:1739")]
     private_advertise_endpoint: String,
-
-    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
-    /// metrics are not exposed.
-    #[arg(short, long)]
-    metrics_bind_endpoint: Option<String>,
 
     /// The path to the CA certificate
     /// If not provided, a local, pinned CA is used
@@ -61,7 +65,7 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let args = Args::parse();
 
-    // If we aren't on `tokio_unstable`, use the normal logger
+    // Initialize tracing
     #[cfg(not(tokio_unstable))]
     if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
         tracing_subscriber::fmt()
@@ -74,38 +78,44 @@ async fn main() -> Result<()> {
             .init();
     }
 
-    // If we are using the `tokio_unstable` feature, use the console logger
     #[cfg(tokio_unstable)]
     console_subscriber::init();
 
-    // Generate the broker key from the supplied seed
-    let (private_key, public_key) =
-        BLS::key_gen(&(), &mut StdRng::seed_from_u64(args.key_seed)).unwrap();
+    // Forever, generate a new broker key and start a broker
+    loop {
+        // Generate the broker key from the supplied seed
+        let (private_key, public_key) = BLS::key_gen(&(), &mut StdRng::from_entropy()).unwrap();
 
-    // Create config
-    let broker_config: Config<ProductionRunDef> = Config {
-        ca_cert_path: args.ca_cert_path,
-        ca_key_path: args.ca_key_path,
+        // Two random ports
+        let public_port = portpicker::pick_unused_port().unwrap();
+        let private_port = portpicker::pick_unused_port().unwrap();
 
-        discovery_endpoint: args.discovery_endpoint,
-        metrics_bind_endpoint: args.metrics_bind_endpoint,
-        keypair: KeyPair {
-            public_key,
-            private_key,
-        },
+        // Create config
+        let broker_config: Config<ProductionRunDef> = Config {
+            ca_cert_path: args.ca_cert_path.clone(),
+            ca_key_path: args.ca_key_path.clone(),
 
-        public_bind_endpoint: args.public_bind_endpoint,
-        public_advertise_endpoint: args.public_advertise_endpoint,
-        private_bind_endpoint: args.private_bind_endpoint,
-        private_advertise_endpoint: args.private_advertise_endpoint,
-    };
+            discovery_endpoint: args.discovery_endpoint.clone(),
+            metrics_bind_endpoint: args.metrics_bind_endpoint.clone(),
+            keypair: KeyPair {
+                public_key,
+                private_key,
+            },
 
-    // Create new `Broker`
-    // Uses TCP from broker connections and Quic for user connections.
-    let broker = Broker::new(broker_config).await?;
+            public_bind_endpoint: format!("0.0.0.0:{public_port}"),
+            public_advertise_endpoint: format!("local_ip:{public_port}"),
+            private_bind_endpoint: format!("0.0.0.0:{private_port}"),
+            private_advertise_endpoint: format!("local_ip:{private_port}"),
+        };
 
-    // Start the main loop, consuming it
-    broker.start().await?;
+        // Create new `Broker`
+        // Uses TCP from broker connections and Quic for user connections.
+        let broker = Broker::new(broker_config).await?;
 
-    Ok(())
+        // Start the main loop, consuming it
+        let jh = spawn(broker.start());
+
+        sleep(Duration::from_millis(100)).await;
+        jh.abort();
+    }
 }

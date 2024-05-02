@@ -9,7 +9,6 @@ use cdn_proto::{
 use tokio::spawn;
 use tracing::error;
 
-// TODO: change connection to be named struct instead of tuple for readability purposes
 use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
