@@ -132,10 +132,10 @@ macro_rules! try_with_reconnect {
         match $out {
             Ok(res) => Ok(res),
             Err(err) => {
+                error!("connection failed: {err}");
+
                 // Acquire our "semaphore". If another task is doing this, just return an error
                 if let Ok(mut connection_guard) = $self.inner.connection.clone().try_write_owned() {
-                    error!("connection failed: {err}, reconnecting");
-                    
                     // Clone `inner` so we can use it in the task
                     let inner = $self.inner.clone();
                     // We are the only ones reconnecting. Let's launch the task to reconnect
