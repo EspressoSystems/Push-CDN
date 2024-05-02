@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
         // Start the main loop, consuming it
         let jh = spawn(broker.start());
 
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(300)).await;
         jh.abort();
     }
 }
