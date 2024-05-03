@@ -64,6 +64,9 @@ async fn test_double_connect_different_broker() {
     let client1 = new_client(1, vec![Topic::Global], "8094");
     let client2 = new_client(1, vec![Topic::Global], "8094");
 
+    // Wait a little
+    sleep(Duration::from_millis(50)).await;
+
     // Get the brokers
     let brokers: Vec<BrokerIdentifier> = new_db_client(&discovery_endpoint, None)
         .await
@@ -100,7 +103,7 @@ async fn test_double_connect_different_broker() {
         panic!("failed to connect as client2");
     };
 
-    // Sleep for a second
+    // Sleep for a bit
     sleep(Duration::from_millis(50)).await;
 
     // Assert the second client can send a message
