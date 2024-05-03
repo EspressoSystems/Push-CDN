@@ -300,8 +300,8 @@ async fn test_double_connect_different_broker() {
     let discovery_endpoint = get_temp_db_path!();
 
     // Create and start two brokers
-    new_broker!(0, "8090", "8091", discovery_endpoint);
     new_broker!(0, "8092", "8093", discovery_endpoint);
+    new_broker!(0, "8090", "8091", discovery_endpoint);
 
     // Create and start a new marshal
     new_marshal!("8094", discovery_endpoint);
