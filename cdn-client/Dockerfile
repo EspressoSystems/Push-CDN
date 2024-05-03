@@ -6,7 +6,7 @@ WORKDIR /build
 COPY . .
 
 # Build our example (all of them for caching)
-RUN cargo build --profile release -p broker -p client -p marshal
+RUN cargo build --profile release --bin broker --bin client --bin marshal
 
 # Use a minimal image for the final build
 FROM debian:bookworm as RUNNER

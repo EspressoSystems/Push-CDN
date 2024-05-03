@@ -11,7 +11,7 @@ use cdn_proto::{
     crypto::signature::{KeyPair, Serializable},
     def::{TestingConnection, TestingRunDef},
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
-    message::Topic,
+    message::{Direct, Message, Topic},
 };
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -165,6 +165,24 @@ async fn test_end_to_end() {
         .send_direct_message(&client_public_key, b"hello direct".to_vec())
         .await
         .expect("failed to send message");
+
+    // The message that we expect to receive
+    let expected_message = Message::Direct(Direct {
+        recipient: client_public_key
+            .serialize()
+            .expect("failed to serialize public key"),
+        message: b"hello direct".to_vec(),
+    });
+
+    // Assert we have received the message
+    assert!(
+        client
+            .receive_message()
+            .await
+            .expect("failed to receive message")
+            == expected_message,
+        "wrong message received"
+    );
 }
 
 /// Test that the whitelist works
