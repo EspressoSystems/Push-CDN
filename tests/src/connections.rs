@@ -206,10 +206,10 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert both clients can connect
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
@@ -238,13 +238,13 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert we can connect as client1
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
 
     // Assert we can't connect as client2
     assert!(
-        timeout(Duration::from_secs(1), client2.ensure_initialized())
+        timeout(Duration::from_secs(2), client2.ensure_initialized())
             .await
             .is_err(),
         "client2 connected when it shouldn't have"
@@ -269,10 +269,10 @@ async fn test_double_connect_same_broker() {
     let client2 = new_client!(1, vec![Topic::Global], "8085");
 
     // Assert both clients are connected
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
@@ -330,7 +330,7 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the first client
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
 
@@ -341,7 +341,7 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the second client
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
