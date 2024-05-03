@@ -22,42 +22,6 @@ struct Args {
     /// With the remote (redis) discovery feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
     #[arg(short, long)]
     discovery_endpoint: String,
-
-    /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
-    /// metrics are not exposed.
-    #[arg(short, long)]
-    metrics_bind_endpoint: Option<String>,
-
-    /// The user-facing endpoint in `IP:port` form to bind to for connections from users
-    #[arg(long, default_value = "0.0.0.0:1738")]
-    public_bind_endpoint: String,
-
-    /// The user-facing endpoint in `IP:port` form to advertise
-    #[arg(long, default_value = "local_ip:1738")]
-    public_advertise_endpoint: String,
-
-    /// The broker-facing endpoint in `IP:port` form to bind to for connections from  
-    /// other brokers
-    #[arg(long, default_value = "0.0.0.0:1739")]
-    private_bind_endpoint: String,
-
-    /// The broker-facing endpoint in `IP:port` form to advertise
-    #[arg(long, default_value = "local_ip:1739")]
-    private_advertise_endpoint: String,
-
-    /// The path to the CA certificate
-    /// If not provided, a local, pinned CA is used
-    #[arg(long)]
-    ca_cert_path: Option<String>,
-
-    /// The path to the CA key
-    /// If not provided, a local, pinned CA is used
-    #[arg(long)]
-    ca_key_path: Option<String>,
-
-    /// The seed for broker key generation
-    #[arg(short, long, default_value_t = 0)]
-    key_seed: u64,
 }
 
 #[tokio::main]
@@ -92,11 +56,11 @@ async fn main() -> Result<()> {
 
         // Create config
         let broker_config: Config<ProductionRunDef> = Config {
-            ca_cert_path: args.ca_cert_path.clone(),
-            ca_key_path: args.ca_key_path.clone(),
+            ca_cert_path: None,
+            ca_key_path: None,
 
             discovery_endpoint: args.discovery_endpoint.clone(),
-            metrics_bind_endpoint: args.metrics_bind_endpoint.clone(),
+            metrics_bind_endpoint: None,
             keypair: KeyPair {
                 public_key,
                 private_key,
