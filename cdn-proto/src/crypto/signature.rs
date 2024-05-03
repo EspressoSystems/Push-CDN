@@ -11,7 +11,7 @@ use super::rng::DeterministicRng;
 
 /// This trait defines a generic signature scheme, wherein we can sign and verify messages
 /// with the associated public and private keys.
-pub trait SignatureScheme: Send + Sync + Clone + 'static {
+pub trait SignatureScheme: Send + Sync + 'static {
     /// The signing key type
     type PrivateKey: Clone + Send + Sync;
     /// The verification key type

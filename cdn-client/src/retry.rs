@@ -104,7 +104,6 @@ impl<C: ConnectionDef> Inner<C> {
 }
 
 /// The configuration needed to construct a `Retry` connection.
-#[derive(Clone)]
 pub struct Config<C: ConnectionDef> {
     /// This is the remote endpoint of the marshal that we authenticate with.
     pub endpoint: String,
