@@ -206,10 +206,10 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert both clients can connect
-    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
-    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
@@ -238,13 +238,13 @@ async fn test_whitelist() {
     let client2 = new_client!(2, vec![Topic::Global], "8085");
 
     // Assert we can connect as client1
-    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
 
     // Assert we can't connect as client2
     assert!(
-        timeout(Duration::from_secs(2), client2.ensure_initialized())
+        timeout(Duration::from_secs(1), client2.ensure_initialized())
             .await
             .is_err(),
         "client2 connected when it shouldn't have"
@@ -259,20 +259,20 @@ async fn test_double_connect_same_broker() {
     let discovery_endpoint = get_temp_db_path!();
 
     // Create and start a new broker
-    new_broker!(0, "8083", "8084", discovery_endpoint);
+    new_broker!(0, "8086", "8087", discovery_endpoint);
 
     // Create and start a new marshal
-    new_marshal!("8085", discovery_endpoint);
+    new_marshal!("8088", discovery_endpoint);
 
     // Create 2 clients with the same keypair
-    let client1 = new_client!(1, vec![Topic::Global], "8085");
-    let client2 = new_client!(1, vec![Topic::Global], "8085");
+    let client1 = new_client!(1, vec![Topic::Global], "8088");
+    let client2 = new_client!(1, vec![Topic::Global], "8088");
 
     // Assert both clients are connected
-    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
-    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
@@ -300,15 +300,15 @@ async fn test_double_connect_different_broker() {
     let discovery_endpoint = get_temp_db_path!();
 
     // Create and start two brokers
-    new_broker!(0, "8088", "8089", discovery_endpoint);
-    new_broker!(0, "8086", "8087", discovery_endpoint);
+    new_broker!(0, "8090", "8091", discovery_endpoint);
+    new_broker!(0, "8092", "8093", discovery_endpoint);
 
     // Create and start a new marshal
-    new_marshal!("8090", discovery_endpoint);
+    new_marshal!("8094", discovery_endpoint);
 
     // Create 2 clients with the same keypair
-    let client1 = new_client!(1, vec![Topic::Global], "8090");
-    let client2 = new_client!(1, vec![Topic::Global], "8090");
+    let client1 = new_client!(1, vec![Topic::Global], "8094");
+    let client2 = new_client!(1, vec![Topic::Global], "8094");
 
     // Get the brokers
     let brokers: Vec<BrokerIdentifier> = new_db_client!(discovery_endpoint, None)
@@ -330,7 +330,7 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the first client
-    let Ok(()) = timeout(Duration::from_secs(2), client1.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
         panic!("failed to connect as client1");
     };
 
@@ -341,7 +341,7 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the second client
-    let Ok(()) = timeout(Duration::from_secs(2), client2.ensure_initialized()).await else {
+    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
         panic!("failed to connect as client2");
     };
 
