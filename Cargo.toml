@@ -10,6 +10,7 @@ tokio = { version = "1", default-features = false, features = [
     "rt",
     "rt-multi-thread",
     "parking_lot",
+    "tracing"
 ] }
 jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "0.4.2", default-features = false, features = [
     "std",
@@ -31,7 +32,6 @@ async-std = { version = "1", default-features = false, features = [
 ] }
 rkyv = { version = "0.7", features = ["validation"] }
 derivative = "2"
-parking_lot = "0.12"
 rcgen = { version = "0.12", features = ["x509-parser", "pem"] }
 
 # Dev dependencies (can't be defined explicitly in the workspace)

@@ -27,6 +27,21 @@ harness = false
 name = "broadcast"
 harness = false
 
+# The main broker binary
+[[bin]]
+name = "broker"
+path = "src/binaries/broker.rs"
+
+# The "bad" broker is a binary that tries to spam an actual broker with connections
+[[bin]]
+name = "bad-broker"
+path = "src/binaries/bad-broker.rs"
+
+# This dependency is used for the Tokio console
+[target.'cfg(tokio_unstable)'.dependencies]
+console-subscriber = "0.2"
+
+
 [dependencies]
 jf-primitives.workspace = true
 cdn-proto = { path = "../cdn-proto", default-features = false, features = [
@@ -42,6 +57,7 @@ lazy_static = { workspace = true }
 rkyv.workspace = true
 derivative.workspace = true
 dashmap = { version = "5", default-features = false }
-parking_lot.workspace = true
 rand.workspace = true
 local-ip-address = "0.6"
+parking_lot = "0.12"
+portpicker = "0.1"

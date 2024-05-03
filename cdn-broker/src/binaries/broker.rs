@@ -61,7 +61,8 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let args = Args::parse();
 
-    // Initialize tracing
+    // If we aren't on `tokio_unstable`, use the normal logger
+    #[cfg(not(tokio_unstable))]
     if std::env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
         tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::from_default_env())
@@ -72,6 +73,10 @@ async fn main() -> Result<()> {
             .with_env_filter(EnvFilter::from_default_env())
             .init();
     }
+
+    // If we are using the `tokio_unstable` feature, use the console logger
+    #[cfg(tokio_unstable)]
+    console_subscriber::init();
 
     // Generate the broker key from the supplied seed
     let (private_key, public_key) =

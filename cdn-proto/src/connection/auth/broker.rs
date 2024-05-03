@@ -32,10 +32,11 @@ macro_rules! authenticate_with_broker {
     ($connection: expr, $inner: expr) => {
         // Authenticate with the other broker, returning their reconnect endpoint
         match BrokerAuth::<Def>::authenticate_with_broker(&mut $connection, &$inner.keypair).await {
-            Ok(broker_endpoint) => broker_endpoint,
+            Ok(broker_endpoint) => Ok(broker_endpoint),
             Err(err) => {
-                error!("failed authentication with broker: {err}");
-                return;
+                return Err(Error::Connection(
+                    "failed authentication with broker: {err}".to_string(),
+                ));
             }
         }
     };
@@ -53,8 +54,7 @@ macro_rules! verify_broker {
         )
         .await
         {
-            error!("failed to verify broker: {err}");
-            return;
+            return Err(Error::Connection("failed to verify broker".to_string()));
         };
     };
 }

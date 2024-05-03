@@ -8,6 +8,21 @@ description = "Defines client interactions for both marshals and brokers"
 [features]
 runtime-async-std = ["dep:async-std"]
 
+# The main "tester" binary
+[[bin]]
+name = "client"
+path = "src/binaries/client.rs"
+
+# Bad connector attempts to continuously authenticate with a broker
+[[bin]]
+name = "bad-connector"
+path = "src/binaries/bad-connector.rs"
+
+# Bad sender attempts to continuously send messages to a broker
+[[bin]]
+name = "bad-sender"
+path = "src/binaries/bad-sender.rs"
+
 [dependencies]
 tokio = { workspace = true }
 async-std = { workspace = true, optional = true }

@@ -21,17 +21,16 @@ use self::broadcast::BroadcastMap;
 mod broadcast;
 mod direct;
 
-mod broker;
-mod user;
+type TaskMap = HashMap<u128, AbortHandle>;
 
 pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
-    // The current users connected to us
-    users: HashMap<UserPublicKey, (Connection<Def::User>, AbortHandle)>,
-    // The current brokers connected to us
-    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, AbortHandle)>,
+    // The current users connected to us, along with their running tasks
+    users: HashMap<UserPublicKey, (Connection<Def::User>, TaskMap)>,
+    // The current brokers connected to us, along with their running tasks
+    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, TaskMap)>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: DirectMap,
@@ -50,6 +49,110 @@ impl<Def: RunDef> Connections<Def> {
             direct_map: DirectMap::new(identity),
             broadcast_map: BroadcastMap::new(),
         }
+    }
+
+    /// Get the broker identifier for a given user (if it exists)
+    pub fn get_broker_identifier_of_user(&self, user: &UserPublicKey) -> Option<BrokerIdentifier> {
+        self.direct_map.get(user).cloned()
+    }
+
+    /// Get the broker connection for a given broker identifier (cloned)
+    pub fn get_broker_connection(
+        &self,
+        broker_identifier: &BrokerIdentifier,
+    ) -> Option<Connection<Def::Broker>> {
+        self.brokers.get(broker_identifier).map(|(c, _)| c.clone())
+    }
+
+    /// Get the connection for a given user public key (cloned)
+    pub fn get_user_connection(&self, user: &UserPublicKey) -> Option<Connection<Def::User>> {
+        self.users.get(user).map(|(c, _)| c.clone())
+    }
+
+    /// Get all broker identifiers that we are connected to
+    pub fn get_broker_identifiers(&self) -> Vec<BrokerIdentifier> {
+        self.brokers.keys().cloned().collect()
+    }
+
+    /// Add a task to the list of tasks for a broker along with a unique ID
+    /// This is used to cancel the task if the broker disconnects.
+    pub fn add_broker_task(
+        &mut self,
+        broker_identifier: &BrokerIdentifier,
+        id: u128,
+        handle: AbortHandle,
+    ) {
+        if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
+            // If the broker exists, add the handle to the map of tasks
+            handles.insert(id, handle);
+        } else {
+            // Otherwise, cancel the task
+            handle.abort();
+        }
+    }
+
+    /// Add a task to the list of tasks for a user along with a unique ID
+    /// This is used to cancel the task if the user disconnects.
+    /// TODO: macro this?
+    pub fn add_user_task(&mut self, user: &UserPublicKey, id: u128, handle: AbortHandle) {
+        if let Some((_, handles)) = self.users.get_mut(user) {
+            // If the user exists, add the handle to the map of tasks
+            handles.insert(id, handle);
+        } else {
+            // Otherwise, cancel the task
+            handle.abort();
+        }
+    }
+
+    /// Remove a task from the list of tasks for a broker.
+    /// Does not abort the task.
+    pub fn remove_broker_task(&mut self, broker_identifier: &BrokerIdentifier, id: u128) {
+        if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
+            // If the broker exists, remove the handle from the map of tasks
+            handles.remove(&id);
+        }
+    }
+
+    /// Remove a task from the list of tasks for a user.
+    /// Does not abort the task.
+    pub fn remove_user_task(&mut self, user: &UserPublicKey, id: u128) {
+        if let Some((_, handles)) = self.users.get_mut(user) {
+            // If the broker exists, remove the handle from the map of tasks
+            handles.remove(&id);
+        }
+    }
+
+    /// Get all users and brokers interested in a list of topics.
+    pub fn get_interested_by_topic(
+        &self,
+        topics: &Vec<Topic>,
+        to_users_only: bool,
+    ) -> (Vec<BrokerIdentifier>, Vec<UserPublicKey>) {
+        // Aggregate recipients
+        let mut broker_recipients = HashSet::new();
+        let mut user_recipients = HashSet::new();
+
+        // For each topic
+        for topic in topics {
+            // Get all users interested in the topic
+            for user in self.broadcast_map.users.get_keys_by_value(topic) {
+                user_recipients.insert(user);
+            }
+
+            // If we want to send to brokers as well,
+            if !to_users_only {
+                // Get all brokers interested in the topic
+                for broker in self.broadcast_map.brokers.get_keys_by_value(topic) {
+                    broker_recipients.insert(broker);
+                }
+            }
+        }
+
+        // Return the recipients
+        (
+            broker_recipients.into_iter().collect(),
+            user_recipients.into_iter().collect(),
+        )
     }
 
     /// Get the number of users connected to us at any given time.
@@ -129,7 +232,10 @@ impl<Def: RunDef> Connections<Def> {
         // Remove the old broker if it exists
         self.remove_broker(&broker_identifier, "already existed");
 
-        self.brokers.insert(broker_identifier, (connection, handle));
+        self.brokers.insert(
+            broker_identifier,
+            (connection, HashMap::from([(0, handle)])),
+        );
     }
 
     /// Insert a user into our map. Updates the versioned vector that
@@ -149,8 +255,10 @@ impl<Def: RunDef> Connections<Def> {
         self.remove_user(user_public_key.clone(), "already existed");
 
         // Add to our map. Remove the old one if it exists
-        self.users
-            .insert(user_public_key.clone(), (connection, handle));
+        self.users.insert(
+            user_public_key.clone(),
+            (connection, HashMap::from([(0, handle)])),
+        );
 
         // Insert into our direct map
         self.direct_map
@@ -166,13 +274,15 @@ impl<Def: RunDef> Connections<Def> {
     /// from our broadcast map, in case they were subscribed to any topics.
     pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier, reason: &str) {
         // Remove from broker list, cancelling the previous task if it exists
-        if let Some(previous_handle) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
+        if let Some(task_handles) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
             // Decrement the metric for the number of brokers connected
             metrics::NUM_BROKERS_CONNECTED.dec();
             error!(id = %broker_identifier, reason = reason, "broker disconnected");
 
-            // Cancel the broker's task
-            previous_handle.abort();
+            // Cancel all tasks
+            for (_, handle) in task_handles {
+                handle.abort();
+            }
         };
 
         // Remove from all topics
@@ -188,7 +298,7 @@ impl<Def: RunDef> Connections<Def> {
     /// to send us messages for a disconnected user.
     pub fn remove_user(&mut self, user_public_key: UserPublicKey, reason: &str) {
         // Remove from user list, returning the previous handle if it exists
-        if let Some(previous_handle) = self.users.remove(&user_public_key).map(|(_, h)| h) {
+        if let Some(task_handles) = self.users.remove(&user_public_key).map(|(_, h)| h) {
             // Decrement the metric for the number of users connected
             metrics::NUM_USERS_CONNECTED.dec();
             warn!(
@@ -197,8 +307,10 @@ impl<Def: RunDef> Connections<Def> {
                 "user disconnected"
             );
 
-            // Cancel the user's task
-            previous_handle.abort();
+            // Cancel all tasks
+            for (_, handle) in task_handles {
+                handle.abort();
+            }
         };
 
         // Remove from user topics

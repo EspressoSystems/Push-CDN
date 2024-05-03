@@ -8,13 +8,13 @@ processes:
     command: echo 'requirepass changeme!' | keydb-server - --save "" --appendonly no
 
   marshal_0:
-    command: cargo run --package cdn-marshal --release -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --bin marshal -- -d "redis://:changeme!@localhost:6379"
 
   broker_0:
-    command: cargo run --package cdn-broker --release -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --bin broker -- -d "redis://:changeme!@localhost:6379"
 
   broker_1:
-    command: cargo run --package cdn-broker --release -- 
+    command: cargo run --bin broker --release -- 
       --public-bind-endpoint 0.0.0.0:1740
       --public-advertise-endpoint local_ip:1740
       --private-bind-endpoint 0.0.0.0:1741
@@ -22,7 +22,31 @@ processes:
       -d "redis://:changeme!@localhost:6379"
 
   client_0:
-    command: cargo run --bin cdn-client --release -- -m "127.0.0.1:1737"
-    depends_on:
-      marshal_0:
-        condition: process_started
+    command: cargo run --bin client --release -- -m "127.0.0.1:1737"
+
+  # Uncomment the following lines to run misbehaving processes and the Tokio console
+
+  # broker_tokio_console:
+  #   command: CARGO_TARGET_DIR="target/unstable" RUSTFLAGS="--cfg tokio_unstable" 
+  #     cargo run --bin broker -- 
+  #     -d "redis://:changeme!@localhost:6379"
+  #     --public-bind-endpoint 0.0.0.0:1742
+  #     --public-advertise-endpoint local_ip:1742
+  #     --private-bind-endpoint 0.0.0.0:1743
+  #     --private-advertise-endpoint local_ip:1743
+
+  # bad_broker:
+  #   command: cargo run --bin bad-broker --
+  #     -d "redis://:changeme!@localhost:6379"
+
+  # bad_connector:
+  #   command: cargo run --bin bad-connector -- -m "127.0.0.1:1737"
+  #   depends_on:
+  #     marshal_0:
+  #       condition: process_started
+
+  # bad_sender:
+  #   command: cargo run --bin bad-sender -- -m "127.0.0.1:1737"
+  #   depends_on:
+  #     marshal_0:
+  #       condition: process_started

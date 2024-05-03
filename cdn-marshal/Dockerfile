@@ -6,7 +6,7 @@ WORKDIR /build
 COPY . .
 
 # Build our example (all of them for caching)
-RUN cargo build --profile release -p cdn-broker -p cdn-client -p cdn-marshal
+RUN cargo build --profile release --bin broker --bin client --bin marshal
 
 # Use a minimal image for the final build
 FROM debian:bookworm as RUNNER
@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install libcurl4 -y
 ENV RUST_LOG=info
 
 # Copy the built binary from the builder image
-COPY --from=BUILDER ./build/target/release/cdn-marshal /bin/cdn-marshal
+COPY --from=BUILDER ./build/target/release/marshal /bin/marshal
 
 # Set the entrypoint
-ENTRYPOINT ["cdn-marshal"]
+ENTRYPOINT ["marshal"]
