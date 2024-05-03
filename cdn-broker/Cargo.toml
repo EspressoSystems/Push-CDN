@@ -27,10 +27,15 @@ harness = false
 name = "broadcast"
 harness = false
 
+# The main broker binary
+[[bin]]
+name = "broker"
+path = "src/binaries/broker.rs"
+
 # The "bad" broker is a binary that tries to spam an actual broker with connections
 [[bin]]
 name = "bad-broker"
-path = "src/test-binaries/bad-broker.rs"
+path = "src/binaries/bad-broker.rs"
 
 # This dependency is used for the Tokio console
 [target.'cfg(tokio_unstable)'.dependencies]

@@ -21,14 +21,16 @@ use self::broadcast::BroadcastMap;
 mod broadcast;
 mod direct;
 
+type TaskMap = HashMap<u128, AbortHandle>;
+
 pub struct Connections<Def: RunDef> {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us, along with their running tasks
-    users: HashMap<UserPublicKey, (Connection<Def::User>, HashMap<u128, AbortHandle>)>,
+    users: HashMap<UserPublicKey, (Connection<Def::User>, TaskMap)>,
     // The current brokers connected to us, along with their running tasks
-    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, HashMap<u128, AbortHandle>)>,
+    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, TaskMap)>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: DirectMap,

@@ -10,6 +10,11 @@ global-permits = ["cdn-proto/global-permits"]
 
 runtime-async-std = ["dep:async-std"]
 
+# The main marshal binary
+[[bin]]
+name = "marshal"
+path = "src/binaries/marshal.rs"
+
 [dependencies]
 jf-primitives.workspace = true
 cdn-proto = { path = "../cdn-proto", default-features = false, features = [
