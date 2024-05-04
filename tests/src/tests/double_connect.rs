@@ -30,7 +30,7 @@ async fn test_double_connect_same_broker() {
         panic!("failed to connect as client2");
     };
 
-    // Wait for a second
+    // Wait for a bit
     sleep(Duration::from_millis(50)).await;
 
     // Attempt to send a message, should fail
@@ -55,7 +55,11 @@ async fn test_double_connect_different_broker() {
 
     // Create and start two brokers
     new_broker(0, "8092", "8093", &discovery_endpoint).await;
+    sleep(Duration::from_millis(50)).await;
     new_broker(0, "8090", "8091", &discovery_endpoint).await;
+
+    // Wait a little for them to connect
+    sleep(Duration::from_millis(100)).await;
 
     // Create and start a new marshal
     new_marshal("8094", &discovery_endpoint).await;
