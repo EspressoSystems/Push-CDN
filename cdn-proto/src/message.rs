@@ -422,15 +422,15 @@ mod tests {
 
         // `Broadcast` message
         assert_serialize_deserialize!(Message::Broadcast(Broadcast {
-            topics: vec![0, 1],
+            topics: vec![0, 1, 99],
             message: vec![0, 1, 2],
         }));
 
         // `Subscribe` message
-        assert_serialize_deserialize!(Message::Subscribe(vec![0, 1]));
+        assert_serialize_deserialize!(Message::Subscribe(vec![0, 1, 99]));
 
         // `Unsubscribe` message
-        assert_serialize_deserialize!(Message::Unsubscribe(vec![0, 1]));
+        assert_serialize_deserialize!(Message::Unsubscribe(vec![0, 1, 99]));
 
         // `UserSync` message
         assert_serialize_deserialize!(Message::UserSync(vec![0u8, 1u8]));
