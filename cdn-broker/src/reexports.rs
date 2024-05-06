@@ -25,10 +25,6 @@ pub mod crypto {
     }
 }
 
-pub mod message {
-    pub use cdn_proto::message::Topic;
-}
-
 pub mod error {
     pub use cdn_proto::error::{Error, Result};
 }

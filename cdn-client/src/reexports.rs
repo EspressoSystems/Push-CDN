@@ -26,7 +26,7 @@ pub mod crypto {
 }
 
 pub mod message {
-    pub use cdn_proto::message::{Broadcast, Direct, Message, Topic};
+    pub use cdn_proto::message::{Broadcast, Direct, Message};
 }
 
 pub mod error {
