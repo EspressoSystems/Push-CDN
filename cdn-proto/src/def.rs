@@ -11,6 +11,7 @@ use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
 use crate::discovery::{redis::Redis, DiscoveryClient};
 
+/// The test topics for the CDN.
 #[repr(u8)]
 pub enum TestTopic {
     Global = 0,
@@ -19,7 +20,6 @@ pub enum TestTopic {
 
 /// This trait defines the run configuration for all CDN components.
 pub trait RunDef: 'static {
-    const SUPPORTED_TOPICS: &'static [u8];
     type Broker: ConnectionDef;
     type User: ConnectionDef;
     type DiscoveryClientType: DiscoveryClient;
@@ -36,7 +36,6 @@ pub trait ConnectionDef: 'static {
 /// Uses the real network protocols and Redis for discovery.
 pub struct ProductionRunDef;
 impl RunDef for ProductionRunDef {
-    const SUPPORTED_TOPICS: &'static [u8] = &[TestTopic::Global as u8, TestTopic::DA as u8];
     type Broker = ProductionBrokerConnection;
     type User = ProductionUserConnection;
     type DiscoveryClientType = Redis;
@@ -75,7 +74,6 @@ impl ConnectionDef for ProductionClientConnection {
 /// Uses in-memory protocols and an embedded discovery client.
 pub struct TestingRunDef;
 impl RunDef for TestingRunDef {
-    const SUPPORTED_TOPICS: &'static [u8] = &[TestTopic::Global as u8, TestTopic::DA as u8];
     type Broker = TestingConnection;
     type User = TestingConnection;
     type DiscoveryClientType = Embedded;
