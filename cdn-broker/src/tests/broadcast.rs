@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use cdn_proto::{
     connection::{protocols::Connection, Bytes},
-    message::{Broadcast, Message, Topic},
+    def::TestTopic,
+    message::{Broadcast, Message},
 };
 use tokio::time::{sleep, timeout};
 
@@ -21,13 +22,13 @@ async fn test_broadcast_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![Topic::Global, Topic::DA],
-            vec![Topic::DA],
-            vec![Topic::Global],
+            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+            vec![TestTopic::DA as u8],
+            vec![TestTopic::Global as u8],
         ],
         connected_brokers: vec![
-            (vec![3], vec![Topic::DA]),
-            (vec![4], vec![Topic::Global, Topic::DA]),
+            (vec![3], vec![TestTopic::DA as u8]),
+            (vec![4], vec![TestTopic::Global as u8, TestTopic::DA as u8]),
             (vec![5], vec![]),
         ],
     };
@@ -40,7 +41,7 @@ async fn test_broadcast_user() {
 
     // Create a broadcast message with the global topic
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::Global],
+        topics: vec![TestTopic::Global as u8],
         message: b"test broadcast global".to_vec(),
     });
 
@@ -59,7 +60,7 @@ async fn test_broadcast_user() {
 
     // Now we test the DA topic
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::DA],
+        topics: vec![TestTopic::DA as u8],
         message: b"test broadcast DA".to_vec(),
     });
 
@@ -87,13 +88,13 @@ async fn test_broadcast_broker() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![Topic::Global, Topic::DA],
-            vec![Topic::DA],
-            vec![Topic::Global],
+            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+            vec![TestTopic::DA as u8],
+            vec![TestTopic::Global as u8],
         ],
         connected_brokers: vec![
-            (vec![3], vec![Topic::DA]),
-            (vec![4], vec![Topic::Global, Topic::DA]),
+            (vec![3], vec![TestTopic::DA as u8]),
+            (vec![4], vec![TestTopic::Global as u8, TestTopic::DA as u8]),
             (vec![5], vec![]),
         ],
     };
@@ -106,7 +107,7 @@ async fn test_broadcast_broker() {
 
     // Create a broadcast message with the global topic
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::Global],
+        topics: vec![TestTopic::Global as u8],
         message: b"test broadcast global".to_vec(),
     });
 
@@ -124,7 +125,7 @@ async fn test_broadcast_broker() {
 
     // Now we test the DA topic
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::DA],
+        topics: vec![TestTopic::DA as u8],
         message: b"test broadcast DA.".to_vec(),
     });
 

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use cdn_proto::connection::UserPublicKey;
+use cdn_proto::{connection::UserPublicKey, def::TestTopic};
 use tokio::time::timeout;
 
 use crate::tests::*;
@@ -19,11 +19,11 @@ async fn test_whitelist() {
 
     // Create a client with keypair 1
     let client1_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed(1));
-    let client1 = new_client(1, vec![Topic::Global], "8085");
+    let client1 = new_client(1, vec![TestTopic::Global as u8], "8085");
 
     // Create a client with keypair 2
     let client2_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed(2));
-    let client2 = new_client(2, vec![Topic::Global], "8085");
+    let client2 = new_client(2, vec![TestTopic::Global as u8], "8085");
 
     // Assert both clients can connect
     let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
@@ -54,8 +54,8 @@ async fn test_whitelist() {
         .is_ok_and(|x| !x));
 
     // Recreate clients
-    let client1 = new_client(1, vec![Topic::Global], "8085");
-    let client2 = new_client(2, vec![Topic::Global], "8085");
+    let client1 = new_client(1, vec![TestTopic::Global as u8], "8085");
+    let client2 = new_client(2, vec![TestTopic::Global as u8], "8085");
 
     // Assert we can connect as client1
     let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {

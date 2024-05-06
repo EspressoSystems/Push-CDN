@@ -6,6 +6,7 @@ description = "Contains the common protocol definition and common code for the b
 
 [build-dependencies]
 rcgen.workspace = true
+capnpc = "0.19"
 
 [features]
 metrics = ["dep:prometheus"]

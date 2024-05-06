@@ -17,30 +17,13 @@ struct Message {
         broadcast @4 :Broadcast;
 
         # A message denoting we'd like to subscribe to some topics
-        subscribe @5 :List(Topic);
+        subscribe @5 :List(UInt8);
         # A message denoting we'd like to unsubscribe from some topics
-        unsubscribe @6 :List(Topic);
+        unsubscribe @6 :List(UInt8);
 
         # A message containing a map which we use to converge on user connection state
         userSync @7: Data;
     }
-}
-
-# An enum for users to specify topics for subscription and unsubscription.
-# Also used on the sending side, where messages can be marked with 
-# a topic and propagated to the interested users.
-enum Topic {
-    # The global consensus topic. All conseneus participants should be subscribed
-    # to this.
-    global @0;
-
-    # The DA-specfic topic. Only participants in the DA committee should want to
-    # be subscribed to this.
-    da @1;
-
-    # The topic with transactions. Only soon-to-be-leaders should want to be
-    # subscribed to this.
-    transactions @2;
 }
 
 # This message is used to authenticate the client to a marshal or a broker
@@ -85,7 +68,7 @@ struct Direct {
 # vector of topics to denote interest.
 struct Broadcast {
     # The topics to sent the message to
-    topics @0: List(Topic);
+    topics @0: List(UInt8);
     # The actual message data
     message @1: Data;
 }

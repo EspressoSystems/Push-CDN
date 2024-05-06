@@ -6,7 +6,8 @@ use std::time::Duration;
 use cdn_broker::reexports::tests::{TestDefinition, TestRun};
 use cdn_broker::{assert_received, send_message_as};
 use cdn_proto::connection::{protocols::Connection as _, Bytes};
-use cdn_proto::message::{Direct, Message, Topic};
+use cdn_proto::def::TestTopic;
+use cdn_proto::message::{Direct, Message};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
@@ -75,7 +76,7 @@ fn bench_direct_user_to_self(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![Topic::Global]],
+            connected_users: vec![vec![TestTopic::Global as u8]],
             connected_brokers: vec![],
         };
 
@@ -98,7 +99,7 @@ fn bench_direct_user_to_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
+            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
             connected_brokers: vec![],
         };
 
@@ -121,8 +122,8 @@ fn bench_direct_user_to_broker(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
-            connected_brokers: vec![(vec![2], vec![Topic::Global])],
+            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
+            connected_brokers: vec![(vec![2], vec![TestTopic::Global as u8])],
         };
 
         run_definition.into_run().await
@@ -144,8 +145,8 @@ fn bench_direct_broker_to_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
-            connected_brokers: vec![(vec![2], vec![Topic::Global])],
+            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
+            connected_brokers: vec![(vec![2], vec![TestTopic::Global as u8])],
         };
 
         run_definition.into_run().await

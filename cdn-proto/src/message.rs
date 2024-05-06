@@ -2,21 +2,22 @@
 //! messages sent to/from a broker or user.
 //! TODO: clean up. Maybe use Cap'n'Proto messages directly.
 
-use std::{fmt::Display, result::Result as StdResult};
-
 use capnp::{
     message::ReaderOptions,
     serialize::{self, write_message_segments_to_words},
 };
 
 use crate::{
-    bail, bail_option,
+    bail,
     error::{Error, Result},
     messages_capnp::{
         self, authenticate_response, authenticate_with_key, authenticate_with_permit, broadcast,
         direct,
     },
 };
+
+/// A type alias for a `Topic` to disambiguate it from `Vec<u8>`
+pub type Topic = u8;
 
 /// This is a helper macro for serializing `CapnProto` values.
 macro_rules! serialize {
@@ -32,33 +33,11 @@ macro_rules! checked_to_u32 {
     };
 }
 
-macro_rules! try_get {
-    ($message: expr, $i: expr) => {
-        bail!(
-            bail_option!(
-                $message.try_get($i),
-                Deserialize,
-                "failed to deserialize message"
-            ),
-            Deserialize,
-            "not in schema"
-        )
-    };
-}
-
 /// This is a helper macro for deserializing `CapnProto` values.
 macro_rules! deserialize {
     // Rule to deserialize a `Topic`. We need to unwrap quite a few times.
-    ($func_name:expr, Topic) => {
-        bail!(
-            $func_name,
-            Deserialize,
-            format!("failed to deserialize topic")
-        )
-        .into_iter()
-        .filter_map(|topic| topic.ok())
-        .map(|topic| topic.into())
-        .collect()
+    ($func_name:expr, Vec<Topic>) => {
+        $func_name.into_iter().map(|topic| topic.into()).collect()
     };
 
     ($message: expr, List) => {{
@@ -166,8 +145,7 @@ impl Message {
                 let mut message: broadcast::Builder = root.init_broadcast();
 
                 // Serialize topics
-                let serialized_topics: Vec<messages_capnp::Topic> =
-                    serialize!(to_serialize.topics.clone(), Topic);
+                let serialized_topics: Vec<Topic> = serialize!(to_serialize.topics.clone(), Topic);
 
                 // Set each field
                 bail!(
@@ -192,7 +170,7 @@ impl Message {
                 let mut message = root.init_subscribe(checked_to_u32!(to_serialize.len()));
 
                 for (i, topic) in to_serialize.iter().enumerate() {
-                    message.set(checked_to_u32!(i), topic.clone().into());
+                    message.set(checked_to_u32!(i), *topic);
                 }
             }
 
@@ -201,7 +179,7 @@ impl Message {
                 let mut message = root.init_unsubscribe(checked_to_u32!(to_serialize.len()));
 
                 for (i, topic) in to_serialize.iter().enumerate() {
-                    message.set(checked_to_u32!(i), topic.clone().into());
+                    message.set(checked_to_u32!(i), *topic);
                 }
             }
 
@@ -280,8 +258,14 @@ impl Message {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
+                    let topics = bail!(
+                        message.get_topics(),
+                        Deserialize,
+                        "failed to deserialize topics"
+                    );
+
                     Self::Broadcast(Broadcast {
-                        topics: deserialize!(message.get_topics(), Topic),
+                        topics: deserialize!(topics, Vec<Topic>),
                         message: deserialize!(message.get_message(), Vec<u8>),
                     })
                 }
@@ -289,13 +273,13 @@ impl Message {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::Subscribe(deserialize!(message, List))
+                    Self::Subscribe(deserialize!(message, Vec<Topic>))
                 }
                 messages_capnp::message::Unsubscribe(maybe_message) => {
                     let message =
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
-                    Self::Unsubscribe(deserialize!(message, List))
+                    Self::Unsubscribe(deserialize!(message, Vec<Topic>))
                 }
 
                 messages_capnp::message::UserSync(maybe_message) => {
@@ -306,72 +290,6 @@ impl Message {
                 }
             },
         )
-    }
-}
-
-#[derive(PartialEq, Clone, Hash, Eq, Debug)]
-/// An enum for users to specify topics for subscription and unsubscription.
-/// Also used on the sending side, where messages can be marked with
-/// a topic and propagated to the interested users.
-pub enum Topic {
-    /// The global consensus topic. All conseneus participants should be subscribed
-    /// to this.
-    Global,
-    /// The DA-specfic topic. Only participants in the DA committee should want to
-    /// be subscribed to this.
-    DA,
-    /// The topic with transactions. Only soon-to-be-leaders should want to be subscribed to this.
-    Transactions,
-}
-
-/// We need this because it allows conversions to and from the Cap'n' Proto version
-/// of a `Topic`
-impl From<messages_capnp::Topic> for Topic {
-    fn from(value: messages_capnp::Topic) -> Self {
-        match value {
-            messages_capnp::Topic::Global => Self::Global,
-            messages_capnp::Topic::Da => Self::DA,
-            messages_capnp::Topic::Transactions => Self::Transactions,
-        }
-    }
-}
-
-/// We need this because it allows conversions to and from the Cap'n' Proto version
-/// of a `Topic`
-impl From<Topic> for messages_capnp::Topic {
-    fn from(value: Topic) -> Self {
-        match value {
-            Topic::Global => Self::Global,
-            Topic::DA => Self::Da,
-            Topic::Transactions => Self::Transactions,
-        }
-    }
-}
-
-/// We need this to allows conversions to and from a `String`
-impl TryInto<Topic> for String {
-    type Error = Error;
-
-    fn try_into(self) -> StdResult<Topic, Self::Error> {
-        match self.as_str() {
-            "DA" => Ok(Topic::DA),
-            "Global" => Ok(Topic::Global),
-            "Transactions" => Ok(Topic::Transactions),
-            _ => Err(Error::Parse(
-                "failed to parse topic: did not exist".to_string(),
-            )),
-        }
-    }
-}
-
-/// We need this to convert a `Topic` to a `String`
-impl Display for Topic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Global => write!(f, "Global"),
-            Self::DA => write!(f, "DA"),
-            Self::Transactions => write!(f, "Transactions"),
-        }
     }
 }
 
@@ -504,15 +422,15 @@ mod tests {
 
         // `Broadcast` message
         assert_serialize_deserialize!(Message::Broadcast(Broadcast {
-            topics: vec![Topic::DA, Topic::Global],
+            topics: vec![0, 1],
             message: vec![0, 1, 2],
         }));
 
         // `Subscribe` message
-        assert_serialize_deserialize!(Message::Subscribe(vec![Topic::DA, Topic::Global],));
+        assert_serialize_deserialize!(Message::Subscribe(vec![0, 1]));
 
         // `Unsubscribe` message
-        assert_serialize_deserialize!(Message::Unsubscribe(vec![Topic::DA, Topic::Global],));
+        assert_serialize_deserialize!(Message::Unsubscribe(vec![0, 1]));
 
         // `UserSync` message
         assert_serialize_deserialize!(Message::UserSync(vec![0u8, 1u8]));

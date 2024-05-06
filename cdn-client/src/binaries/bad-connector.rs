@@ -4,7 +4,10 @@
 use std::time::Duration;
 
 use cdn_client::{Client, Config};
-use cdn_proto::{crypto::signature::KeyPair, def::ProductionClientConnection, message::Topic};
+use cdn_proto::{
+    crypto::signature::KeyPair,
+    def::{ProductionClientConnection, TestTopic},
+};
 use clap::Parser;
 use jf_primitives::signatures::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
@@ -52,7 +55,7 @@ async fn main() {
                 public_key,
                 private_key,
             },
-            subscribed_topics: vec![Topic::Global],
+            subscribed_topics: vec![TestTopic::Global as u8],
             use_local_authority: true,
         };
 

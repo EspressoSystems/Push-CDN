@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use cdn_proto::discovery::BrokerIdentifier;
+use cdn_proto::{def::TestTopic, discovery::BrokerIdentifier};
 use tokio::time::{sleep, timeout};
 
 use super::*;
@@ -19,8 +19,8 @@ async fn test_double_connect_same_broker() {
     new_marshal("8088", &discovery_endpoint).await;
 
     // Create 2 clients with the same keypair
-    let client1 = new_client(1, vec![Topic::Global], "8088");
-    let client2 = new_client(1, vec![Topic::Global], "8088");
+    let client1 = new_client(1, vec![TestTopic::Global as u8], "8088");
+    let client2 = new_client(1, vec![TestTopic::Global as u8], "8088");
 
     // Assert both clients are connected
     let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
@@ -65,8 +65,8 @@ async fn test_double_connect_different_broker() {
     new_marshal("8094", &discovery_endpoint).await;
 
     // Create 2 clients with the same keypair
-    let client1 = new_client(1, vec![Topic::Global], "8094");
-    let client2 = new_client(1, vec![Topic::Global], "8094");
+    let client1 = new_client(1, vec![TestTopic::Global as u8], "8094");
+    let client2 = new_client(1, vec![TestTopic::Global as u8], "8094");
 
     // Wait a little
     sleep(Duration::from_millis(50)).await;
