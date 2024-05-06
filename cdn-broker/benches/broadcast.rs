@@ -6,7 +6,8 @@ use std::time::Duration;
 use cdn_broker::reexports::tests::{TestDefinition, TestRun};
 use cdn_broker::{assert_received, send_message_as};
 use cdn_proto::connection::{protocols::Connection as _, Bytes};
-use cdn_proto::message::{Broadcast, Message, Topic};
+use cdn_proto::def::TestTopic;
+use cdn_proto::message::{Broadcast, Message};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
@@ -14,7 +15,7 @@ use pprof::criterion::{Output, PProfProfiler};
 async fn broadcast_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::Global],
+        topics: vec![TestTopic::Global as u8],
         message: vec![0; 10000],
     });
 
@@ -28,7 +29,7 @@ async fn broadcast_user(run: &TestRun) {
 async fn broadcast_broker(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Broadcast(Broadcast {
-        topics: vec![Topic::Global],
+        topics: vec![TestTopic::Global as u8],
         message: vec![0; 10000],
     });
 
@@ -48,7 +49,7 @@ fn bench_broadcast_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![Topic::Global], vec![Topic::Global]],
+            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
             connected_brokers: vec![],
         };
 
@@ -71,7 +72,10 @@ fn bench_broadcast_broker(c: &mut Criterion) {
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
             connected_users: vec![vec![]],
-            connected_brokers: vec![(vec![], vec![Topic::Global]), (vec![], vec![Topic::Global])],
+            connected_brokers: vec![
+                (vec![], vec![TestTopic::Global as u8]),
+                (vec![], vec![TestTopic::Global as u8]),
+            ],
         };
 
         run_definition.into_run().await

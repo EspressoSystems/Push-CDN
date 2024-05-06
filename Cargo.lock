@@ -783,6 +783,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "capnpc"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c75ba30e0f08582d53c2f3710cf4bb65ff562614b1ba86906d7391adffe189ec"
+dependencies = [
+ "capnp",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -854,6 +863,7 @@ dependencies = [
  "ark-serialize",
  "async-trait",
  "capnp",
+ "capnpc",
  "criterion",
  "derivative",
  "jf-primitives",

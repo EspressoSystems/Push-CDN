@@ -1,4 +1,7 @@
-use cdn_proto::message::{Direct, Message};
+use cdn_proto::{
+    def::TestTopic,
+    message::{Direct, Message},
+};
 
 use crate::tests::*;
 
@@ -15,7 +18,7 @@ async fn test_end_to_end_connection() {
     new_marshal("8082", &discovery_endpoint).await;
 
     // Create and get the handle to a new client
-    let client = new_client(0, vec![Topic::Global], "8082");
+    let client = new_client(0, vec![TestTopic::Global as u8], "8082");
     let client_public_key = keypair_from_seed(0).1;
 
     // Send a message to ourself

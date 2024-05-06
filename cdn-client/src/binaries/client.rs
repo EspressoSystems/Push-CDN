@@ -7,8 +7,8 @@ use std::time::Duration;
 use cdn_client::{Client, Config};
 use cdn_proto::{
     crypto::signature::{KeyPair, Serializable},
-    def::ProductionClientConnection,
-    message::{Broadcast, Direct, Message, Topic},
+    def::{ProductionClientConnection, TestTopic},
+    message::{Broadcast, Direct, Message},
 };
 use clap::Parser;
 use jf_primitives::signatures::{
@@ -56,7 +56,7 @@ async fn main() {
             public_key,
             private_key,
         },
-        subscribed_topics: vec![Topic::Global],
+        subscribed_topics: vec![TestTopic::Global as u8],
         use_local_authority: true,
     };
 
@@ -91,7 +91,7 @@ async fn main() {
 
         // Send a broadcast message to the global topic
         client
-            .send_broadcast_message(vec![Topic::Global], b"hello broadcast".to_vec())
+            .send_broadcast_message(vec![TestTopic::Global as u8], b"hello broadcast".to_vec())
             .await
             .expect("failed to send message");
         info!("broadcasted \"hello broadcast\" to ourselves");
@@ -106,7 +106,7 @@ async fn main() {
         assert!(
             message
                 == Message::Broadcast(Broadcast {
-                    topics: vec![Topic::Global],
+                    topics: vec![TestTopic::Global as u8],
                     message: b"hello broadcast".to_vec()
                 })
         );

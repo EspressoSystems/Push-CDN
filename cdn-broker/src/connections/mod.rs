@@ -203,7 +203,7 @@ impl<Def: RunDef> Connections<Def> {
         let removed = previous.difference(&now);
 
         // Clone them
-        let differences = (added.cloned().collect(), removed.cloned().collect());
+        let differences = (added.copied().collect(), removed.copied().collect());
 
         // Set the previous to the new one
         *previous = now.clone();

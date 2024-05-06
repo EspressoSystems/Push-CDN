@@ -37,7 +37,7 @@ async fn main() {
             private_key,
         })
         // Subscribe to the global consensus topic
-        .subscribed_topics(vec![Topic::Global])
+        .subscribed_topics(vec![TestTopic::Global as u8])
         .build()
         .unwrap();
 
@@ -70,7 +70,7 @@ async fn main() {
 
     // Send a broadcast message to the global topic
     client
-        .send_broadcast_message(vec![Topic::Global], b"hello broadcast".to_vec())
+        .send_broadcast_message(vec![TestTopic::Global as u8], b"hello broadcast".to_vec())
         .await
         .unwrap();
 
@@ -84,7 +84,7 @@ async fn main() {
     assert!(
         message
             == Message::Broadcast(Broadcast {
-                topics: vec![Topic::Global],
+                topics: vec![TestTopic::Global as u8],
                 message: b"hello broadcast".to_vec()
             })
     );

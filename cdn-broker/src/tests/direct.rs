@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use cdn_proto::{
     connection::{protocols::Connection, Bytes},
-    message::{Direct, Message, Topic},
+    def::TestTopic,
+    message::{Direct, Message},
 };
 use tokio::time::{sleep, timeout};
 
@@ -21,9 +22,12 @@ use crate::{assert_received, send_message_as};
 async fn test_direct_user_to_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
-        connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
+        connected_users: vec![
+            vec![TestTopic::Global as u8],
+            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+        ],
         connected_brokers: vec![
-            (vec![2], vec![Topic::DA]),
+            (vec![2], vec![TestTopic::DA as u8]),
             (vec![3], vec![]),
             (vec![4], vec![]),
         ],
@@ -73,9 +77,12 @@ async fn test_direct_user_to_user() {
 async fn test_direct_user_to_broker() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
-        connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
+        connected_users: vec![
+            vec![TestTopic::Global as u8],
+            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+        ],
         connected_brokers: vec![
-            (vec![3], vec![Topic::DA]),
+            (vec![3], vec![TestTopic::DA as u8]),
             (vec![2], vec![]),
             (vec![4], vec![]),
         ],
@@ -109,9 +116,12 @@ async fn test_direct_user_to_broker() {
 async fn test_direct_broker_to_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
-        connected_users: vec![vec![Topic::Global], vec![Topic::Global, Topic::DA]],
+        connected_users: vec![
+            vec![TestTopic::Global as u8],
+            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+        ],
         connected_brokers: vec![
-            (vec![3], vec![Topic::DA]),
+            (vec![3], vec![TestTopic::DA as u8]),
             (vec![2], vec![]),
             (vec![4], vec![]),
         ],

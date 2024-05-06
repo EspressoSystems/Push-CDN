@@ -11,6 +11,13 @@ use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
 use crate::discovery::{redis::Redis, DiscoveryClient};
 
+/// The test topics for the CDN.
+#[repr(u8)]
+pub enum TestTopic {
+    Global = 0,
+    DA = 1,
+}
+
 /// This trait defines the run configuration for all CDN components.
 pub trait RunDef: 'static {
     type Broker: ConnectionDef;
