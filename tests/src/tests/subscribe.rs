@@ -8,20 +8,21 @@ use tokio::time::timeout;
 
 use super::*;
 
-/// Test that an end-to-end connection succeeds
+/// Test that subscribing and unsubscribing to topics works as expected
+/// on a single broker.
 #[tokio::test]
 async fn test_subscribe() {
     // Get a temporary path for the discovery endpoint
     let discovery_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8080", "8081", &discovery_endpoint).await;
+    new_broker(0, "8095", "8096", &discovery_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8082", &discovery_endpoint).await;
+    new_marshal("8097", &discovery_endpoint).await;
 
     // Create and get the handle to a new client subscribed to the global topic
-    let client = new_client(0, vec![TestTopic::Global as u8], "8082");
+    let client = new_client(0, vec![TestTopic::Global as u8], "8097");
 
     // Send a message to the global topic
     client
@@ -53,9 +54,12 @@ async fn test_subscribe() {
         .expect("failed to send message to topic we weren't in");
 
     // Make sure we didn't receive the message
-    assert!(timeout(Duration::from_secs(1), client.receive_message())
-        .await
-        .is_err());
+    assert!(
+        timeout(Duration::from_secs(1), client.receive_message())
+            .await
+            .is_err(),
+        "received message from topic we weren't in"
+    );
 
     // Subscribe to the DA topic
     client
