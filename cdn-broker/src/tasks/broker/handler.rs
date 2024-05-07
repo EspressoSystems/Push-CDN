@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{auth::broker::BrokerAuth, protocols::Connection as _, Bytes, UserPublicKey},
-    def::{Connection, RunDef, Topic as _},
+    def::{Connection, RunDef},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
@@ -131,28 +131,20 @@ impl<Def: RunDef> Inner<Def> {
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
-                    // Get and prune the topics
-                    let mut topics = broadcast.topics.clone();
-                    Def::Topic::prune(&mut topics)?;
+                    let topics = broadcast.topics.clone();
 
                     self.handle_broadcast_message(&topics, &raw_message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
-                Message::Subscribe(mut subscribe) => {
-                    // Prune the topics
-                    Def::Topic::prune(&mut subscribe)?;
-
+                Message::Subscribe(subscribe) => {
                     self.connections
                         .write()
                         .subscribe_broker_to(broker_identifier, subscribe);
                 }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
-                Message::Unsubscribe(mut unsubscribe) => {
-                    // Prune the topics
-                    Def::Topic::prune(&mut unsubscribe)?;
-
+                Message::Unsubscribe(unsubscribe) => {
                     self.connections
                         .write()
                         .unsubscribe_broker_from(broker_identifier, &unsubscribe);
