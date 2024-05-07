@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cdn_proto::connection::{protocols::Connection as _, UserPublicKey};
-use cdn_proto::def::{Connection, RunDef};
+use cdn_proto::def::{Connection, RunDef, Topic as _};
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
@@ -18,7 +18,8 @@ impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
     pub async fn handle_user_connection(self: Arc<Self>, connection: Connection<Def::User>) {
         // Verify (authenticate) the connection. Needs to happen within 5 seconds
-        let Ok(Ok((public_key, topics))) = timeout(
+        // TODO: make this stateless (e.g. separate subscribe message on connect)
+        let Ok(Ok((public_key, mut topics))) = timeout(
             Duration::from_secs(5),
             BrokerAuth::<Def>::verify_user(
                 &connection,
@@ -31,6 +32,12 @@ impl<Def: RunDef> Inner<Def> {
         else {
             return;
         };
+
+        // Prune the supplied topics
+        //
+        // We don't care about the error because we want to allow users
+        // to connect without subscribing to any topics.
+        let _ = Def::Topic::prune(&mut topics);
 
         // Create a human-readable user identifier (by public key)
         let public_key = UserPublicKey::from(public_key);
@@ -100,13 +107,18 @@ impl<Def: RunDef> Inner<Def> {
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
                 Message::Broadcast(ref broadcast) => {
-                    let topics = broadcast.topics.clone();
+                    // Get and prune the topics
+                    let mut topics = broadcast.topics.clone();
+                    Def::Topic::prune(&mut topics)?;
 
-                    self.handle_broadcast_message(topics, &raw_message, false);
+                    self.handle_broadcast_message(&topics, &raw_message, false);
                 }
 
                 // Subscribe messages from users will just update the state locally
-                Message::Subscribe(subscribe) => {
+                Message::Subscribe(mut subscribe) => {
+                    // Prune the topics
+                    Def::Topic::prune(&mut subscribe)?;
+
                     // TODO: add handle functions for this to make it easier to read
                     self.connections
                         .write()
@@ -114,7 +126,10 @@ impl<Def: RunDef> Inner<Def> {
                 }
 
                 // Unsubscribe messages from users will just update the state locally
-                Message::Unsubscribe(unsubscribe) => {
+                Message::Unsubscribe(mut unsubscribe) => {
+                    // Prune the topics
+                    Def::Topic::prune(&mut unsubscribe)?;
+
                     self.connections
                         .write()
                         .unsubscribe_user_from(public_key, &unsubscribe);

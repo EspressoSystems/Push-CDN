@@ -64,3 +64,4 @@ rkyv.workspace = true
 mnemonic = "1"
 rcgen.workspace = true
 derivative.workspace = true
+num_enum = "0.7"

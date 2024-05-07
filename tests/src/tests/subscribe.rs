@@ -4,7 +4,7 @@ use cdn_proto::{
     def::TestTopic,
     message::{Broadcast, Message},
 };
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 use super::*;
 
@@ -106,4 +106,60 @@ async fn test_subscribe() {
     assert!(timeout(Duration::from_secs(1), client.receive_message())
         .await
         .is_err());
+}
+
+/// Test that subscribing to an invalid topic kills the connection.
+#[tokio::test]
+async fn test_invalid_subscribe() {
+    // Get a temporary path for the discovery endpoint
+    let discovery_endpoint = get_temp_db_path();
+
+    // Create and start a new broker
+    new_broker(0, "8098", "8099", &discovery_endpoint).await;
+
+    // Create and start a new marshal
+    new_marshal("8100", &discovery_endpoint).await;
+
+    // Create and get the handle to a new client subscribed to an invalid topic
+    let client = new_client(0, vec![99], "8100");
+
+    // Ensure the connection is open
+    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
+        panic!("client failed to connect");
+    };
+
+    // Subscribe to an invalid topic
+    let _ = client.subscribe(vec![99]).await;
+
+    // Sleep for a bit to allow the client to disconnect
+    sleep(Duration::from_millis(50)).await;
+
+    // Assert we can't send a message (as we are disconnected)
+    assert!(
+        client
+            .send_broadcast_message(vec![1], b"hello invalid".to_vec())
+            .await
+            .is_err(),
+        "sent message but should've been disconnected"
+    );
+
+    // Reinitialize the connection
+    let Ok(()) = timeout(Duration::from_secs(4), client.ensure_initialized()).await else {
+        panic!("client failed to connect");
+    };
+
+    // Unsubscribe from the invalid topic
+    let _ = client.unsubscribe(vec![99]).await;
+
+    // Sleep for a bit to allow the client to disconnect
+    sleep(Duration::from_millis(50)).await;
+
+    // Assert we can't send a message (as we are disconnected)
+    assert!(
+        client
+            .send_broadcast_message(vec![1], b"hello invalid".to_vec())
+            .await
+            .is_err(),
+        "sent message but should've been disconnected"
+    );
 }

@@ -1,6 +1,7 @@
 //! Compile-time run configuration for all CDN components.
 
 use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::connection::middleware::{
     Middleware as MiddlewareType, NoMiddleware, TrustedMiddleware, UntrustedMiddleware,
@@ -10,19 +11,45 @@ use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolTyp
 use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
 use crate::discovery::{redis::Redis, DiscoveryClient};
+use crate::error::{Error, Result};
 
-/// The test topics for the CDN.
+/// An implementation of `Topic` for testing purposes.
 #[repr(u8)]
+#[derive(IntoPrimitive, TryFromPrimitive, Clone, PartialEq, Eq)]
 pub enum TestTopic {
     Global = 0,
     DA = 1,
 }
+
+/// Defines the topic type for CDN messages
+pub trait Topic: Into<u8> + TryFrom<u8> + Clone + Send + Sync {
+    /// Prunes the topics to only include valid topics.
+    ///
+    /// # Errors
+    /// - If no valid topics are supplied
+    fn prune(topics: &mut Vec<u8>) -> Result<()> {
+        // Deduplicate the topics
+        topics.dedup();
+
+        // Retain only the topics that can be converted to the desired type
+        topics.retain(|topic| Self::try_from(*topic).is_ok());
+
+        // Make sure we have at least one topic
+        if topics.is_empty() {
+            Err(Error::Parse("supplied no valid topics".to_string()))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl Topic for TestTopic {}
 
 /// This trait defines the run configuration for all CDN components.
 pub trait RunDef: 'static {
     type Broker: ConnectionDef;
     type User: ConnectionDef;
     type DiscoveryClientType: DiscoveryClient;
+    type Topic: Topic;
 }
 
 /// This trait defines the connection configuration for a single CDN component.
@@ -39,6 +66,7 @@ impl RunDef for ProductionRunDef {
     type Broker = ProductionBrokerConnection;
     type User = ProductionUserConnection;
     type DiscoveryClientType = Redis;
+    type Topic = TestTopic;
 }
 
 /// The production broker connection configuration.
@@ -77,6 +105,7 @@ impl RunDef for TestingRunDef {
     type Broker = TestingConnection;
     type User = TestingConnection;
     type DiscoveryClientType = Embedded;
+    type Topic = TestTopic;
 }
 
 /// The testing connection configuration.

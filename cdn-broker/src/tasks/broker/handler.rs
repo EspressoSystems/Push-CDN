@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{auth::broker::BrokerAuth, protocols::Connection as _, Bytes, UserPublicKey},
-    def::{Connection, RunDef},
+    def::{Connection, RunDef, Topic as _},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
@@ -131,20 +131,28 @@ impl<Def: RunDef> Inner<Def> {
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
-                    let topics = broadcast.topics.clone();
+                    // Get and prune the topics
+                    let mut topics = broadcast.topics.clone();
+                    Def::Topic::prune(&mut topics)?;
 
-                    self.handle_broadcast_message(topics, &raw_message, true);
+                    self.handle_broadcast_message(&topics, &raw_message, true);
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
-                Message::Subscribe(subscribe) => {
+                Message::Subscribe(mut subscribe) => {
+                    // Prune the topics
+                    Def::Topic::prune(&mut subscribe)?;
+
                     self.connections
                         .write()
                         .subscribe_broker_to(broker_identifier, subscribe);
                 }
 
                 // If we receive a subscribe message from a broker, we remove them as "interested" locally.
-                Message::Unsubscribe(unsubscribe) => {
+                Message::Unsubscribe(mut unsubscribe) => {
+                    // Prune the topics
+                    Def::Topic::prune(&mut unsubscribe)?;
+
                     self.connections
                         .write()
                         .unsubscribe_broker_from(broker_identifier, &unsubscribe);
@@ -212,18 +220,15 @@ impl<Def: RunDef> Inner<Def> {
     /// This function handles broadcast messages from users and brokers.
     pub fn handle_broadcast_message(
         self: &Arc<Self>,
-        mut topics: Vec<Topic>,
+        topics: &[Topic],
         message: &Bytes,
         to_users_only: bool,
     ) {
-        // Deduplicate topics
-        topics.dedup();
-
         // Get the list of actors interested in the topics
         let (interested_brokers, interested_users) = self
             .connections
             .read()
-            .get_interested_by_topic(&topics, to_users_only);
+            .get_interested_by_topic(&topics.to_vec(), to_users_only);
 
         // Debug log the broadcast
         debug!(
