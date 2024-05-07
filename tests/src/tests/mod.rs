@@ -17,6 +17,7 @@ use tokio::spawn;
 mod basic_connect;
 mod double_connect;
 mod whitelist;
+mod subscribe;
 
 /// Generate a keypair from a seed deterministically
 fn keypair_from_seed(
