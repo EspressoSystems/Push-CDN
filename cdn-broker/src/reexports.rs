@@ -16,7 +16,7 @@ pub mod discovery {
 }
 
 pub mod def {
-    pub use cdn_proto::def::{ConnectionDef, RunDef};
+    pub use cdn_proto::def::{ConnectionDef, RunDef, Topic};
 }
 
 pub mod crypto {
