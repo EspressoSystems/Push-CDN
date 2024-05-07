@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use mockall::automock;
 use rustls::{Certificate, PrivateKey};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -26,7 +25,6 @@ pub mod quic;
 pub mod tcp;
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
-#[automock(type Connection=MockConnection; type UnfinalizedConnection=MockUnfinalizedConnection<MockConnection>; type Listener=MockListener<MockUnfinalizedConnection<MockConnection>>;)]
 #[async_trait]
 pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     type Connection: Connection + Send + Sync + Clone;
@@ -51,7 +49,6 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     ) -> Result<Self::Listener>;
 }
 
-#[automock]
 #[async_trait]
 pub trait Connection {
     /// Send an (unserialized) message over the stream.
@@ -83,7 +80,6 @@ pub trait Connection {
     async fn finish(&self);
 }
 
-#[automock]
 #[async_trait]
 pub trait Listener<UnfinalizedConnection: Send + Sync> {
     /// Accept an unfinalized connection from the local, bound socket.
@@ -94,20 +90,12 @@ pub trait Listener<UnfinalizedConnection: Send + Sync> {
     async fn accept(&self) -> Result<UnfinalizedConnection>;
 }
 
-#[automock]
 #[async_trait]
 pub trait UnfinalizedConnection<Connection: Send + Sync> {
     /// Finalize an incoming connection. This is separated so we can prevent
     /// actors who are slow from clogging up the incoming connection by offloading
     /// it to a separate task.
     async fn finalize(self) -> Result<Connection>;
-}
-
-/// We need to implement `clone` manually because we need it and `mockall` can't do it.
-impl Clone for MockConnection {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
 }
 
 /// Read a length-delimited (serialized) message from a stream.
