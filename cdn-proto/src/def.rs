@@ -1,6 +1,6 @@
 //! Compile-time run configuration for all CDN components.
 
-use jf_primitives::signatures::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
+use jf_signature::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::connection::middleware::{

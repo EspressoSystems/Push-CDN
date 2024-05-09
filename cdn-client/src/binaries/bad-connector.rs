@@ -9,9 +9,7 @@ use cdn_proto::{
     def::{ProductionClientConnection, TestTopic},
 };
 use clap::Parser;
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
-};
+use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::sleep;
 use tracing_subscriber::EnvFilter;

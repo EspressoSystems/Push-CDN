@@ -16,7 +16,7 @@ name = "marshal"
 path = "src/binaries/marshal.rs"
 
 [dependencies]
-jf-primitives.workspace = true
+jf-signature.workspace = true
 cdn-proto = { path = "../cdn-proto", default-features = false, features = [
     "metrics",
 ] }

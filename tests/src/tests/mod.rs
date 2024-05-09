@@ -7,9 +7,7 @@ use cdn_proto::{
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
     message::Topic,
 };
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme as _,
-};
+use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme as _};
 use rand::RngCore;
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::spawn;

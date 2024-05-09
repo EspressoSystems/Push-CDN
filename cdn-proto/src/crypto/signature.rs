@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use jf_primitives::signatures::{
+use jf_signature::{
     bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme as JfSignatureScheme,
 };
 
@@ -58,7 +58,7 @@ pub struct KeyPair<Scheme: SignatureScheme> {
 }
 
 /// An example implementation of `Serializable` for Jellyfish's `bls_over_bn254`.
-impl Serializable for jf_primitives::signatures::bls_over_bn254::VerKey {
+impl Serializable for jf_signature::bls_over_bn254::VerKey {
     /// Serialize `Self` using `ark-serialize` (uncompressed)
     ///
     /// # Errors
@@ -81,8 +81,8 @@ impl Serializable for jf_primitives::signatures::bls_over_bn254::VerKey {
 /// An example implementation of `SignatureScheme` for Jellyfish's `bls_over_bn254` signature scheme.
 impl SignatureScheme for BLS {
     /// The private and public key types
-    type PrivateKey = jf_primitives::signatures::bls_over_bn254::SignKey;
-    type PublicKey = jf_primitives::signatures::bls_over_bn254::VerKey;
+    type PrivateKey = jf_signature::bls_over_bn254::SignKey;
+    type PublicKey = jf_signature::bls_over_bn254::VerKey;
 
     /// Sign using the private key and the message. We have to serialize the signature
     /// so we can return it as a `Vec<u8>`.

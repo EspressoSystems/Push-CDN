@@ -43,7 +43,7 @@ console-subscriber = "0.2"
 
 
 [dependencies]
-jf-primitives.workspace = true
+jf-signature.workspace = true
 cdn-proto = { path = "../cdn-proto", default-features = false, features = [
     "metrics",
 ] }

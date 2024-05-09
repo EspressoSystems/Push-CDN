@@ -6,9 +6,7 @@ use std::time::Duration;
 use cdn_broker::{Broker, Config};
 use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
 use clap::Parser;
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
-};
+use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::{spawn, time::sleep};
 use tracing_subscriber::EnvFilter;
