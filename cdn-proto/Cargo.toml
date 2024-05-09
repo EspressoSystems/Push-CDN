@@ -49,7 +49,7 @@ quinn = { version = "0.10", default-features = false, features = [
     "tls-rustls",
     "runtime-tokio",
 ] }
-jf-primitives.workspace = true
+jf-signature.workspace = true
 ark-serialize = "0.4"
 rand.workspace = true
 url = "2"

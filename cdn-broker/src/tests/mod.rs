@@ -14,9 +14,7 @@ use cdn_proto::{
     discovery::BrokerIdentifier,
     message::{Message, Topic},
 };
-use jf_primitives::signatures::{
-    bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme,
-};
+use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::spawn;
 
