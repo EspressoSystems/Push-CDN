@@ -83,7 +83,7 @@ impl<Def: RunDef> Inner<Def> {
         }
     }
 
-    /// This is the main loop where we deal with user connectins. On exit, the calling function
+    /// This is the main loop where we deal with user connections. On exit, the calling function
     /// should remove the user from the map.
     pub async fn user_receive_loop(
         self: &Arc<Self>,
