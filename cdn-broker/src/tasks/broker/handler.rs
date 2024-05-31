@@ -188,6 +188,7 @@ impl<Def: RunDef> Inner<Def> {
                 debug!(
                     user = mnemonic(user_public_key),
                     msg = mnemonic(&*message),
+                    msg_size = message.len(),
                     "direct",
                 );
 
@@ -199,6 +200,7 @@ impl<Def: RunDef> Inner<Def> {
                     debug!(
                         broker = %broker_identifier,
                         msg = mnemonic(&*message),
+                        msg_size = message.len(),
                         "direct",
                     );
 
@@ -227,6 +229,7 @@ impl<Def: RunDef> Inner<Def> {
             num_brokers = interested_brokers.len(),
             num_users = interested_users.len(),
             msg = mnemonic(&**message),
+            msg_size = message.len(),
             "broadcast",
         );
 
