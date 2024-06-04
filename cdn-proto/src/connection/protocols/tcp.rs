@@ -2,31 +2,20 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::time::Duration;
-use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
 use rustls::{Certificate, PrivateKey};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::Mutex;
+use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpSocket, TcpStream},
-};
 
-use super::{
-    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
-    UnfinalizedConnection,
-};
+use super::{Connection, Listener, Protocol, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
 use crate::{
     bail, bail_option,
-    connection::Bytes,
     error::{Error, Result},
-    message::Message,
     parse_endpoint,
 };
 
@@ -37,8 +26,6 @@ pub struct Tcp;
 
 #[async_trait]
 impl<M: Middleware> Protocol<M> for Tcp {
-    type Connection = TcpConnection<M>;
-
     type Listener = TcpListener;
     type UnfinalizedConnection = UnfinalizedTcpConnection;
 
@@ -47,7 +34,7 @@ impl<M: Middleware> Protocol<M> for Tcp {
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: &str, _use_local_authority: bool) -> Result<Self::Connection>
+    async fn connect(remote_endpoint: &str, _use_local_authority: bool) -> Result<Connection>
     where
         Self: Sized,
     {
@@ -83,11 +70,11 @@ impl<M: Middleware> Protocol<M> for Tcp {
 
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
-        Ok(TcpConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        })
+
+        // Convert the streams into a `Connection`
+        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+
+        Ok(connection)
     }
 
     /// Binds to a local endpoint. Does not use a TLS configuration.
@@ -112,95 +99,25 @@ impl<M: Middleware> Protocol<M> for Tcp {
     }
 }
 
-#[derive(Clone)]
-pub struct TcpConnection<M: Middleware> {
-    sender: Arc<Mutex<OwnedWriteHalf>>,
-    receiver: Arc<Mutex<OwnedReadHalf>>,
-    pd: PhantomData<M>,
-}
-
-#[async_trait]
-impl<M: Middleware> Connection for TcpConnection<M> {
-    /// Send an unserialized message over the stream.
-    ///
-    /// # Errors
-    /// If we fail to send or serialize the message
-    async fn send_message(&self, message: Message) -> Result<()> {
-        // Serialize our message
-        let raw_message = Bytes::from_unchecked(bail!(
-            message.serialize(),
-            Serialize,
-            "failed to serialize message"
-        ));
-
-        // Send the message in its raw form
-        self.send_message_raw(raw_message).await
-    }
-
-    /// Send a pre-serialized message over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
-        // Write the message length-delimited
-        write_length_delimited(&mut *self.sender.lock().await, raw_message).await
-    }
-
-    /// Gracefully finish the connection, sending any remaining data.
-    /// This is done by sending two empty messages.
-    async fn finish(&self) {
-        let _ = self.sender.lock().await.flush().await;
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    /// - if we fail to deserialize the message
-    async fn recv_message(&self) -> Result<Message> {
-        // Receive the raw message
-        let raw_message = self.recv_message_raw().await?;
-
-        // Deserialize and return the message
-        Ok(bail!(
-            Message::deserialize(&raw_message),
-            Deserialize,
-            "failed to deserialize message"
-        ))
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&self) -> Result<Bytes> {
-        // Receive the length-delimited message
-        read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
-    }
-}
-
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
 pub struct UnfinalizedTcpConnection(TcpStream);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<TcpConnection<M>> for UnfinalizedTcpConnection {
+impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedTcpConnection {
     /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
     ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
-    async fn finalize(self) -> Result<TcpConnection<M>> {
+    async fn finalize(self) -> Result<Connection> {
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
-        Ok(TcpConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        })
+        // Convert the streams into a `Connection`
+        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+
+        Ok(connection)
     }
 }
 

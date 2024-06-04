@@ -125,4 +125,3 @@ pub type PublicKey<A> = <Scheme<A> as SignatureScheme>::PublicKey;
 pub type Protocol<A> = <A as ConnectionDef>::Protocol;
 pub type Middleware<A> = <A as ConnectionDef>::Middleware;
 pub type Listener<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Listener;
-pub type Connection<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Connection;

@@ -10,10 +10,10 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
-        protocols::{Connection as _, Protocol as _},
+        protocols::{Connection, Protocol as _},
     },
     crypto::signature::KeyPair,
-    def::{Connection, ConnectionDef, Protocol, Scheme},
+    def::{ConnectionDef, Protocol, Scheme},
     error::{Error, Result},
     message::{Message, Topic},
 };
@@ -45,7 +45,7 @@ pub struct Inner<C: ConnectionDef> {
     use_local_authority: bool,
 
     /// The underlying connection
-    connection: Arc<RwLock<OnceCell<Connection<C>>>>,
+    connection: Arc<RwLock<OnceCell<Connection>>>,
 
     /// The keypair to use when authenticating
     pub keypair: KeyPair<Scheme<C>>,
@@ -63,7 +63,7 @@ impl<C: ConnectionDef> Inner<C> {
     /// # Errors
     /// - If the connection failed
     /// - If authentication failed
-    async fn connect(self: &Arc<Self>) -> Result<Connection<C>> {
+    async fn connect(self: &Arc<Self>) -> Result<Connection> {
         // Make the connection to the marshal
         let connection = bail!(
             Protocol::<C>::connect(&self.endpoint, self.use_local_authority).await,
@@ -262,5 +262,26 @@ impl<C: ConnectionDef> Retry<C> {
 
         // If we failed to receive a message, kick off reconnection logic
         try_with_reconnect!(self, out)
+    }
+
+    /// Flushes the connection, ensuring that all messages are sent.
+    /// 
+    /// # Errors
+    /// - If we are in the middle of reconnecting
+    /// - If the connection is closed
+    pub async fn flush(&self) -> Result<()> {
+        // Check if we're (probably) reconnecting or not
+        if let Ok(connection_guard) = self.inner.connection.try_read() {
+            // We're not reconnecting, try to send the message
+            // Initialize the connection if it does not yet exist
+            connection_guard
+                .get_or_try_init(|| self.inner.connect())
+                .await?
+                .flush()
+                .await
+        } else {
+            // We are reconnecting, return an error
+            Err(Error::Connection("reconnection in progress".to_string()))
+        }
     }
 }

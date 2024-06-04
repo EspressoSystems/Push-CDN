@@ -16,8 +16,8 @@ use tokio::{join, runtime::Runtime, spawn};
 /// Transfer a message `raw_message` from `conn1` to `conn2.` This is the primary
 /// function used for testing network protocol speed.
 async fn transfer<Proto: Protocol<NoMiddleware>>(
-    conn1: Proto::Connection,
-    conn2: Proto::Connection,
+    conn1: Connection,
+    conn2: Connection,
     raw_message: Bytes,
 ) {
     // Send from the first connection
@@ -44,7 +44,7 @@ async fn transfer<Proto: Protocol<NoMiddleware>>(
 /// to test.
 fn set_up_bench<Proto: Protocol<NoMiddleware>>(
     message_size: usize,
-) -> (Runtime, Proto::Connection, Proto::Connection, Bytes) {
+) -> (Runtime, Connection, Connection, Bytes) {
     // Create new tokio runtime
     let benchmark_runtime = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
 

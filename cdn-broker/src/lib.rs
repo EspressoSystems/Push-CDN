@@ -75,7 +75,7 @@ struct Inner<R: RunDef> {
 
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
-    connections: Arc<RwLock<Connections<R>>>,
+    connections: Arc<RwLock<Connections>>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.

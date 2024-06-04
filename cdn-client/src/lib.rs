@@ -160,4 +160,14 @@ impl<C: ConnectionDef> Client<C> {
     pub async fn send_message(&self, message: Message) -> Result<()> {
         self.0.send_message(message).await
     }
+
+    /// Flushes the connection, ensuring that all messages are sent.
+    /// This is useful for ensuring that messages are sent before a
+    /// connection is closed.
+    /// 
+    /// # Errors
+    /// - if the connection is already closed
+    pub async fn flush(&self) -> Result<()> {
+        self.0.flush().await
+    }
 }

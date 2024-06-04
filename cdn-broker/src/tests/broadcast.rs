@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::{protocols::Connection, Bytes},
+    connection::Bytes,
     def::TestTopic,
     message::{Broadcast, Message},
 };

@@ -4,8 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cdn_proto::{
-    connection::UserPublicKey,
-    def::{Connection, RunDef},
+    connection::{protocols::Connection, UserPublicKey},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
@@ -23,14 +22,14 @@ mod direct;
 
 type TaskMap = HashMap<u128, AbortHandle>;
 
-pub struct Connections<Def: RunDef> {
+pub struct Connections {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us, along with their running tasks
-    users: HashMap<UserPublicKey, (Connection<Def::User>, TaskMap)>,
+    users: HashMap<UserPublicKey, (Connection, TaskMap)>,
     // The current brokers connected to us, along with their running tasks
-    brokers: HashMap<BrokerIdentifier, (Connection<Def::Broker>, TaskMap)>,
+    brokers: HashMap<BrokerIdentifier, (Connection, TaskMap)>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: DirectMap,
@@ -38,7 +37,7 @@ pub struct Connections<Def: RunDef> {
     broadcast_map: BroadcastMap,
 }
 
-impl<Def: RunDef> Connections<Def> {
+impl Connections {
     /// Create a new `Connections`. Requires an identity for
     /// version vector conflict resolution.
     pub fn new(identity: BrokerIdentifier) -> Self {
@@ -60,66 +59,18 @@ impl<Def: RunDef> Connections<Def> {
     pub fn get_broker_connection(
         &self,
         broker_identifier: &BrokerIdentifier,
-    ) -> Option<Connection<Def::Broker>> {
+    ) -> Option<Connection> {
         self.brokers.get(broker_identifier).map(|(c, _)| c.clone())
     }
 
     /// Get the connection for a given user public key (cloned)
-    pub fn get_user_connection(&self, user: &UserPublicKey) -> Option<Connection<Def::User>> {
+    pub fn get_user_connection(&self, user: &UserPublicKey) -> Option<Connection> {
         self.users.get(user).map(|(c, _)| c.clone())
     }
 
     /// Get all broker identifiers that we are connected to
     pub fn get_broker_identifiers(&self) -> Vec<BrokerIdentifier> {
         self.brokers.keys().cloned().collect()
-    }
-
-    /// Add a task to the list of tasks for a broker along with a unique ID
-    /// This is used to cancel the task if the broker disconnects.
-    pub fn add_broker_task(
-        &mut self,
-        broker_identifier: &BrokerIdentifier,
-        id: u128,
-        handle: AbortHandle,
-    ) {
-        if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
-            // If the broker exists, add the handle to the map of tasks
-            handles.insert(id, handle);
-        } else {
-            // Otherwise, cancel the task
-            handle.abort();
-        }
-    }
-
-    /// Add a task to the list of tasks for a user along with a unique ID
-    /// This is used to cancel the task if the user disconnects.
-    /// TODO: macro this?
-    pub fn add_user_task(&mut self, user: &UserPublicKey, id: u128, handle: AbortHandle) {
-        if let Some((_, handles)) = self.users.get_mut(user) {
-            // If the user exists, add the handle to the map of tasks
-            handles.insert(id, handle);
-        } else {
-            // Otherwise, cancel the task
-            handle.abort();
-        }
-    }
-
-    /// Remove a task from the list of tasks for a broker.
-    /// Does not abort the task.
-    pub fn remove_broker_task(&mut self, broker_identifier: &BrokerIdentifier, id: u128) {
-        if let Some((_, handles)) = self.brokers.get_mut(broker_identifier) {
-            // If the broker exists, remove the handle from the map of tasks
-            handles.remove(&id);
-        }
-    }
-
-    /// Remove a task from the list of tasks for a user.
-    /// Does not abort the task.
-    pub fn remove_user_task(&mut self, user: &UserPublicKey, id: u128) {
-        if let Some((_, handles)) = self.users.get_mut(user) {
-            // If the broker exists, remove the handle from the map of tasks
-            handles.remove(&id);
-        }
     }
 
     /// Get all users and brokers interested in a list of topics.
@@ -222,7 +173,7 @@ impl<Def: RunDef> Connections<Def> {
     pub fn add_broker(
         &mut self,
         broker_identifier: BrokerIdentifier,
-        connection: Connection<Def::Broker>,
+        connection: Connection,
         handle: AbortHandle,
     ) {
         // Increment the metric for the number of brokers connected
@@ -243,7 +194,7 @@ impl<Def: RunDef> Connections<Def> {
     pub fn add_user(
         &mut self,
         user_public_key: &UserPublicKey,
-        connection: Connection<Def::User>,
+        connection: Connection,
         topics: &[Topic],
         handle: AbortHandle,
     ) {

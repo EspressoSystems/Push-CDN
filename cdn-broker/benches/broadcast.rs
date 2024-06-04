@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use cdn_broker::reexports::tests::{TestDefinition, TestRun};
 use cdn_broker::{assert_received, send_message_as};
-use cdn_proto::connection::{protocols::Connection as _, Bytes};
+use cdn_proto::connection::Bytes;
 use cdn_proto::def::TestTopic;
 use cdn_proto::message::{Broadcast, Message};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};

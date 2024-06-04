@@ -2,7 +2,6 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use std::marker::PhantomData;
 use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
@@ -13,21 +12,15 @@ use async_trait::async_trait;
 use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use super::{
-    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
-    UnfinalizedConnection,
-};
+use super::{Connection, Listener, Protocol, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
-use crate::connection::Bytes;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
 use crate::parse_endpoint;
 use crate::{
     bail, bail_option,
     error::{Error, Result},
-    message::Message,
 };
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
@@ -37,15 +30,10 @@ pub struct Quic;
 
 #[async_trait]
 impl<M: Middleware> Protocol<M> for Quic {
-    type Connection = QuicConnection<M>;
-
     type UnfinalizedConnection = UnfinalizedQuicConnection;
     type Listener = QuicListener;
 
-    async fn connect(
-        remote_endpoint: &str,
-        use_local_authority: bool,
-    ) -> Result<QuicConnection<M>> {
+    async fn connect(remote_endpoint: &str, use_local_authority: bool) -> Result<Connection> {
         // Parse the endpoint
         let remote_endpoint = bail_option!(
             bail!(
@@ -137,12 +125,8 @@ impl<M: Middleware> Protocol<M> for Quic {
             "failed to bootstrap connection"
         );
 
-        // Create connection
-        let connection = QuicConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        };
+        // Convert the streams into a `Connection`
+        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
 
         Ok(connection)
     }
@@ -185,85 +169,17 @@ impl<M: Middleware> Protocol<M> for Quic {
     }
 }
 
-#[derive(Clone)]
-pub struct QuicConnection<M: Middleware> {
-    sender: Arc<Mutex<quinn::SendStream>>,
-    receiver: Arc<Mutex<quinn::RecvStream>>,
-    pd: PhantomData<M>,
-}
-
-#[async_trait]
-impl<M: Middleware> Connection for QuicConnection<M> {
-    /// Send an unserialized message over the stream.
-    ///
-    /// # Errors
-    /// If we fail to send or serialize the message
-    async fn send_message(&self, message: Message) -> Result<()> {
-        // Serialize our message
-        let raw_message = Bytes::from_unchecked(bail!(
-            message.serialize(),
-            Serialize,
-            "failed to serialize message"
-        ));
-
-        // Send the message in its raw form
-        self.send_message_raw(raw_message).await
-    }
-
-    /// Send a pre-serialized message over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
-        // Write the message length-delimited
-        write_length_delimited(&mut *self.sender.lock().await, raw_message).await
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    /// - if we fail to deserialize the message
-    async fn recv_message(&self) -> Result<Message> {
-        // Receive the raw message
-        let raw_message = self.recv_message_raw().await?;
-
-        // Deserialize and return the message
-        Ok(bail!(
-            Message::deserialize(&raw_message),
-            Deserialize,
-            "failed to deserialize message"
-        ))
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&self) -> Result<Bytes> {
-        // Receive the length-delimited message
-        read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
-    }
-
-    /// Gracefully finish the connection, sending any remaining data.
-    async fn finish(&self) {
-        let _ = self.sender.lock().await.finish().await;
-    }
-}
-
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
 pub struct UnfinalizedQuicConnection(Connecting);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<QuicConnection<M>> for UnfinalizedQuicConnection {
+impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedQuicConnection {
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
     /// If we to finalize our connection.
-    async fn finalize(self) -> Result<QuicConnection<M>> {
+    async fn finalize(self) -> Result<Connection> {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
@@ -281,12 +197,8 @@ impl<M: Middleware> UnfinalizedConnection<QuicConnection<M>> for UnfinalizedQuic
             "failed to bootstrap connection"
         );
 
-        // Create connection
-        let connection = QuicConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        };
+        // Create a sender and receiver
+        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
 
         // Clone and return the connection
         Ok(connection)

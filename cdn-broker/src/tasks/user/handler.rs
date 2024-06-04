@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdn_proto::connection::{protocols::Connection as _, UserPublicKey};
-use cdn_proto::def::{Connection, RunDef, Topic as _};
+use cdn_proto::connection::{protocols::Connection, UserPublicKey};
+use cdn_proto::def::{RunDef, Topic as _};
 use cdn_proto::error::{Error, Result};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message, mnemonic};
 use tokio::spawn;
@@ -16,7 +16,7 @@ use crate::Inner;
 
 impl<Def: RunDef> Inner<Def> {
     /// This function handles a user (public) connection.
-    pub async fn handle_user_connection(self: Arc<Self>, connection: Connection<Def::User>) {
+    pub async fn handle_user_connection(self: Arc<Self>, connection: Connection) {
         // Verify (authenticate) the connection. Needs to happen within 5 seconds
         // TODO: make this stateless (e.g. separate subscribe message on connect)
         let Ok(Ok((public_key, mut topics))) = timeout(
@@ -72,12 +72,12 @@ impl<Def: RunDef> Inner<Def> {
         #[cfg(feature = "strong-consistency")]
         {
             // Send partial topic data
-            if let Err(err) = self.partial_topic_sync() {
+            if let Err(err) = self.partial_topic_sync().await {
                 error!("failed to perform partial topic sync: {err}");
             }
 
             // Send partial user data
-            if let Err(err) = self.partial_user_sync() {
+            if let Err(err) = self.partial_user_sync().await {
                 error!("failed to perform partial user sync: {err}");
             }
         }
@@ -88,7 +88,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn user_receive_loop(
         self: &Arc<Self>,
         public_key: &UserPublicKey,
-        connection: Connection<Def::User>,
+        connection: Connection,
     ) -> Result<()> {
         loop {
             // Receive a message from the user
@@ -102,7 +102,7 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.handle_direct_message(&user_public_key, raw_message, false);
+                    self.handle_direct_message(&user_public_key, raw_message, false).await;
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
@@ -111,7 +111,7 @@ impl<Def: RunDef> Inner<Def> {
                     let mut topics = broadcast.topics.clone();
                     Def::Topic::prune(&mut topics)?;
 
-                    self.handle_broadcast_message(&topics, &raw_message, false);
+                    self.handle_broadcast_message(&topics, &raw_message, false).await;
                 }
 
                 // Subscribe messages from users will just update the state locally

@@ -5,10 +5,7 @@
 use std::sync::Arc;
 
 use cdn_proto::{
-    connection::protocols::{
-        memory::{Memory, MemoryConnection},
-        Connection,
-    },
+    connection::protocols::{memory::Memory, Connection},
     crypto::{rng::DeterministicRng, signature::KeyPair},
     def::TestingRunDef,
     discovery::BrokerIdentifier,
@@ -29,9 +26,9 @@ use crate::{connections::DirectMap, Broker, Config};
 /// An actor is a [user/broker] that we inject to test message send functionality.
 pub struct InjectedActor {
     /// The in-memory sender that sends to the broker under test
-    pub sender: MemoryConnection,
+    pub sender: Connection,
     /// The in-memory receiver that receives from the broker under test
-    pub receiver: MemoryConnection,
+    pub receiver: Connection,
 }
 
 /// This lets us send a message as a particular network actor. It just helps
@@ -59,7 +56,9 @@ macro_rules! assert_received {
     // Make sure we haven't received this message
     (no, $actor: expr) => {
         assert!(
-            $actor.receiver.receiver.0.is_empty(),
+            timeout(Duration::from_millis(100), $actor.receiver.recv_message())
+                .await
+                .is_err(),
             "wasn't supposed to receive a message but did"
         )
     };
@@ -67,20 +66,23 @@ macro_rules! assert_received {
     // Make sure we have received the message in a timeframe of 50ms
     (yes, $actor: expr, $message:expr) => {
         // Receive the message with a timeout
-        let Ok(message) =
-            timeout(Duration::from_millis(50), $actor.receiver.receiver.0.recv()).await
+        let Ok(message) = timeout(
+            Duration::from_millis(50),
+            $actor.receiver.recv_message_raw(),
+        )
+        .await
         else {
             panic!("timed out trying to receive message");
         };
 
         // Assert the message is the correct one
         assert!(
-            message
-                == Ok(Bytes::from_unchecked(
+            message.unwrap()
+                == Bytes::from_unchecked(
                     $message
                         .serialize()
                         .expect("failed to re-serialize message")
-                )),
+                ),
             "was supposed to receive a message but did not"
         )
     };
