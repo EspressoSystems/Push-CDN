@@ -120,7 +120,7 @@ impl Connection {
                 match message {
                     BytesOrFlush::Bytes(message) => {
                         // Write the message to the stream
-                        if let Err(_) = write_length_delimited(&mut writer, message).await {
+                        if write_length_delimited(&mut writer, message).await.is_err() {
                             receive_from_caller.close();
                             return;
                         };
@@ -138,7 +138,7 @@ impl Connection {
         let receiver_task = tokio::spawn(async move {
             // While we can successfully read messages from the stream,
             while let Ok(message) = read_length_delimited::<R, M>(&mut reader).await {
-                if let Err(_) = send_to_caller.send(message).await {
+                if send_to_caller.send(message).await.is_err() {
                     send_to_caller.close();
                     return;
                 };

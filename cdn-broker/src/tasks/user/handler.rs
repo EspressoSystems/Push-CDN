@@ -102,7 +102,8 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.handle_direct_message(&user_public_key, raw_message, false).await;
+                    self.handle_direct_message(&user_public_key, raw_message, false)
+                        .await;
                 }
 
                 // If we get a broadcast message from a user, send it to both brokers and users.
@@ -111,7 +112,8 @@ impl<Def: RunDef> Inner<Def> {
                     let mut topics = broadcast.topics.clone();
                     Def::Topic::prune(&mut topics)?;
 
-                    self.handle_broadcast_message(&topics, &raw_message, false).await;
+                    self.handle_broadcast_message(&topics, &raw_message, false)
+                        .await;
                 }
 
                 // Subscribe messages from users will just update the state locally

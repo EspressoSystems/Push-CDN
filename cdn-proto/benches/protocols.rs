@@ -15,11 +15,7 @@ use tokio::{join, runtime::Runtime, spawn};
 
 /// Transfer a message `raw_message` from `conn1` to `conn2.` This is the primary
 /// function used for testing network protocol speed.
-async fn transfer<Proto: Protocol<NoMiddleware>>(
-    conn1: Connection,
-    conn2: Connection,
-    raw_message: Bytes,
-) {
+async fn transfer(conn1: Connection, conn2: Connection, raw_message: Bytes) {
     // Send from the first connection
     let conn1_jh = spawn(async move {
         conn1
@@ -113,7 +109,7 @@ fn bench_quic(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_function(BenchmarkId::from_parameter(size), |b| {
             b.to_async(&runtime).iter(|| {
-                transfer::<Quic>(
+                transfer(
                     black_box(conn1.clone()),
                     black_box(conn2.clone()),
                     black_box(message.clone()),
@@ -139,7 +135,7 @@ fn bench_tcp(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_function(BenchmarkId::from_parameter(size), |b| {
             b.to_async(&runtime).iter(|| {
-                transfer::<Tcp>(
+                transfer(
                     black_box(conn1.clone()),
                     black_box(conn2.clone()),
                     black_box(message.clone()),

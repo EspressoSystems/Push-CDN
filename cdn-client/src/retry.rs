@@ -265,7 +265,7 @@ impl<C: ConnectionDef> Retry<C> {
     }
 
     /// Flushes the connection, ensuring that all messages are sent.
-    /// 
+    ///
     /// # Errors
     /// - If we are in the middle of reconnecting
     /// - If the connection is closed
