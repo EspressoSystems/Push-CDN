@@ -20,16 +20,14 @@ use self::broadcast::BroadcastMap;
 mod broadcast;
 mod direct;
 
-type TaskMap = HashMap<u128, AbortHandle>;
-
 pub struct Connections {
     // Our identity. Used for versioned vector conflict resolution.
     identity: BrokerIdentifier,
 
     // The current users connected to us, along with their running tasks
-    users: HashMap<UserPublicKey, (Connection, TaskMap)>,
+    users: HashMap<UserPublicKey, (Connection, AbortHandle)>,
     // The current brokers connected to us, along with their running tasks
-    brokers: HashMap<BrokerIdentifier, (Connection, TaskMap)>,
+    brokers: HashMap<BrokerIdentifier, (Connection, AbortHandle)>,
 
     // The versioned vector for looking up where direct messages should go
     direct_map: DirectMap,
@@ -183,10 +181,7 @@ impl Connections {
         // Remove the old broker if it exists
         self.remove_broker(&broker_identifier, "already existed");
 
-        self.brokers.insert(
-            broker_identifier,
-            (connection, HashMap::from([(0, handle)])),
-        );
+        self.brokers.insert(broker_identifier, (connection, handle));
     }
 
     /// Insert a user into our map. Updates the versioned vector that
@@ -206,10 +201,8 @@ impl Connections {
         self.remove_user(user_public_key.clone(), "already existed");
 
         // Add to our map. Remove the old one if it exists
-        self.users.insert(
-            user_public_key.clone(),
-            (connection, HashMap::from([(0, handle)])),
-        );
+        self.users
+            .insert(user_public_key.clone(), (connection, handle));
 
         // Insert into our direct map
         self.direct_map
@@ -225,15 +218,13 @@ impl Connections {
     /// from our broadcast map, in case they were subscribed to any topics.
     pub fn remove_broker(&mut self, broker_identifier: &BrokerIdentifier, reason: &str) {
         // Remove from broker list, cancelling the previous task if it exists
-        if let Some(task_handles) = self.brokers.remove(broker_identifier).map(|(_, h)| h) {
+        if let Some((_, task)) = self.brokers.remove(broker_identifier) {
             // Decrement the metric for the number of brokers connected
             metrics::NUM_BROKERS_CONNECTED.dec();
             error!(id = %broker_identifier, reason = reason, "broker disconnected");
 
-            // Cancel all tasks
-            for (_, handle) in task_handles {
-                handle.abort();
-            }
+            // Cancel the task
+            task.abort();
         };
 
         // Remove from all topics
@@ -249,7 +240,7 @@ impl Connections {
     /// to send us messages for a disconnected user.
     pub fn remove_user(&mut self, user_public_key: UserPublicKey, reason: &str) {
         // Remove from user list, returning the previous handle if it exists
-        if let Some(task_handles) = self.users.remove(&user_public_key).map(|(_, h)| h) {
+        if let Some((_, task)) = self.users.remove(&user_public_key) {
             // Decrement the metric for the number of users connected
             metrics::NUM_USERS_CONNECTED.dec();
             warn!(
@@ -258,10 +249,8 @@ impl Connections {
                 "user disconnected"
             );
 
-            // Cancel all tasks
-            for (_, handle) in task_handles {
-                handle.abort();
-            }
+            // Cancel the task
+            task.abort();
         };
 
         // Remove from user topics
