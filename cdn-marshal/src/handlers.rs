@@ -26,7 +26,7 @@ impl<R: RunDef> Marshal<R> {
             info!(id = mnemonic(&user_public_key), "user authenticated");
         }
 
-        // Finish the connection, ensuring all data was sent
-        connection.finish().await;
+        // Flush the connection, sending any remaining data.
+        connection.flush().await;
     }
 }

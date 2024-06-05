@@ -1,8 +1,8 @@
 //! In this module we define TLS-related items, such as an optional
 //! way to skip server verification.
 
-use rcgen::{generate_simple_self_signed, CertificateParams, KeyPair};
-use rustls::{Certificate, PrivateKey};
+use rcgen::{CertificateParams, Ia5String, IsCa, KeyPair, SanType};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 use crate::{
     bail,
@@ -40,47 +40,47 @@ hQ==
 ///
 /// # Errors
 /// - If we fail to parse the local certificate
-pub fn generate_cert_from_ca(ca_cert: &str, ca_key: &str) -> Result<(Certificate, PrivateKey)> {
-    // Load in the CA cert from the provided cert and key
-    let ca_cert_params = bail!(
-        CertificateParams::from_ca_cert_pem(
-            ca_cert,
-            bail!(
-                KeyPair::from_pem(ca_key),
-                File,
-                "failed to load key from PEM"
-            )
-        ),
-        File,
-        "failed to create certificate from supplied CA"
-    );
-
-    // Convert the parameters to their cert representation
-    let ca_cert = bail!(
-        rcgen::Certificate::from_params(ca_cert_params),
+pub fn generate_cert_from_ca(
+    ca_cert: &str,
+    ca_key: &str,
+) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>)> {
+    // Parse the provided CA certificate
+    let mut certificate_params = bail!(
+        CertificateParams::from_ca_cert_pem(ca_cert),
         Crypto,
-        "failed to generate certificate from parameters"
+        "failed to parse provided CA cert"
     );
 
-    // Create a new self-signed certificate
-    let new_cert = bail!(
-        generate_simple_self_signed(vec!["espresso".to_string()]),
+    // Create an `espresso` SAN for the certificate
+    let espresso_san = SanType::DnsName(bail!(
+        Ia5String::try_from("espresso"),
+        Parse,
+        "failed to parse \"espresso\" as `Ia5String`"
+    ));
+
+    // Set the SAN
+    certificate_params.subject_alt_names = vec![espresso_san];
+
+    // Explicitly set the certificate as not being a CA
+    certificate_params.is_ca = IsCa::ExplicitNoCa;
+
+    // Parse the provided CA key
+    let key_pair = bail!(
+        KeyPair::from_pem(ca_key),
+        Crypto,
+        "failed to parse provided CA key"
+    );
+
+    // Generate a self-signed certificate
+    let certificate = bail!(
+        certificate_params.self_signed(&key_pair),
         Crypto,
         "failed to generate self-signed certificate"
     );
 
-    // Sign the certificate chain with the CA pair and return the certificate
-    let certificate = bail!(
-        new_cert.serialize_der_with_signer(&ca_cert),
-        Crypto,
-        "failed to sign self-signed certificate"
-    );
-
-    // Extrapolate the certificate's key in binary format
-    let key = new_cert.serialize_private_key_der();
-
-    // Return both the new cert and the new key
-    Ok((Certificate(certificate), PrivateKey(key)))
+    // Convert the certificate and key to DER format and return
+    let key_pair = PrivatePkcs8KeyDer::from(key_pair.serialize_der());
+    Ok((certificate.der().to_owned(), key_pair.into()))
 }
 
 /// Conditionally load the CA key and cert from the filesystem. Returns the local

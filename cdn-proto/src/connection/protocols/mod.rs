@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     time::timeout,
@@ -44,8 +44,8 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     /// If we fail to bind to the given socket endpoint
     async fn bind(
         bind_endpoint: &str,
-        certificate: Certificate,
-        key: PrivateKey,
+        certificate: CertificateDer<'static>,
+        key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener>;
 }
 
@@ -76,8 +76,8 @@ pub trait Connection {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes>;
 
-    /// Gracefully finish the connection, sending any remaining data.
-    async fn finish(&self);
+    /// Flush the connection, sending any remaining data.
+    async fn flush(&self);
 }
 
 #[async_trait]
@@ -255,7 +255,7 @@ pub mod tests {
             // Send our message
             connection.send_message(new_connection_to_listener).await?;
 
-            connection.finish().await;
+            connection.flush().await;
 
             Ok(())
         });

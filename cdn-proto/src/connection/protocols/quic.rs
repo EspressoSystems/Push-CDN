@@ -10,8 +10,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use quinn::{ClientConfig, Connecting, Endpoint, ServerConfig, TransportConfig, VarInt};
-use rustls::{Certificate, PrivateKey, RootCertStore};
+use quinn::{ClientConfig, Endpoint, Incoming, ServerConfig, TransportConfig, VarInt};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::RootCertStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -83,13 +84,17 @@ impl<M: Middleware> Protocol<M> for Quic {
         // Create root certificate store and add our CA
         let mut root_cert_store = RootCertStore::empty();
         bail!(
-            root_cert_store.add(&Certificate(root_ca)),
+            root_cert_store.add(CertificateDer::from(root_ca)),
             File,
             "failed to add certificate to root store"
         );
 
         // Create config from the root store
-        let mut config: ClientConfig = ClientConfig::with_root_certificates(root_cert_store);
+        let mut config: ClientConfig = bail!(
+            ClientConfig::with_root_certificates(root_cert_store.into()),
+            Crypto,
+            "failed to create client config"
+        );
 
         // Enable sending of keep-alives
         let mut transport_config = TransportConfig::default();
@@ -155,8 +160,8 @@ impl<M: Middleware> Protocol<M> for Quic {
     /// - If we cannot bind to the local interface
     async fn bind(
         bind_endpoint: &str,
-        certificate: Certificate,
-        key: PrivateKey,
+        certificate: CertificateDer<'static>,
+        key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Parse the bind endpoint
         let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);
@@ -247,15 +252,15 @@ impl<M: Middleware> Connection for QuicConnection<M> {
         read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
     }
 
-    /// Gracefully finish the connection, sending any remaining data.
-    async fn finish(&self) {
-        let _ = self.sender.lock().await.finish().await;
+    /// Flush the connection, sending any remaining data.
+    async fn flush(&self) {
+        let _ = self.sender.lock().await.stopped().await;
     }
 }
 
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
-pub struct UnfinalizedQuicConnection(Connecting);
+pub struct UnfinalizedQuicConnection(Incoming);
 
 #[async_trait]
 impl<M: Middleware> UnfinalizedConnection<QuicConnection<M>> for UnfinalizedQuicConnection {

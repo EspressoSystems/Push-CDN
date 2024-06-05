@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{sync::RwLock, task::spawn_blocking};
 
 use super::{Connection, Listener, Protocol, UnfinalizedConnection};
@@ -91,8 +91,8 @@ impl<M: Middleware> Protocol<M> for Memory {
     /// - If we fail to bind to the local endpoint
     async fn bind(
         bind_endpoint: &str,
-        _certificate: Certificate,
-        _key: PrivateKey,
+        _certificate: CertificateDer<'static>,
+        _key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Create our channels
         let (send_to_us, receive_from_them) = unbounded_async();
@@ -196,9 +196,9 @@ impl Connection for MemoryConnection {
         Ok(raw_message)
     }
 
-    /// Finish the connection, sending any remaining data.
+    /// Flush the connection, sending any remaining data.
     /// Is a no-op for memory connections.
-    async fn finish(&self) {}
+    async fn flush(&self) {}
 }
 
 #[derive(Clone)]

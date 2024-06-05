@@ -8,7 +8,7 @@ use std::time::Duration;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use async_trait::async_trait;
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -97,8 +97,8 @@ impl<M: Middleware> Protocol<M> for Tcp {
     /// - If we cannot parse the bind endpoint
     async fn bind(
         bind_endpoint: &str,
-        _certificate: Certificate,
-        _key: PrivateKey,
+        _certificate: CertificateDer<'static>,
+        _key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Parse the bind endpoint
         let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);
@@ -146,9 +146,8 @@ impl<M: Middleware> Connection for TcpConnection<M> {
         write_length_delimited(&mut *self.sender.lock().await, raw_message).await
     }
 
-    /// Gracefully finish the connection, sending any remaining data.
-    /// This is done by sending two empty messages.
-    async fn finish(&self) {
+    /// Flushes the connection, sending any remaining data.
+    async fn flush(&self) {
         let _ = self.sender.lock().await.flush().await;
     }
 

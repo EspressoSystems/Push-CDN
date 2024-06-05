@@ -32,7 +32,7 @@ async-std = { version = "1", default-features = false, features = [
 ] }
 rkyv = { version = "0.7", features = ["validation"] }
 derivative = "2"
-rcgen = { version = "0.12", features = ["x509-parser", "pem"] }
+rcgen = { version = "0.13", features = ["x509-parser", "crypto"] }
 
 # Dev dependencies (can't be defined explicitly in the workspace)
 # TODO: figure out if this actually builds on non-test targets

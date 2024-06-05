@@ -157,7 +157,7 @@ impl<R: RunDef> Broker<R> {
             Protocol::<R::User>::bind(
                 public_bind_endpoint.as_str(),
                 tls_cert.clone(),
-                tls_key.clone()
+                tls_key.clone_key()
             )
             .await,
             Connection,
