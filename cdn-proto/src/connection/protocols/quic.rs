@@ -112,22 +112,14 @@ impl<M: Middleware> Protocol<M> for Quic {
         );
 
         // Open an outgoing bidirectional stream
-        let (mut sender, receiver) = bail!(
+        let (sender, receiver) = bail!(
             bail!(
-                timeout(Duration::from_secs(5), connection.open_bi()).await,
+                timeout(Duration::from_secs(5), open_bi(&connection)).await,
                 Connection,
-                "timed out accepting stream"
+                "timed out opening bidirectional stream"
             ),
             Connection,
-            "failed to accept bidirectional stream"
-        );
-
-        // Write a `u8` to bootstrap the connection (make the sender aware of our
-        // outbound stream request)
-        bail!(
-            sender.write_u8(0).await,
-            Connection,
-            "failed to bootstrap connection"
+            "failed to open bidirectional stream"
         );
 
         // Convert the streams into a `Connection`
@@ -189,17 +181,14 @@ impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedQuicConnection {
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
         // Accept an incoming bidirectional stream
-        let (sender, mut receiver) = bail!(
-            connection.accept_bi().await,
+        let (sender, receiver) = bail!(
+            bail!(
+                timeout(Duration::from_secs(5), accept_bi(&connection)).await,
+                Connection,
+                "timed out accepting bidirectional stream"
+            ),
             Connection,
             "failed to accept bidirectional stream"
-        );
-
-        // Read the `u8` required to bootstrap the connection
-        bail!(
-            receiver.read_u8().await,
-            Connection,
-            "failed to bootstrap connection"
         );
 
         // Create a sender and receiver
@@ -231,6 +220,56 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
 
         Ok(UnfinalizedQuicConnection(connection))
     }
+}
+
+/// A helper function for opening a new connection and atomically
+/// writing to it to bootstrap it.
+///
+/// # Errors
+/// - If we fail to open a bidirectional stream
+/// - If we fail to write to the stream
+async fn open_bi(connection: &quinn::Connection) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    // Open a bidirectional stream
+    let (mut sender, receiver) = bail!(
+        connection.open_bi().await,
+        Connection,
+        "failed to open unidirectional stream"
+    );
+
+    // Write a `u8` to bootstrap the connection
+    bail!(
+        sender.write_u8(0).await,
+        Connection,
+        "failed to write `u8` to unidirectional stream"
+    );
+
+    Ok((sender, receiver))
+}
+
+/// A helper function for accepting a new connection and atomically
+/// reading from it to bootstrap it.
+///
+/// # Errors
+/// - If we fail to accept a bidirectional stream
+/// - If we fail to read from the stream
+async fn accept_bi(
+    connection: &quinn::Connection,
+) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    // Accept an incoming bidirectional stream
+    let (sender, mut receiver) = bail!(
+        connection.accept_bi().await,
+        Connection,
+        "failed to accept bidirectional stream"
+    );
+
+    // Read the `u8` required to bootstrap the connection
+    bail!(
+        receiver.read_u8().await,
+        Connection,
+        "failed to read `u8` from bidirectional stream"
+    );
+
+    Ok((sender, receiver))
 }
 
 #[cfg(test)]
