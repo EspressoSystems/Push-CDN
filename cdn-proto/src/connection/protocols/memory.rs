@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::OnceLock};
 
 use async_trait::async_trait;
 use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{duplex, DuplexStream},
     sync::RwLock,

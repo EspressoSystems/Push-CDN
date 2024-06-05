@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use kanal::{AsyncReceiver, AsyncSender};
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::oneshot,

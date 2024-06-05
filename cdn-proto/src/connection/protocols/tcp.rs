@@ -7,7 +7,8 @@ use std::net::ToSocketAddrs;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::CertificateDer;
+use rustls::pki_types::PrivateKeyDer;
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
 
