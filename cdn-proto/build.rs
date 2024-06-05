@@ -1,6 +1,7 @@
 use std::{env, fs, path::Path};
 
-use rcgen::{Certificate, CertificateParams, IsCa, KeyPair};
+use rcgen::{CertificateParams, IsCa, KeyPair, PKCS_ECDSA_P256_SHA256};
+use rustls_pki_types::PrivatePkcs8KeyDer;
 
 pub static KEYPAIR: [u8; 138] = [
     48, 129, 135, 2, 1, 0, 48, 19, 6, 7, 42, 134, 72, 206, 61, 2, 1, 6, 8, 42, 134, 72, 206, 61, 3,
@@ -16,14 +17,18 @@ fn main() {
     // Get out directory
     let out_dir = env::var_os("OUT_DIR").unwrap();
 
+    // Convert `KEYPAIR` to a `PrivatePkcs8KeyDer` and then to a `KeyPair`
+    let key_pair = PrivatePkcs8KeyDer::from(KEYPAIR.to_vec());
+    let key_pair = KeyPair::from_der_and_sign_algo(&key_pair.into(), &PKCS_ECDSA_P256_SHA256)
+        .expect("failed to parse pinned keypair");
+
     // Create CA certificate generation parameters
     let mut ca_cert_params = CertificateParams::default();
     ca_cert_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    ca_cert_params.key_pair =
-        Some(KeyPair::from_der(&KEYPAIR).expect("failed to read pinned keypair"));
 
     // Generate the CA certificate
-    let ca_cert = Certificate::from_params(ca_cert_params)
+    let ca_cert = ca_cert_params
+        .self_signed(&key_pair)
         .expect("failed to generate testing CA certificate");
 
     // The path for the testing certificates
@@ -37,8 +42,8 @@ fn main() {
             pub static LOCAL_CA_CERT: &str = \"{}\";
             pub static LOCAL_CA_KEY: &str = \"{}\";
             ",
-            ca_cert.serialize_pem().expect("failed to serialize cert"),
-            ca_cert.serialize_private_key_pem()
+            ca_cert.pem(),
+            key_pair.serialize_pem()
         ),
     )
     .expect("failed to write to build directory");

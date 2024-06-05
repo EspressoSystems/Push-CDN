@@ -6,6 +6,7 @@ description = "Contains the common protocol definition and common code for the b
 
 [build-dependencies]
 rcgen.workspace = true
+rustls-pki-types = { version = "1", default-features = false }
 capnpc = "0.19"
 
 [features]
@@ -45,9 +46,10 @@ tokio = { workspace = true }
 
 capnp = "0.19"
 thiserror = "1"
-quinn = { version = "0.10", default-features = false, features = [
-    "tls-rustls",
+quinn = { version = "0.11", default-features = false, features = [
+    "rustls",
     "runtime-tokio",
+    "ring"
 ] }
 jf-signature.workspace = true
 ark-serialize = "0.4"
@@ -55,7 +57,7 @@ rand.workspace = true
 url = "2"
 tracing.workspace = true
 pem = "3"
-rustls = { version = "0.21", default-features = false }
+rustls = { version = "0.23", default-features = false }
 async-trait = "0.1"
 warp = { version = "0.3", default-features = false }
 anyhow = "1"

@@ -84,8 +84,8 @@ impl<M: Middleware> Protocol<M> for Tcp {
     /// - If we cannot parse the bind endpoint
     async fn bind(
         bind_endpoint: &str,
-        _certificate: Certificate,
-        _key: PrivateKey,
+        _certificate: CertificateDer<'static>,
+        _key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Parse the bind endpoint
         let bind_endpoint: SocketAddr = parse_endpoint!(bind_endpoint);

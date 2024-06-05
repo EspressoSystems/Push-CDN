@@ -83,8 +83,8 @@ impl<M: Middleware> Protocol<M> for Memory {
     /// - If we fail to bind to the local endpoint
     async fn bind(
         bind_endpoint: &str,
-        _certificate: Certificate,
-        _key: PrivateKey,
+        _certificate: CertificateDer<'static>,
+        _key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Create our channels
         let (send_to_us, receive_from_them) = unbounded_async();

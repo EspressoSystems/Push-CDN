@@ -45,8 +45,8 @@ pub trait Protocol<M: Middleware>: Send + Sync + 'static {
     /// If we fail to bind to the given socket endpoint
     async fn bind(
         bind_endpoint: &str,
-        certificate: Certificate,
-        key: PrivateKey,
+        certificate: CertificateDer<'static>,
+        key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener>;
 }
 
