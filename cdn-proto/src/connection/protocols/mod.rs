@@ -94,6 +94,8 @@ impl Drop for ConnectionRef {
         // Cancel all tasks
         for task in self.tasks.iter() {
             task.abort();
+            self.sender.close();
+            self.receiver.close();
         }
     }
 }
