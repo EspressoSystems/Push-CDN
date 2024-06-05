@@ -252,9 +252,15 @@ impl<M: Middleware> Connection for QuicConnection<M> {
         read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
     }
 
-    /// Flush the connection, sending any remaining data.
-    async fn flush(&self) {
-        let _ = self.sender.lock().await.stopped().await;
+    /// Finish the connection, sending any remaining data.
+    async fn finish(&self) {
+        let mut sender = self.sender.lock().await;
+
+        // Finish the stream
+        if sender.finish().is_ok() {
+            // Wait for the stream to be stopped with a timeout
+            let _ = timeout(Duration::from_secs(5), sender.stopped()).await;
+        };
     }
 }
 

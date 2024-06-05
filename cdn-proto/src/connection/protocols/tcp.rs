@@ -147,7 +147,7 @@ impl<M: Middleware> Connection for TcpConnection<M> {
     }
 
     /// Flushes the connection, sending any remaining data.
-    async fn flush(&self) {
+    async fn finish(&self) {
         let _ = self.sender.lock().await.flush().await;
     }
 

@@ -76,8 +76,8 @@ pub trait Connection {
     /// - if we fail to receive the message
     async fn recv_message_raw(&self) -> Result<Bytes>;
 
-    /// Flush the connection, sending any remaining data.
-    async fn flush(&self);
+    /// Finish the connection, sending any remaining data.
+    async fn finish(&self);
 }
 
 #[async_trait]
@@ -255,7 +255,7 @@ pub mod tests {
             // Send our message
             connection.send_message(new_connection_to_listener).await?;
 
-            connection.flush().await;
+            connection.finish().await;
 
             Ok(())
         });

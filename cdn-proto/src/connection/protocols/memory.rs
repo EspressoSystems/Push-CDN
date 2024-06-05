@@ -196,9 +196,9 @@ impl Connection for MemoryConnection {
         Ok(raw_message)
     }
 
-    /// Flush the connection, sending any remaining data.
+    /// Finish the connection, sending any remaining data.
     /// Is a no-op for memory connections.
-    async fn flush(&self) {}
+    async fn finish(&self) {}
 }
 
 #[derive(Clone)]
