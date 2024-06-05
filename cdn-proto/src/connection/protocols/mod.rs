@@ -91,11 +91,13 @@ pub struct ConnectionRef {
 
 impl Drop for ConnectionRef {
     fn drop(&mut self) {
-        // Cancel all tasks
+        // Close the channels
+        self.sender.close();
+        self.receiver.close();
+
+        // Abort all tasks
         for task in self.tasks.iter() {
             task.abort();
-            self.sender.close();
-            self.receiver.close();
         }
     }
 }
@@ -128,7 +130,7 @@ impl Connection {
                         };
                     }
                     BytesOrFlush::Flush(result_sender) => {
-                        // Acknowledge that we've finished successfully
+                        // Acknowledge that we've processed up to this point
                         let _ = result_sender.send(());
                     }
                 }
@@ -213,7 +215,7 @@ impl Connection {
         Ok(bail!(
             self.0.receiver.recv().await,
             Connection,
-            "failed to send message"
+            "failed to receive message"
         ))
     }
 
