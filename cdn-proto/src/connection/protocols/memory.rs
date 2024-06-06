@@ -13,7 +13,6 @@ use tokio::{
 };
 
 use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
-use crate::connection::middleware::NoMiddleware;
 #[cfg(feature = "metrics")]
 use crate::{
     bail,
@@ -32,7 +31,7 @@ static LISTENERS: OnceLock<RwLock<HashMap<String, ChannelExchange>>> = OnceLock:
 pub struct Memory;
 
 #[async_trait]
-impl<M: Middleware> Protocol<M> for Memory {
+impl Protocol for Memory {
     type UnfinalizedConnection = UnfinalizedMemoryConnection;
     type Listener = MemoryListener;
 
@@ -40,7 +39,11 @@ impl<M: Middleware> Protocol<M> for Memory {
     ///
     /// # Errors
     /// - If the listener is not listening
-    async fn connect(remote_endpoint: &str, _use_local_authority: bool) -> Result<Connection> {
+    async fn connect(
+        remote_endpoint: &str,
+        _use_local_authority: bool,
+        middleware: Middleware,
+    ) -> Result<Connection> {
         // If the peer is not listening, return an error
         // Get or initialize the channels as a static value
         let listeners = LISTENERS.get_or_init(RwLock::default).read().await;
@@ -70,7 +73,7 @@ impl<M: Middleware> Protocol<M> for Memory {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _, M>(send_to_them, receive_from_them);
+        let connection = Connection::from_streams(send_to_them, receive_from_them, middleware);
 
         // Return our connection
         Ok(connection)
@@ -111,11 +114,12 @@ pub struct UnfinalizedMemoryConnection {
 }
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedMemoryConnection {
+impl UnfinalizedConnection for UnfinalizedMemoryConnection {
     /// Prepares the `MemoryConnection` for usage by `Arc()ing` things.
-    async fn finalize(self) -> Result<Connection> {
+    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _, M>(self.send_stream, self.receive_stream);
+        let connection =
+            Connection::from_streams(self.send_stream, self.receive_stream, middleware);
 
         // Return our connection
         Ok(connection)
@@ -187,7 +191,7 @@ impl Memory {
         let (sender, receiver) = duplex(8192);
 
         // Convert the streams into a `Connection`
-        Connection::from_streams::<_, _, NoMiddleware>(sender, receiver)
+        Connection::from_streams(sender, receiver, Middleware::none())
     }
 }
 

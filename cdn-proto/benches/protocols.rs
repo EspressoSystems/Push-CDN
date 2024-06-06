@@ -2,7 +2,7 @@
 
 use cdn_proto::{
     connection::{
-        middleware::TrustedMiddleware,
+        middleware::Middleware,
         protocols::{quic::Quic, tcp::Tcp, Connection, Listener, Protocol, UnfinalizedConnection},
         Bytes,
     },
@@ -38,9 +38,7 @@ async fn transfer(conn1: Connection, conn2: Connection, raw_message: Bytes) {
 
 /// Set up our protocol benchmarks, including async runtime, given the message size
 /// to test.
-fn set_up_bench<Proto: Protocol<TrustedMiddleware>>(
-    message_size: usize,
-) -> (Runtime, Connection, Connection, Bytes) {
+fn set_up_bench<Proto: Protocol>(message_size: usize) -> (Runtime, Connection, Connection, Bytes) {
     // Create new tokio runtime
     let benchmark_runtime = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
 
@@ -66,13 +64,13 @@ fn set_up_bench<Proto: Protocol<TrustedMiddleware>>(
 
             // Finalize the connection
             unfinalized_connection
-                .finalize()
+                .finalize(Middleware::none())
                 .await
                 .expect("failed to finalize connection")
         });
 
         // Attempt to connect
-        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true)
+        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true, Middleware::none())
             .await
             .expect("failed to connect to listener");
 

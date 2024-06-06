@@ -30,11 +30,15 @@ use crate::{
 pub struct Quic;
 
 #[async_trait]
-impl<M: Middleware> Protocol<M> for Quic {
+impl Protocol for Quic {
     type UnfinalizedConnection = UnfinalizedQuicConnection;
     type Listener = QuicListener;
 
-    async fn connect(remote_endpoint: &str, use_local_authority: bool) -> Result<Connection> {
+    async fn connect(
+        remote_endpoint: &str,
+        use_local_authority: bool,
+        middleware: Middleware,
+    ) -> Result<Connection> {
         // Parse the endpoint
         let remote_endpoint = bail_option!(
             bail!(
@@ -123,7 +127,7 @@ impl<M: Middleware> Protocol<M> for Quic {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+        let connection = Connection::from_streams::<_, _>(sender, receiver, middleware);
 
         Ok(connection)
     }
@@ -171,12 +175,12 @@ impl<M: Middleware> Protocol<M> for Quic {
 pub struct UnfinalizedQuicConnection(Incoming);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedQuicConnection {
+impl UnfinalizedConnection for UnfinalizedQuicConnection {
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
     /// If we to finalize our connection.
-    async fn finalize(self) -> Result<Connection> {
+    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
@@ -192,7 +196,7 @@ impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedQuicConnection {
         );
 
         // Create a sender and receiver
-        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+        let connection = Connection::from_streams(sender, receiver, middleware);
 
         // Clone and return the connection
         Ok(connection)

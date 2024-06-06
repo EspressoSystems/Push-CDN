@@ -3,9 +3,6 @@
 use jf_signature::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::connection::middleware::{
-    Middleware as MiddlewareType, NoMiddleware, TrustedMiddleware, UntrustedMiddleware,
-};
 use crate::connection::protocols::memory::Memory;
 use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
@@ -55,8 +52,7 @@ pub trait RunDef: 'static {
 /// This trait defines the connection configuration for a single CDN component.
 pub trait ConnectionDef: 'static {
     type Scheme: SignatureScheme;
-    type Protocol: ProtocolType<Self::Middleware>;
-    type Middleware: MiddlewareType;
+    type Protocol: ProtocolType;
 }
 
 /// The production run configuration.
@@ -75,7 +71,6 @@ pub struct ProductionBrokerConnection;
 impl ConnectionDef for ProductionBrokerConnection {
     type Scheme = BLS;
     type Protocol = Tcp;
-    type Middleware = TrustedMiddleware;
 }
 
 /// The production user connection configuration.
@@ -84,7 +79,6 @@ pub struct ProductionUserConnection;
 impl ConnectionDef for ProductionUserConnection {
     type Scheme = BLS;
     type Protocol = Quic;
-    type Middleware = UntrustedMiddleware;
 }
 
 /// The production client connection configuration.
@@ -95,7 +89,6 @@ pub struct ProductionClientConnection;
 impl ConnectionDef for ProductionClientConnection {
     type Scheme = Scheme<<ProductionRunDef as RunDef>::User>;
     type Protocol = Protocol<<ProductionRunDef as RunDef>::User>;
-    type Middleware = TrustedMiddleware;
 }
 
 /// The testing run configuration.
@@ -114,7 +107,6 @@ pub struct TestingConnection;
 impl ConnectionDef for TestingConnection {
     type Scheme = BLS;
     type Protocol = Memory;
-    type Middleware = NoMiddleware;
 }
 
 // Type aliases to automatically disambiguate usage
@@ -123,5 +115,4 @@ pub type PublicKey<A> = <Scheme<A> as SignatureScheme>::PublicKey;
 
 // Type aliases to automatically disambiguate usage
 pub type Protocol<A> = <A as ConnectionDef>::Protocol;
-pub type Middleware<A> = <A as ConnectionDef>::Middleware;
-pub type Listener<A> = <Protocol<A> as ProtocolType<Middleware<A>>>::Listener;
+pub type Listener<A> = <Protocol<A> as ProtocolType>::Listener;

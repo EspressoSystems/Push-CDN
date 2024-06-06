@@ -28,7 +28,7 @@ use crate::{
 pub struct Tcp;
 
 #[async_trait]
-impl<M: Middleware> Protocol<M> for Tcp {
+impl Protocol for Tcp {
     type Listener = TcpListener;
     type UnfinalizedConnection = UnfinalizedTcpConnection;
 
@@ -37,7 +37,11 @@ impl<M: Middleware> Protocol<M> for Tcp {
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: &str, _use_local_authority: bool) -> Result<Connection>
+    async fn connect(
+        remote_endpoint: &str,
+        _use_local_authority: bool,
+        middleware: Middleware,
+    ) -> Result<Connection>
     where
         Self: Sized,
     {
@@ -75,7 +79,7 @@ impl<M: Middleware> Protocol<M> for Tcp {
         let (receiver, sender) = stream.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+        let connection = Connection::from_streams(sender, receiver, middleware);
 
         Ok(connection)
     }
@@ -107,18 +111,18 @@ impl<M: Middleware> Protocol<M> for Tcp {
 pub struct UnfinalizedTcpConnection(TcpStream);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<M> for UnfinalizedTcpConnection {
+impl UnfinalizedConnection for UnfinalizedTcpConnection {
     /// Finalize the connection by splitting it into a sender and receiver side.
     /// Conssumes `Self`.
     ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
-    async fn finalize(self) -> Result<Connection> {
+    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _, M>(sender, receiver);
+        let connection = Connection::from_streams(sender, receiver, middleware);
 
         Ok(connection)
     }

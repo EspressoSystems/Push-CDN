@@ -14,7 +14,10 @@ mod handlers;
 
 use cdn_proto::{
     bail,
-    connection::protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
+    connection::{
+        middleware::Middleware,
+        protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
+    },
     crypto::tls::{generate_cert_from_ca, load_ca},
     def::{Listener, Protocol, RunDef},
     discovery::DiscoveryClient,
@@ -42,6 +45,11 @@ pub struct Config {
     /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
     /// metrics are not exposed.
     pub metrics_bind_endpoint: Option<String>,
+
+    /// The size of the global memory pool (in bytes). This is the maximum number of bytes that
+    /// can be allocated at once for all connections. A connection will block if it
+    /// tries to allocate more than this amount until some memory is freed.
+    pub global_memory_pool_size: Option<usize>,
 }
 
 /// A connection `Marshal`. The user authenticates with it, receiving a permit
@@ -57,6 +65,9 @@ pub struct Marshal<R: RunDef> {
     /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
     /// metrics are not exposed.
     metrics_bind_endpoint: Option<SocketAddr>,
+
+    // The middleware to use for the connection
+    middleware: Middleware,
 }
 
 impl<R: RunDef> Marshal<R> {
@@ -73,6 +84,7 @@ impl<R: RunDef> Marshal<R> {
             metrics_bind_endpoint,
             ca_cert_path,
             ca_key_path,
+            global_memory_pool_size,
         } = config;
 
         // Conditionally load CA cert and key in
@@ -112,11 +124,15 @@ impl<R: RunDef> Marshal<R> {
             })
             .transpose()?;
 
+        // Create the middleware
+        let middleware = Middleware::new(global_memory_pool_size, None);
+
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
             metrics_bind_endpoint,
             discovery_client,
+            middleware,
         })
     }
 
@@ -143,9 +159,10 @@ impl<R: RunDef> Marshal<R> {
 
             // Create a task to handle the connection
             let discovery_client = self.discovery_client.clone();
+            let middleware = self.middleware.clone();
             spawn(async move {
                 // Finalize the connection
-                let Ok(connection) = unfinalized_connection.finalize().await else {
+                let Ok(connection) = unfinalized_connection.finalize(middleware).await else {
                     return;
                 };
 

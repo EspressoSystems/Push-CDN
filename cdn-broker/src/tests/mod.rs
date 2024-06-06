@@ -133,7 +133,7 @@ impl TestDefinition {
                 public_key,
                 private_key,
             },
-
+            global_memory_pool_size: None,
             ca_cert_path: None,
             ca_key_path: None,
         };

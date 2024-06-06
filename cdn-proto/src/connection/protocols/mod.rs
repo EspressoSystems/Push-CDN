@@ -29,15 +29,19 @@ pub mod tcp;
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
 #[async_trait]
-pub trait Protocol<M: Middleware>: Send + Sync + 'static {
-    type UnfinalizedConnection: UnfinalizedConnection<M> + Send + Sync;
+pub trait Protocol: Send + Sync + 'static {
+    type UnfinalizedConnection: UnfinalizedConnection + Send + Sync;
     type Listener: Listener<Self::UnfinalizedConnection> + Send + Sync;
 
     /// Connect to a remote endpoint, returning an instance of `Self`.
     ///
     /// # Errors
     /// Errors if we fail to connect or if we fail to bind to the interface we want.
-    async fn connect(remote_endpoint: &str, use_local_authority: bool) -> Result<Connection>;
+    async fn connect(
+        remote_endpoint: &str,
+        use_local_authority: bool,
+        middleware: Middleware,
+    ) -> Result<Connection>;
 
     /// Bind to the local endpoint, returning an instance of `Listener`.
     ///
@@ -61,11 +65,11 @@ pub trait Listener<UnfinalizedConnection: Send + Sync> {
 }
 
 #[async_trait]
-pub trait UnfinalizedConnection<M: Middleware> {
+pub trait UnfinalizedConnection {
     /// Finalize an incoming connection. This is separated so we can prevent
     /// actors who are slow from clogging up the incoming connection by offloading
     /// it to a separate task.
-    async fn finalize(self) -> Result<Connection>;
+    async fn finalize(self, middleware: Middleware) -> Result<Connection>;
 }
 
 /// A connection to a remote endpoint.
@@ -117,14 +121,19 @@ impl Connection {
     fn from_streams<
         W: AsyncWriteExt + Unpin + Send + SoftClose + 'static,
         R: AsyncReadExt + Unpin + Send + 'static,
-        M: Middleware,
     >(
         mut writer: W,
         mut reader: R,
+        middleware: Middleware,
     ) -> Self {
-        // Create the channels that will be used to send and receive messages
-        let (send_to_caller, receive_from_task) = kanal::unbounded_async();
-        let (send_to_task, receive_from_caller) = kanal::unbounded_async();
+        // Create the channels that will be used to send and receive messages.
+        // Conditionally create bounded channels if the user specifies a size
+        let ((send_to_caller, receive_from_task), (send_to_task, receive_from_caller)) =
+            if let Some(size) = middleware.connection_message_pool_size() {
+                (kanal::bounded_async(size), kanal::bounded_async(size))
+            } else {
+                (kanal::unbounded_async(), kanal::unbounded_async())
+            };
 
         // Spawn the task that receives from the caller and sends to the stream
         let sender_task = tokio::spawn(async move {
@@ -153,7 +162,7 @@ impl Connection {
         // Spawn the task that receives from the stream and sends to the caller
         let receiver_task = tokio::spawn(async move {
             // While we can successfully read messages from the stream,
-            while let Ok(message) = read_length_delimited::<R, M>(&mut reader).await {
+            while let Ok(message) = read_length_delimited::<R>(&mut reader, &middleware).await {
                 if send_to_caller.send(message).await.is_err() {
                     send_to_caller.close();
                     return;
@@ -262,8 +271,9 @@ impl Connection {
 
 /// Read a length-delimited (serialized) message from a stream.
 /// Has a bounds check for if the message is too big
-async fn read_length_delimited<R: AsyncReadExt + Unpin + Send, M: Middleware>(
+async fn read_length_delimited<R: AsyncReadExt + Unpin + Send>(
     stream: &mut R,
+    middleware: &Middleware,
 ) -> Result<Bytes> {
     // Read the message size from the stream
     let message_size = bail!(
@@ -278,7 +288,7 @@ async fn read_length_delimited<R: AsyncReadExt + Unpin + Send, M: Middleware>(
     }
 
     // Acquire the allocation if necessary
-    let permit = M::allocate_message_bytes(message_size).await;
+    let permit = middleware.allocate_message_bytes(message_size).await;
 
     // Create buffer of the proper size
     let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
@@ -349,7 +359,7 @@ pub mod tests {
 
     use super::{Listener, Protocol, UnfinalizedConnection};
     use crate::{
-        connection::middleware::NoMiddleware,
+        connection::middleware::Middleware,
         crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
         message::{Direct, Message},
     };
@@ -362,7 +372,7 @@ pub mod tests {
     ///
     /// # Errors
     /// If the connection failed
-    pub async fn test_connection<P: Protocol<NoMiddleware>>(bind_endpoint: String) -> Result<()> {
+    pub async fn test_connection<P: Protocol>(bind_endpoint: String) -> Result<()> {
         // Generate cert signed by local CA
         let (cert, key) = generate_cert_from_ca(LOCAL_CA_CERT, LOCAL_CA_KEY)?;
 
@@ -387,7 +397,7 @@ pub mod tests {
             let unfinalized_connection = listener.accept().await?;
 
             // Finalize the connection
-            let connection = unfinalized_connection.finalize().await?;
+            let connection = unfinalized_connection.finalize(Middleware::none()).await?;
 
             // Send our message
             connection.send_message(listener_to_new_connection_).await?;
@@ -402,7 +412,7 @@ pub mod tests {
         // Spawn a task to connect and send and receive the message
         let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
             // Connect to the remote
-            let connection = P::connect(bind_endpoint.as_str(), true).await?;
+            let connection = P::connect(bind_endpoint.as_str(), true, Middleware::none()).await?;
 
             // Receive a message, assert it's the correct one
             let message = connection.recv_message().await?;

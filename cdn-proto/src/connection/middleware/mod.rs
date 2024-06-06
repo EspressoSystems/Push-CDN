@@ -1,47 +1,66 @@
-use async_trait::async_trait;
-use lazy_static::lazy_static;
+use pool::MemoryPool;
 
-use self::pool::{AllocationPermit, MemoryPool};
+use self::pool::AllocationPermit;
 
 pub mod pool;
 
-lazy_static! {
-    /// A global semaphore that prevents the server from allocating too much memory at once.
-    static ref MEMORY_POOL: MemoryPool = MemoryPool::new((u32::MAX / 4) as usize);
+/// Shared middleware for all connections.
+#[derive(Clone)]
+pub struct Middleware {
+    /// The global memory pool to check with before allocating.
+    global_memory_pool: Option<MemoryPool>,
+
+    /// Per connection, the size of the channel buffer.
+    connection_message_pool_size: Option<usize>,
 }
 
-/// A trait that defines middleware for a connection.
-#[async_trait]
-pub trait Middleware: 'static + Send + Sync + Clone {
-    async fn allocate_message_bytes(num_bytes: u32) -> Option<AllocationPermit> {
-        // Acquire and return a permit for the number of bytes requested
-        let permit = MEMORY_POOL
-            .alloc(num_bytes)
-            .await
-            .expect("required semaphore has been dropped");
+impl Middleware {
+    /// Create a new middleware with a global memory pool of `global_memory_pool_size` bytes
+    /// and a connection message pool size of `connection_message_pool_size` bytes.
+    ///
+    /// If the global memory pool is not set, it will not be used.
+    /// If the connection message pool size is not set, an unbounded channel will be used.
+    pub fn new(
+        global_memory_pool_size: Option<usize>,
+        connection_message_pool_size: Option<usize>,
+    ) -> Self {
+        // Create a new global memory pool if the size is set, otherwise set it to `None`.
+        Self {
+            global_memory_pool: global_memory_pool_size.map(|size| MemoryPool::new(size)),
+            connection_message_pool_size,
+        }
+    }
 
-        Some(permit)
+    /// Create a new middleware with no global memory pool and no connection message pool size.
+    /// This means an unbounded channel will be used for connections and no global memory pool
+    /// will be checked.
+    pub fn none() -> Self {
+        // Create a new middleware with no global memory pool and no connection message pool size.
+        Self {
+            global_memory_pool: None,
+            connection_message_pool_size: None,
+        }
+    }
+
+    /// Allocate a permit for a message of `num_bytes` bytes.
+    /// If the global memory pool is not set, this will return `None`.
+    pub async fn allocate_message_bytes(&self, num_bytes: u32) -> Option<AllocationPermit> {
+        if let Some(pool) = &self.global_memory_pool {
+            // If the global memory pool is set, allocate a permit
+            Some(
+                pool.alloc(num_bytes)
+                    .await
+                    .expect("required semaphore has been dropped"),
+            )
+        } else {
+            // If the global memory pool is not set, return `None`
+            None
+        }
+    }
+
+    /// Get the connection message pool size, if set.
+    pub fn connection_message_pool_size(&self) -> Option<usize> {
+        // Return the connection message pool size
+        self.connection_message_pool_size
     }
 }
-
-/// Middleware that does not do anything
-#[derive(Clone)]
-pub struct NoMiddleware;
-#[async_trait]
-impl Middleware for NoMiddleware {
-    async fn allocate_message_bytes(_num_bytes: u32) -> Option<AllocationPermit> {
-        None
-    }
-}
-
-/// Middleware for untrusted connections
-#[derive(Clone)]
-pub struct UntrustedMiddleware;
-#[async_trait]
-impl Middleware for UntrustedMiddleware {}
-
-/// Middleware for trusted connections
-#[derive(Clone)]
-pub struct TrustedMiddleware;
-#[async_trait]
-impl Middleware for TrustedMiddleware {}

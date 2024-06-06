@@ -19,7 +19,7 @@ use std::{
 mod metrics;
 use cdn_proto::{
     bail,
-    connection::protocols::Protocol as _,
+    connection::{middleware::Middleware, protocols::Protocol as _},
     crypto::tls::{generate_cert_from_ca, load_ca},
     def::{Listener, Protocol, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
@@ -60,6 +60,12 @@ pub struct Config<R: RunDef> {
 
     /// An optional TLS CA key path. If not specified, will use the local one.
     pub ca_key_path: Option<String>,
+
+    /// The size of the global memory pool (in bytes). This is the maximum number of bytes that
+    /// can be allocated at once for all connections. A connection will block if it
+    /// tries to allocate more than this amount until some memory is freed.
+    /// Default is 1GB.
+    pub global_memory_pool_size: Option<usize>,
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
@@ -76,6 +82,9 @@ struct Inner<R: RunDef> {
     /// The connections that currently exist. We use this everywhere we need to update connection
     /// state or send messages.
     connections: Arc<RwLock<Connections>>,
+
+    /// The shared middleware that we use for all connections.
+    middleware: Middleware,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -117,6 +126,8 @@ impl<R: RunDef> Broker<R> {
             discovery_endpoint,
             ca_cert_path,
             ca_key_path,
+
+            global_memory_pool_size,
         } = config;
 
         // Get the local IP address so we can replace in
@@ -203,6 +214,9 @@ impl<R: RunDef> Broker<R> {
             })
             .transpose()?;
 
+        // Create the globally shared middleware
+        let middleware = Middleware::new(global_memory_pool_size, None);
+
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
@@ -210,6 +224,7 @@ impl<R: RunDef> Broker<R> {
                 identity: identity.clone(),
                 keypair,
                 connections: Arc::from(RwLock::from(Connections::new(identity))),
+                middleware,
             }),
             metrics_bind_endpoint,
             user_listener,

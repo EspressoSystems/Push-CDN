@@ -6,9 +6,6 @@ pub mod connection {
         pub use cdn_proto::connection::protocols::quic::Quic;
         pub use cdn_proto::connection::protocols::tcp::Tcp;
     }
-    pub use cdn_proto::connection::middleware::{
-        Middleware, NoMiddleware, TrustedMiddleware, UntrustedMiddleware,
-    };
 }
 
 pub mod discovery {
