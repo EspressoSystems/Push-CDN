@@ -1,7 +1,7 @@
 version: "0.5"
 
 environment:
-  - RUST_LOG=debug
+  - RUST_LOG=info
 
 processes:
   redis:
