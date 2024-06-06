@@ -9,6 +9,7 @@ use clap::Parser;
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::{spawn, time::sleep};
+#[cfg(not(tokio_unstable))]
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
