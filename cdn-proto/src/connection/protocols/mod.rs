@@ -235,7 +235,7 @@ impl Connection {
     }
 
     /// Soft close the connection, allowing all messages to be sent before closing.
-    /// 
+    ///
     /// # Errors
     /// - If we fail to soft close the connection
     pub async fn soft_close(&self) -> Result<()> {
