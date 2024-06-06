@@ -7,7 +7,7 @@ pub mod pool;
 
 lazy_static! {
     /// A global semaphore that prevents the server from allocating too much memory at once.
-    static ref MEMORY_POOL: MemoryPool = MemoryPool::new(u32::MAX as usize);
+    static ref MEMORY_POOL: MemoryPool = MemoryPool::new((u32::MAX / 4) as usize);
 }
 
 /// A trait that defines middleware for a connection.

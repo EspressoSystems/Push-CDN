@@ -2,7 +2,7 @@
 
 use cdn_proto::{
     connection::{
-        middleware::NoMiddleware,
+        middleware::TrustedMiddleware,
         protocols::{quic::Quic, tcp::Tcp, Connection, Listener, Protocol, UnfinalizedConnection},
         Bytes,
     },
@@ -38,7 +38,7 @@ async fn transfer(conn1: Connection, conn2: Connection, raw_message: Bytes) {
 
 /// Set up our protocol benchmarks, including async runtime, given the message size
 /// to test.
-fn set_up_bench<Proto: Protocol<NoMiddleware>>(
+fn set_up_bench<Proto: Protocol<TrustedMiddleware>>(
     message_size: usize,
 ) -> (Runtime, Connection, Connection, Bytes) {
     // Create new tokio runtime

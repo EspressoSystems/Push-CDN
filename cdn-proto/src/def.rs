@@ -88,14 +88,14 @@ impl ConnectionDef for ProductionUserConnection {
 }
 
 /// The production client connection configuration.
-/// Uses BLS signatures, QUIC, and no middleware.
+/// Uses BLS signatures, QUIC, and trusted middleware.
 /// Differs from `ProductionUserConnection` in that this is used by
 /// the client, not the broker.
 pub struct ProductionClientConnection;
 impl ConnectionDef for ProductionClientConnection {
     type Scheme = Scheme<<ProductionRunDef as RunDef>::User>;
     type Protocol = Protocol<<ProductionRunDef as RunDef>::User>;
-    type Middleware = NoMiddleware;
+    type Middleware = TrustedMiddleware;
 }
 
 /// The testing run configuration.

@@ -172,4 +172,3 @@ mod tests {
         super_test_connection::<Tcp>(format!("127.0.0.1:{port}")).await
     }
 }
-
