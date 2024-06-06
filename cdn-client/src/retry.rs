@@ -264,12 +264,12 @@ impl<C: ConnectionDef> Retry<C> {
         try_with_reconnect!(self, out)
     }
 
-    /// Flushes the connection, ensuring that all messages are sent.
+    /// Soft close the connection, ensuring that all messages are sent.
     ///
     /// # Errors
     /// - If we are in the middle of reconnecting
     /// - If the connection is closed
-    pub async fn flush(&self) -> Result<()> {
+    pub async fn soft_close(&self) -> Result<()> {
         // Check if we're (probably) reconnecting or not
         if let Ok(connection_guard) = self.inner.connection.try_read() {
             // We're not reconnecting, try to send the message
@@ -277,7 +277,7 @@ impl<C: ConnectionDef> Retry<C> {
             connection_guard
                 .get_or_try_init(|| self.inner.connect())
                 .await?
-                .flush()
+                .soft_close()
                 .await
         } else {
             // We are reconnecting, return an error

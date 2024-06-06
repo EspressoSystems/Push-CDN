@@ -39,7 +39,7 @@ async fn test_double_connect_same_broker() {
             .send_direct_message(&keypair_from_seed(1).1, b"hello direct".to_vec())
             .await
             .is_err()
-            || client1.flush().await.is_err()
+            || client1.soft_close().await.is_err()
     );
 
     // The second client to connect should have succeeded
@@ -125,7 +125,7 @@ async fn test_double_connect_different_broker() {
             .send_direct_message(&keypair_from_seed(1).1, b"hello direct".to_vec())
             .await
             .is_err()
-            || client1.flush().await.is_err(),
+            || client1.soft_close().await.is_err(),
         "second client connected when it shouldn't have"
     );
 }

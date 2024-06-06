@@ -9,13 +9,13 @@ use std::{
 };
 
 use async_trait::async_trait;
-use quinn::{ClientConfig, Endpoint, Incoming, ServerConfig, TransportConfig, VarInt};
+use quinn::{ClientConfig, Endpoint, Incoming, SendStream, ServerConfig, TransportConfig, VarInt};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::RootCertStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
-use super::{Connection, Listener, Protocol, UnfinalizedConnection};
+use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
 use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
 use crate::parse_endpoint;
@@ -270,6 +270,17 @@ async fn accept_bi(
     );
 
     Ok((sender, receiver))
+}
+
+#[async_trait]
+impl SoftClose for SendStream {
+    /// Soft close the stream by shutting down the write side and waiting for the
+    /// read side to close (with a timeout of 3 seconds).
+    async fn soft_close(&mut self) {
+        if self.finish().is_ok() {
+            let _ = timeout(Duration::from_secs(3), self.stopped()).await;
+        }
+    }
 }
 
 #[cfg(test)]

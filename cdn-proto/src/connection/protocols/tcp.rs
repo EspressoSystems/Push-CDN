@@ -9,9 +9,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::PrivateKeyDer;
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
 
+use super::SoftClose;
 use super::{Connection, Listener, Protocol, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
 use crate::{
@@ -145,6 +147,10 @@ impl Listener<UnfinalizedTcpConnection> for TcpListener {
         Ok(UnfinalizedTcpConnection(connection.0))
     }
 }
+
+/// Soft closing is a no-op for TCP connections.
+#[async_trait]
+impl SoftClose for OwnedWriteHalf {}
 
 #[cfg(test)]
 mod tests {

@@ -12,7 +12,7 @@ use tokio::{
     task::spawn_blocking,
 };
 
-use super::{Connection, Listener, Protocol, UnfinalizedConnection};
+use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
 use crate::connection::middleware::NoMiddleware;
 #[cfg(feature = "metrics")]
 use crate::{
@@ -190,6 +190,10 @@ impl Memory {
         Connection::from_streams::<_, _, NoMiddleware>(sender, receiver)
     }
 }
+
+/// Soft closing is a no-op for memory connections.
+#[async_trait]
+impl SoftClose for DuplexStream {}
 
 #[cfg(test)]
 mod tests {

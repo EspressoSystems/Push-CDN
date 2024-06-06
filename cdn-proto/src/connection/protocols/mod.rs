@@ -72,18 +72,19 @@ pub trait UnfinalizedConnection<M: Middleware> {
 #[derive(Clone)]
 pub struct Connection(Arc<ConnectionRef>);
 
-/// A message to send over the channel, either a raw message or a flush message.
-/// The flush message is used to ensure that all messages are sent before we close the connection.
-enum BytesOrFlush {
+/// A message to send over the channel, either a raw message or a soft close.
+/// Soft close is used to indicate that the connection should be closed after
+/// all messages have been sent.
+enum BytesOrSoftClose {
     Bytes(Bytes),
-    Flush(oneshot::Sender<()>),
+    SoftClose(oneshot::Sender<()>),
 }
 
 /// A reference to a delegated connection, containing the sender and
 /// receiver channels.
 #[derive(Clone)]
 pub struct ConnectionRef {
-    sender: AsyncSender<BytesOrFlush>,
+    sender: AsyncSender<BytesOrSoftClose>,
     receiver: AsyncReceiver<Bytes>,
 
     tasks: Arc<Vec<AbortHandle>>,
@@ -102,11 +103,19 @@ impl Drop for ConnectionRef {
     }
 }
 
+/// Implement a soft close for all types that implement `SoftClose`.
+/// This allows us to soft close a connection, allowing all messages to be sent
+/// before closing.
+#[async_trait]
+trait SoftClose {
+    async fn soft_close(&mut self) {}
+}
+
 impl Connection {
     /// Converts a set of writer and reader streams into a connection.
     /// Under the hood, this spawns sending and receiving tasks.
     fn from_streams<
-        W: AsyncWriteExt + Unpin + Send + 'static,
+        W: AsyncWriteExt + Unpin + Send + SoftClose + 'static,
         R: AsyncReadExt + Unpin + Send + 'static,
         M: Middleware,
     >(
@@ -122,14 +131,17 @@ impl Connection {
             // While we can successfully receive messages from the caller,
             while let Ok(message) = receive_from_caller.recv().await {
                 match message {
-                    BytesOrFlush::Bytes(message) => {
+                    BytesOrSoftClose::Bytes(message) => {
                         // Write the message to the stream
                         if write_length_delimited(&mut writer, message).await.is_err() {
                             receive_from_caller.close();
                             return;
                         };
                     }
-                    BytesOrFlush::Flush(result_sender) => {
+                    BytesOrSoftClose::SoftClose(result_sender) => {
+                        // Soft close the writer, allowing it to finish sending
+                        writer.soft_close().await;
+
                         // Acknowledge that we've processed up to this point
                         let _ = result_sender.send(());
                     }
@@ -181,7 +193,10 @@ impl Connection {
     pub async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message
         bail!(
-            self.0.sender.send(BytesOrFlush::Bytes(raw_message)).await,
+            self.0
+                .sender
+                .send(BytesOrSoftClose::Bytes(raw_message))
+                .await,
             Connection,
             "failed to send message"
         );
@@ -219,19 +234,26 @@ impl Connection {
         ))
     }
 
-    pub async fn flush(&self) -> Result<()> {
+    /// Soft close the connection, allowing all messages to be sent before closing.
+    /// 
+    /// # Errors
+    /// - If we fail to soft close the connection
+    pub async fn soft_close(&self) -> Result<()> {
         // Create notifier to wait for the flush message to be acknowledged
-        let (flush_sender, flush_receiver) = oneshot::channel();
+        let (soft_close_sender, soft_close_receiver) = oneshot::channel();
 
-        // Send the flush message
+        // Send the soft close message
         bail!(
-            self.0.sender.send(BytesOrFlush::Flush(flush_sender)).await,
+            self.0
+                .sender
+                .send(BytesOrSoftClose::SoftClose(soft_close_sender))
+                .await,
             Connection,
             "failed to flush connection"
         );
 
         // Wait to receive the result
-        match flush_receiver.await {
+        match soft_close_receiver.await {
             Ok(()) => Ok(()),
             _ => Err(Error::Connection("failed to flush connection".to_string())),
         }
@@ -389,8 +411,8 @@ pub mod tests {
             // Send our message
             connection.send_message(new_connection_to_listener).await?;
 
-            // Flush the connection, ensuring the message is sent
-            connection.flush().await?;
+            // Soft close the connection, allowing all messages to be sent
+            connection.soft_close().await?;
 
             Ok(())
         });

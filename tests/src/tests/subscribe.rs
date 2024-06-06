@@ -140,7 +140,7 @@ async fn test_invalid_subscribe() {
             .send_broadcast_message(vec![1], b"hello invalid".to_vec())
             .await
             .is_err()
-            || client.flush().await.is_err(),
+            || client.soft_close().await.is_err(),
         "sent message but should've been disconnected"
     );
 
