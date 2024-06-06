@@ -26,7 +26,7 @@ impl Middleware {
     ) -> Self {
         // Create a new global memory pool if the size is set, otherwise set it to `None`.
         Self {
-            global_memory_pool: global_memory_pool_size.map(|size| MemoryPool::new(size)),
+            global_memory_pool: global_memory_pool_size.map(MemoryPool::new),
             connection_message_pool_size,
         }
     }
