@@ -24,7 +24,6 @@ mod direct;
 use crate::{connections::DirectMap, Broker, Config};
 
 /// An actor is a [user/broker] that we inject to test message send functionality.
-#[derive(Clone)]
 pub struct InjectedActor {
     /// The in-memory sender that sends to the broker under test
     pub sender: Connection,
@@ -174,7 +173,8 @@ impl TestDefinition {
         // For each user,
         for (i, topics) in users.iter().enumerate() {
             // Extrapolate identifier
-            let identifier: Arc<Vec<u8>> = Arc::from(i.to_be_bytes().to_vec());
+            #[allow(clippy::cast_possible_truncation)]
+            let identifier: Arc<Vec<u8>> = Arc::from(vec![i as u8]);
 
             // Generate a testing pair of memory network channels
             let connection1 = Memory::gen_testing_connection();
