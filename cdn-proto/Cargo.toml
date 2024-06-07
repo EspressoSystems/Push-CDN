@@ -26,12 +26,12 @@ harness = false
 
 
 [dependencies]
-redis = { version = "0.24.0", default-features = false, features = [
+redis = { version = "0.25", default-features = false, features = [
     "connection-manager",
     "tokio-comp",
 ] }
 
-sqlx = { version = "0.7.3", default-features = false, features = [
+sqlx = { version = "0.7", default-features = false, features = [
     "sqlite",
     "macros",
     "migrate",
