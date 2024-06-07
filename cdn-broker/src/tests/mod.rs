@@ -41,6 +41,13 @@ macro_rules! send_message_as {
             .await
             .expect("failed to send message");
     };
+
+    // Send a message to all actors in a vector
+    (all, $all: expr, $message: expr) => {
+        for actor in &$all {
+            send_message_as!(actor, $message);
+        }
+    };
 }
 
 #[macro_export]
@@ -50,6 +57,13 @@ macro_rules! assert_received {
     (no, all, $all: expr) => {
         for actor in &$all {
             assert_received!(no, actor);
+        }
+    };
+
+    // Make sure everyone in the vector has received this message
+    (yes, all, $all: expr, $message:expr) => {
+        for actor in &$all {
+            assert_received!(yes, actor, $message);
         }
     };
 
