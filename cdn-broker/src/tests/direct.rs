@@ -4,14 +4,14 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::Bytes,
+    connection::{protocols::memory::Memory, Bytes},
     def::TestTopic,
     message::{Direct, Message},
 };
 use tokio::time::{sleep, timeout};
 
-use super::TestDefinition;
-use crate::{assert_received, send_message_as};
+use super::{TestBroker, TestDefinition, TestUser};
+use crate::{assert_received, at_index, send_message_as};
 
 /// This test tests that:
 /// 1. A user sending a message to itself on a broker has it delivered
@@ -23,22 +23,28 @@ async fn test_direct_user_to_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![TestTopic::Global as u8],
-            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+            TestUser::with_index(0, vec![TestTopic::Global.into()]),
+            TestUser::with_index(1, vec![TestTopic::DA.into()]),
         ],
         connected_brokers: vec![
-            (vec![2], vec![TestTopic::DA as u8]),
-            (vec![3], vec![]),
-            (vec![4], vec![]),
+            TestBroker {
+                connected_users: vec![TestUser::with_index(2, vec![TestTopic::DA.into()])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(3, vec![])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(4, vec![])],
+            },
         ],
     };
 
     // Start the run
-    let run = run_definition.into_run().await;
+    let run = run_definition.into_run::<Memory, Memory>().await;
 
     // Send a message from user_0 to itself
     let message = Message::Direct(Direct {
-        recipient: vec![0],
+        recipient: at_index![0],
         message: b"test direct 0".to_vec(),
     });
 
@@ -54,7 +60,7 @@ async fn test_direct_user_to_user() {
 
     // Create a message that user_1 will use to send to user_0
     let message = Message::Direct(Direct {
-        recipient: vec![1],
+        recipient: at_index![1],
         message: b"test direct 1".to_vec(),
     });
 
@@ -78,30 +84,36 @@ async fn test_direct_user_to_broker() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![TestTopic::Global as u8],
-            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+            TestUser::with_index(0, vec![TestTopic::Global.into()]),
+            TestUser::with_index(1, vec![TestTopic::Global.into(), TestTopic::DA.into()]),
         ],
         connected_brokers: vec![
-            (vec![3], vec![TestTopic::DA as u8]),
-            (vec![2], vec![]),
-            (vec![4], vec![]),
+            TestBroker {
+                connected_users: vec![TestUser::with_index(2, vec![])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(3, vec![TestTopic::DA.into()])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(4, vec![])],
+            },
         ],
     };
 
     // Start the run
-    let run = run_definition.into_run().await;
+    let run = run_definition.into_run::<Memory, Memory>().await;
 
     // Send a message as a user to another user that another broker owns (user_0 to user_2)
     let message = Message::Direct(Direct {
-        recipient: vec![2],
+        recipient: at_index![2],
         message: b"test direct 2".to_vec(),
     });
 
     // Send the message as user_0
     send_message_as!(run.connected_users[0], message);
 
-    // Assert broker_1 received it
-    assert_received!(yes, run.connected_brokers[1], message);
+    // Assert broker_0 received it
+    assert_received!(yes, run.connected_brokers[0], message);
 
     // Assert no one else got it, and we didn't get it again
     assert_received!(no, all, run.connected_users);
@@ -117,23 +129,29 @@ async fn test_direct_broker_to_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![TestTopic::Global as u8],
-            vec![TestTopic::Global as u8, TestTopic::DA as u8],
+            TestUser::with_index(0, vec![TestTopic::Global.into()]),
+            TestUser::with_index(1, vec![TestTopic::Global.into(), TestTopic::DA.into()]),
         ],
         connected_brokers: vec![
-            (vec![3], vec![TestTopic::DA as u8]),
-            (vec![2], vec![]),
-            (vec![4], vec![]),
+            TestBroker {
+                connected_users: vec![TestUser::with_index(2, vec![])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(3, vec![TestTopic::DA.into()])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(4, vec![])],
+            },
         ],
     };
 
     // Start the run
-    let run = run_definition.into_run().await;
+    let run = run_definition.into_run::<Memory, Memory>().await;
 
     // Send a message as a broker through the test broker to a user that we own
     // Tests that broker_1 -> test_broker should not come back to us.
     let message = Message::Direct(Direct {
-        recipient: vec![2],
+        recipient: at_index![2],
         message: b"test direct 2".to_vec(),
     });
 

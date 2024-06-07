@@ -1,9 +1,9 @@
 //! Compile-time run configuration for all CDN components.
+use std::marker::PhantomData;
 
 use jf_signature::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::connection::protocols::memory::Memory;
 use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
@@ -92,21 +92,25 @@ impl ConnectionDef for ProductionClientConnection {
 }
 
 /// The testing run configuration.
-/// Uses in-memory protocols and an embedded discovery client.
-pub struct TestingRunDef;
-impl RunDef for TestingRunDef {
-    type Broker = TestingConnection;
-    type User = TestingConnection;
+/// Uses generic protocols and an embedded discovery client.
+pub struct TestingRunDef<B: ProtocolType, U: ProtocolType> {
+    pd: PhantomData<(B, U)>,
+}
+impl<B: ProtocolType, U: ProtocolType> RunDef for TestingRunDef<B, U> {
+    type Broker = TestingConnection<B>;
+    type User = TestingConnection<U>;
     type DiscoveryClientType = Embedded;
     type Topic = TestTopic;
 }
 
 /// The testing connection configuration.
-/// Uses BLS signatures, in-memory protocols, and no middleware.
-pub struct TestingConnection;
-impl ConnectionDef for TestingConnection {
+/// Uses BLS signatures, generic protocols, and no middleware.
+pub struct TestingConnection<P: ProtocolType> {
+    pd: PhantomData<P>,
+}
+impl<P: ProtocolType> ConnectionDef for TestingConnection<P> {
     type Scheme = BLS;
-    type Protocol = Memory;
+    type Protocol = P;
 }
 
 // Type aliases to automatically disambiguate usage

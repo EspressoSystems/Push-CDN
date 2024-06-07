@@ -4,13 +4,13 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::Bytes,
+    connection::{protocols::memory::Memory, Bytes},
     def::TestTopic,
     message::{Broadcast, Message},
 };
 use tokio::time::{sleep, timeout};
 
-use super::TestDefinition;
+use super::{TestBroker, TestDefinition, TestUser};
 use crate::{assert_received, send_message_as};
 
 /// Test sending a broadcast message from a user.
@@ -22,19 +22,28 @@ async fn test_broadcast_user() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![TestTopic::Global as u8, TestTopic::DA as u8],
-            vec![TestTopic::DA as u8],
-            vec![TestTopic::Global as u8],
+            TestUser::with_index(0, vec![TestTopic::Global.into(), TestTopic::DA.into()]),
+            TestUser::with_index(1, vec![TestTopic::DA.into()]),
+            TestUser::with_index(2, vec![TestTopic::Global.into()]),
         ],
         connected_brokers: vec![
-            (vec![3], vec![TestTopic::DA as u8]),
-            (vec![4], vec![TestTopic::Global as u8, TestTopic::DA as u8]),
-            (vec![5], vec![]),
+            TestBroker {
+                connected_users: vec![TestUser::with_index(3, vec![TestTopic::DA.into()])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(
+                    4,
+                    vec![TestTopic::Global.into(), TestTopic::DA.into()],
+                )],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(5, vec![])],
+            },
         ],
     };
 
     // Start the run
-    let run = run_definition.into_run().await;
+    let run = run_definition.into_run::<Memory, Memory>().await;
 
     // We need a little time for our subscribe messages to propagate
     sleep(Duration::from_millis(25)).await;
@@ -88,19 +97,28 @@ async fn test_broadcast_broker() {
     // This run definition: 3 brokers, 6 users
     let run_definition = TestDefinition {
         connected_users: vec![
-            vec![TestTopic::Global as u8, TestTopic::DA as u8],
-            vec![TestTopic::DA as u8],
-            vec![TestTopic::Global as u8],
+            TestUser::with_index(0, vec![TestTopic::Global.into(), TestTopic::DA.into()]),
+            TestUser::with_index(1, vec![TestTopic::DA.into()]),
+            TestUser::with_index(2, vec![TestTopic::Global.into()]),
         ],
         connected_brokers: vec![
-            (vec![3], vec![TestTopic::DA as u8]),
-            (vec![4], vec![TestTopic::Global as u8, TestTopic::DA as u8]),
-            (vec![5], vec![]),
+            TestBroker {
+                connected_users: vec![TestUser::with_index(3, vec![TestTopic::DA.into()])],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(
+                    4,
+                    vec![TestTopic::Global.into(), TestTopic::DA.into()],
+                )],
+            },
+            TestBroker {
+                connected_users: vec![TestUser::with_index(5, vec![])],
+            },
         ],
     };
 
     // Start the run
-    let run = run_definition.into_run().await;
+    let run = run_definition.into_run::<Memory, Memory>().await;
 
     // We need a little time for our subscribe messages to propagate
     sleep(Duration::from_millis(25)).await;

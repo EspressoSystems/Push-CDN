@@ -2,6 +2,7 @@ use cdn_broker::{Broker, Config as BrokerConfig};
 use cdn_client::{Client, Config as ClientConfig};
 use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{
+    connection::protocols::memory::Memory,
     crypto::signature::{KeyPair, Serializable, SignatureScheme},
     def::{TestingConnection, TestingRunDef},
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
@@ -57,7 +58,7 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
     let (private_key, public_key) = keypair_from_seed(key);
 
     // Create config
-    let config: BrokerConfig<TestingRunDef> = BrokerConfig {
+    let config: BrokerConfig<TestingRunDef<Memory, Memory>> = BrokerConfig {
         ca_cert_path: None,
         ca_key_path: None,
         discovery_endpoint: discovery_ep.to_string(),
@@ -74,7 +75,7 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
     };
 
     // Create broker
-    let broker = Broker::<TestingRunDef>::new(config)
+    let broker = Broker::<TestingRunDef<Memory, Memory>>::new(config)
         .await
         .expect("failed to create broker");
 
@@ -96,7 +97,7 @@ async fn new_marshal(ep: &str, discovery_ep: &str) {
     };
 
     // Create a new marshal
-    let marshal = Marshal::<TestingRunDef>::new(config)
+    let marshal = Marshal::<TestingRunDef<Memory, Memory>>::new(config)
         .await
         .expect("failed to create marshal");
 
@@ -106,7 +107,7 @@ async fn new_marshal(ep: &str, discovery_ep: &str) {
 
 /// Create a new client, supplying it with the given topics and marshal
 /// endpoint. `Key` is a deterministic, seeded keypair.
-fn new_client(key: u64, topics: Vec<Topic>, marshal_ep: &str) -> Client<TestingConnection> {
+fn new_client(key: u64, topics: Vec<Topic>, marshal_ep: &str) -> Client<TestingConnection<Memory>> {
     // Generate keypair
     let (private_key, public_key) = keypair_from_seed(key);
 
@@ -122,7 +123,7 @@ fn new_client(key: u64, topics: Vec<Topic>, marshal_ep: &str) -> Client<TestingC
     };
 
     // Create the client
-    Client::<TestingConnection>::new(config)
+    Client::<TestingConnection<Memory>>::new(config)
 }
 
 /// Create a new database client with the given endpoint and identity.
