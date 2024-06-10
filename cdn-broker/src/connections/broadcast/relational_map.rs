@@ -111,6 +111,8 @@ impl<K: Hash + PartialEq + Eq + Clone, V: Hash + PartialEq + Eq + Clone> Relatio
 }
 
 #[cfg(test)]
+// Makes tests more readable
+#[allow(clippy::unnecessary_get_then_check)]
 pub mod tests {
     use super::RelationalMap;
 

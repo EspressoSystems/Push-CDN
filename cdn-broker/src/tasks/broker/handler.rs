@@ -4,8 +4,8 @@ use std::{sync::Arc, time::Duration};
 
 use cdn_proto::{
     authenticate_with_broker, bail,
-    connection::{auth::broker::BrokerAuth, protocols::Connection as _, Bytes, UserPublicKey},
-    def::{Connection, RunDef},
+    connection::{auth::broker::BrokerAuth, protocols::Connection, Bytes, UserPublicKey},
+    def::RunDef,
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
@@ -20,7 +20,7 @@ impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
     pub async fn handle_broker_connection(
         self: Arc<Self>,
-        mut connection: Connection<Def::Broker>,
+        mut connection: Connection,
         is_outbound: bool,
     ) {
         // Depending on which way the direction came in, we will want to authenticate with a different
@@ -80,13 +80,13 @@ impl<Def: RunDef> Inner<Def> {
         .abort_handle();
 
         // Send a full topic sync
-        if let Err(err) = self.full_topic_sync(&broker_identifier) {
+        if let Err(err) = self.full_topic_sync(&broker_identifier).await {
             error!("failed to perform full topic sync: {err}");
             return;
         };
 
         // Send a full user sync
-        if let Err(err) = self.full_user_sync(&broker_identifier) {
+        if let Err(err) = self.full_user_sync(&broker_identifier).await {
             error!("failed to perform full user sync: {err}");
             return;
         };
@@ -94,10 +94,10 @@ impl<Def: RunDef> Inner<Def> {
         // If we have `strong-consistency` enabled, send partials
         #[cfg(feature = "strong-consistency")]
         {
-            if let Err(err) = self.partial_topic_sync() {
+            if let Err(err) = self.partial_topic_sync().await {
                 error!("failed to perform partial topic sync: {err}");
             }
-            if let Err(err) = self.partial_user_sync() {
+            if let Err(err) = self.partial_user_sync().await {
                 error!("failed to perform partial user sync: {err}");
             }
         }
@@ -112,7 +112,7 @@ impl<Def: RunDef> Inner<Def> {
     pub async fn broker_receive_loop(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
-        connection: Connection<Def::Broker>,
+        connection: Connection,
     ) -> Result<()> {
         loop {
             // Receive a message from the broker
@@ -126,14 +126,16 @@ impl<Def: RunDef> Inner<Def> {
                 Message::Direct(ref direct) => {
                     let user_public_key = UserPublicKey::from(direct.recipient.clone());
 
-                    self.handle_direct_message(&user_public_key, raw_message, true);
+                    self.handle_direct_message(&user_public_key, raw_message, true)
+                        .await;
                 }
 
                 // If we receive a broadcast message from a broker, we want to send it to all interested users
                 Message::Broadcast(ref broadcast) => {
                     let topics = broadcast.topics.clone();
 
-                    self.handle_broadcast_message(&topics, &raw_message, true);
+                    self.handle_broadcast_message(&topics, &raw_message, true)
+                        .await;
                 }
 
                 // If we receive a subscribe message from a broker, we add them as "interested" locally.
@@ -169,7 +171,7 @@ impl<Def: RunDef> Inner<Def> {
     }
 
     /// This function handles direct messages from users and brokers.
-    pub fn handle_direct_message(
+    pub async fn handle_direct_message(
         self: &Arc<Self>,
         user_public_key: &UserPublicKey,
         message: Bytes,
@@ -193,7 +195,7 @@ impl<Def: RunDef> Inner<Def> {
                 );
 
                 // Send the message to the user
-                self.try_send_to_user(user_public_key, message);
+                self.try_send_to_user(user_public_key, message).await;
             } else {
                 // Otherwise, send the message to the broker (but only if we are not told to send to the user only)
                 if !to_user_only {
@@ -205,14 +207,14 @@ impl<Def: RunDef> Inner<Def> {
                     );
 
                     // Send the message to the broker
-                    self.try_send_to_broker(&broker_identifier, message);
+                    self.try_send_to_broker(&broker_identifier, message).await;
                 }
             }
         }
     }
 
     /// This function handles broadcast messages from users and brokers.
-    pub fn handle_broadcast_message(
+    pub async fn handle_broadcast_message(
         self: &Arc<Self>,
         topics: &[Topic],
         message: &Bytes,
@@ -235,12 +237,14 @@ impl<Def: RunDef> Inner<Def> {
 
         // Send the message to all interested brokers
         for broker_identifier in interested_brokers {
-            self.try_send_to_broker(&broker_identifier, message.clone());
+            self.try_send_to_broker(&broker_identifier, message.clone())
+                .await;
         }
 
         // Send the message to all interested users
         for user_public_key in interested_users {
-            self.try_send_to_user(&user_public_key, message.clone());
+            self.try_send_to_user(&user_public_key, message.clone())
+                .await;
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use cdn_proto::{
     connection::{
-        middleware::NoMiddleware,
+        middleware::Middleware,
         protocols::{quic::Quic, tcp::Tcp, Connection, Listener, Protocol, UnfinalizedConnection},
         Bytes,
     },
@@ -15,11 +15,7 @@ use tokio::{join, runtime::Runtime, spawn};
 
 /// Transfer a message `raw_message` from `conn1` to `conn2.` This is the primary
 /// function used for testing network protocol speed.
-async fn transfer<Proto: Protocol<NoMiddleware>>(
-    conn1: Proto::Connection,
-    conn2: Proto::Connection,
-    raw_message: Bytes,
-) {
+async fn transfer(conn1: Connection, conn2: Connection, raw_message: Bytes) {
     // Send from the first connection
     let conn1_jh = spawn(async move {
         conn1
@@ -42,9 +38,7 @@ async fn transfer<Proto: Protocol<NoMiddleware>>(
 
 /// Set up our protocol benchmarks, including async runtime, given the message size
 /// to test.
-fn set_up_bench<Proto: Protocol<NoMiddleware>>(
-    message_size: usize,
-) -> (Runtime, Proto::Connection, Proto::Connection, Bytes) {
+fn set_up_bench<Proto: Protocol>(message_size: usize) -> (Runtime, Connection, Connection, Bytes) {
     // Create new tokio runtime
     let benchmark_runtime = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
 
@@ -70,13 +64,13 @@ fn set_up_bench<Proto: Protocol<NoMiddleware>>(
 
             // Finalize the connection
             unfinalized_connection
-                .finalize()
+                .finalize(Middleware::none())
                 .await
                 .expect("failed to finalize connection")
         });
 
         // Attempt to connect
-        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true)
+        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true, Middleware::none())
             .await
             .expect("failed to connect to listener");
 
@@ -113,7 +107,7 @@ fn bench_quic(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_function(BenchmarkId::from_parameter(size), |b| {
             b.to_async(&runtime).iter(|| {
-                transfer::<Quic>(
+                transfer(
                     black_box(conn1.clone()),
                     black_box(conn2.clone()),
                     black_box(message.clone()),
@@ -139,7 +133,7 @@ fn bench_tcp(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_function(BenchmarkId::from_parameter(size), |b| {
             b.to_async(&runtime).iter(|| {
-                transfer::<Tcp>(
+                transfer(
                     black_box(conn1.clone()),
                     black_box(conn2.clone()),
                     black_box(message.clone()),

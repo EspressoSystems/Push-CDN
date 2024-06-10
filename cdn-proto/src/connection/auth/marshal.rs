@@ -9,8 +9,8 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::Connection as _,
-    def::{Connection, PublicKey, RunDef, Scheme},
+    connection::protocols::Connection,
+    def::{PublicKey, RunDef, Scheme},
     discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
@@ -35,7 +35,7 @@ impl<R: RunDef> MarshalAuth<R> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &Connection<R::User>,
+        connection: &Connection,
         discovery_client: &mut R::DiscoveryClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user

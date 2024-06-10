@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use cdn_proto::connection::protocols::Connection;
 use cdn_proto::{connection::Bytes, def::RunDef, discovery::BrokerIdentifier};
-use tokio::spawn;
-use tokio::sync::Notify;
 use tracing::error;
 
 use crate::Inner;
@@ -11,7 +8,7 @@ use crate::Inner;
 impl<Def: RunDef> Inner<Def> {
     /// Attempts to asynchronously send a message to a broker.
     /// If it fails, the broker is removed from the list of connections.
-    pub fn try_send_to_broker(
+    pub async fn try_send_to_broker(
         self: &Arc<Self>,
         broker_identifier: &BrokerIdentifier,
         message: Bytes,
@@ -28,56 +25,29 @@ impl<Def: RunDef> Inner<Def> {
             let self_ = self.clone();
             let broker_identifier_ = broker_identifier.clone();
 
-            // Create a random handle identifier
-            let handle_identifier = rand::random::<u128>();
-
-            // To notify the sender when the task has been added
-            let notify = Arc::new(Notify::const_new());
-            let notified = notify.clone();
-
             // Send the message
-            let send_handle = spawn(async move {
-                if let Err(e) = connection.send_message_raw(message).await {
-                    error!("failed to send message to broker: {:?}", e);
+            if let Err(e) = connection.send_message_raw(message).await {
+                error!("failed to send message to broker: {:?}", e);
 
-                    // Remove the broker if we failed to send the message
-                    self_
-                        .connections
-                        .write()
-                        .remove_broker(&broker_identifier_, "failed to send message");
-                } else {
-                    // Wait for the sender to add the task to the list
-                    notified.notified().await;
-
-                    // If we successfully sent the message, remove the task from the list
-                    self_
-                        .connections
-                        .write()
-                        .remove_broker_task(&broker_identifier_, handle_identifier);
-                };
-            })
-            .abort_handle();
-
-            // Add the send handle to the list of tasks for the broker
-            self.connections.write().add_broker_task(
-                broker_identifier,
-                handle_identifier,
-                send_handle,
-            );
-
-            // Notify the sender that the task has been added
-            notify.notify_one();
+                // Remove the broker if we failed to send the message
+                self_
+                    .connections
+                    .write()
+                    .remove_broker(&broker_identifier_, "failed to send message");
+            }
         }
     }
 
     /// Attempts to asynchronously send a message to all brokers.
     /// If it fails, the failing broker is removed from the list of connections.
-    pub fn try_send_to_brokers(self: &Arc<Self>, message: &Bytes) {
+    pub async fn try_send_to_brokers(self: &Arc<Self>, message: &Bytes) {
         // Get the optional connection
         let brokers = self.connections.read().get_broker_identifiers();
 
         for broker in brokers {
-            self.clone().try_send_to_broker(&broker, message.clone());
+            self.clone()
+                .try_send_to_broker(&broker, message.clone())
+                .await;
         }
     }
 }

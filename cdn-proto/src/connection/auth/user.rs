@@ -6,12 +6,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::connection::protocols::Connection as _;
+use crate::connection::protocols::Connection;
 use crate::crypto::signature::Serializable;
 use crate::{
     bail,
     crypto::signature::{KeyPair, SignatureScheme},
-    def::{Connection, ConnectionDef, Scheme},
+    def::{ConnectionDef, Scheme},
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
@@ -29,7 +29,7 @@ impl<C: ConnectionDef> UserAuth<C> {
     /// - If we fail authentication
     /// - If our connection fails
     pub async fn authenticate_with_marshal(
-        connection: &Connection<C>,
+        connection: &Connection,
         keypair: &KeyPair<Scheme<C>>,
     ) -> Result<(String, u64)> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -103,7 +103,7 @@ impl<C: ConnectionDef> UserAuth<C> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn authenticate_with_broker(
-        connection: &Connection<C>,
+        connection: &Connection,
         permit: u64,
         subscribed_topics: HashSet<Topic>,
     ) -> Result<()> {

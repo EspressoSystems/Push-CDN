@@ -2,7 +2,10 @@
 //! way to skip server verification.
 
 use rcgen::{CertificateParams, Ia5String, IsCa, KeyPair, SanType};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+    RootCertStore,
+};
 
 use crate::{
     bail,
@@ -114,4 +117,33 @@ pub fn load_ca(
         // If not, use the local one
         Ok((LOCAL_CA_CERT.to_string(), LOCAL_CA_KEY.to_string()))
     }
+}
+
+/// Generate a root certificate store based on whether or not we want to use the
+/// local authority.
+///
+/// # Errors
+/// - If we fail to parse the provided CA certificate
+/// - If we fail to add the certificate to the root store
+pub fn generate_root_certificate_store(use_local_authority: bool) -> Result<RootCertStore> {
+    // Pick which authority to trust based on whether or not we have requested
+    // to use the local one
+    let root_ca = if use_local_authority {
+        LOCAL_CA_CERT
+    } else {
+        PROD_CA_CERT
+    };
+
+    // Parse the provided CA in `.PEM` format
+    let root_ca = bail!(pem::parse(root_ca), Parse, "failed to parse PEM file").into_contents();
+
+    // Create root certificate store and add our CA
+    let mut root_cert_store = RootCertStore::empty();
+    bail!(
+        root_cert_store.add(CertificateDer::from(root_ca)),
+        File,
+        "failed to add certificate to root store"
+    );
+
+    Ok(root_cert_store)
 }

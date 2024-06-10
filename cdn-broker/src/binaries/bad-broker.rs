@@ -9,6 +9,7 @@ use clap::Parser;
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::{spawn, time::sleep};
+#[cfg(not(tokio_unstable))]
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -68,6 +69,7 @@ async fn main() -> Result<()> {
             public_advertise_endpoint: format!("local_ip:{public_port}"),
             private_bind_endpoint: format!("0.0.0.0:{private_port}"),
             private_advertise_endpoint: format!("local_ip:{private_port}"),
+            global_memory_pool_size: None,
         };
 
         // Create new `Broker`

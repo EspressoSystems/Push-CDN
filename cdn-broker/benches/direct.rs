@@ -3,9 +3,10 @@
 
 use std::time::Duration;
 
-use cdn_broker::reexports::tests::{TestDefinition, TestRun};
-use cdn_broker::{assert_received, send_message_as};
-use cdn_proto::connection::{protocols::Connection as _, Bytes};
+use cdn_broker::reexports::tests::{TestBroker, TestDefinition, TestRun, TestUser};
+use cdn_broker::{assert_received, at_index, send_message_as};
+use cdn_proto::connection::protocols::memory::Memory;
+use cdn_proto::connection::Bytes;
 use cdn_proto::def::TestTopic;
 use cdn_proto::message::{Direct, Message};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -15,7 +16,7 @@ use pprof::criterion::{Output, PProfProfiler};
 async fn direct_user_to_self(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
-        recipient: vec![0],
+        recipient: at_index![0],
         message: vec![0; 10000],
     });
 
@@ -29,7 +30,7 @@ async fn direct_user_to_self(run: &TestRun) {
 async fn direct_user_to_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
-        recipient: vec![1],
+        recipient: at_index![1],
         message: vec![0; 10000],
     });
 
@@ -43,7 +44,7 @@ async fn direct_user_to_user(run: &TestRun) {
 async fn direct_user_to_broker(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
-        recipient: vec![2],
+        recipient: at_index![2],
         message: vec![0; 10000],
     });
 
@@ -57,7 +58,7 @@ async fn direct_user_to_broker(run: &TestRun) {
 async fn direct_broker_to_user(run: &TestRun) {
     // Allocate a rather large message
     let message = Message::Direct(Direct {
-        recipient: vec![0],
+        recipient: at_index![0],
         message: vec![0; 10000],
     });
 
@@ -76,11 +77,11 @@ fn bench_direct_user_to_self(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![TestTopic::Global as u8]],
+            connected_users: vec![TestUser::with_index(0, vec![TestTopic::Global as u8])],
             connected_brokers: vec![],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Run the benchmark
@@ -99,11 +100,14 @@ fn bench_direct_user_to_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
+            connected_users: vec![
+                TestUser::with_index(0, vec![TestTopic::Global as u8]),
+                TestUser::with_index(1, vec![TestTopic::Global as u8]),
+            ],
             connected_brokers: vec![],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Run the benchmark
@@ -122,11 +126,16 @@ fn bench_direct_user_to_broker(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
-            connected_brokers: vec![(vec![2], vec![TestTopic::Global as u8])],
+            connected_users: vec![
+                TestUser::with_index(0, vec![TestTopic::Global as u8]),
+                TestUser::with_index(1, vec![TestTopic::Global as u8]),
+            ],
+            connected_brokers: vec![TestBroker {
+                connected_users: vec![TestUser::with_index(2, vec![TestTopic::Global as u8])],
+            }],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Run the benchmark
@@ -145,11 +154,16 @@ fn bench_direct_broker_to_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
-            connected_brokers: vec![(vec![2], vec![TestTopic::Global as u8])],
+            connected_users: vec![
+                TestUser::with_index(0, vec![TestTopic::Global as u8]),
+                TestUser::with_index(1, vec![TestTopic::Global as u8]),
+            ],
+            connected_brokers: vec![TestBroker {
+                connected_users: vec![TestUser::with_index(0, vec![TestTopic::Global as u8])],
+            }],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Run the benchmark

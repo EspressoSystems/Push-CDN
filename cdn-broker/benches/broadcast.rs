@@ -3,9 +3,10 @@
 
 use std::time::Duration;
 
-use cdn_broker::reexports::tests::{TestDefinition, TestRun};
+use cdn_broker::reexports::tests::{TestBroker, TestDefinition, TestRun, TestUser};
 use cdn_broker::{assert_received, send_message_as};
-use cdn_proto::connection::{protocols::Connection as _, Bytes};
+use cdn_proto::connection::protocols::memory::Memory;
+use cdn_proto::connection::Bytes;
 use cdn_proto::def::TestTopic;
 use cdn_proto::message::{Broadcast, Message};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -49,11 +50,14 @@ fn bench_broadcast_user(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![TestTopic::Global as u8], vec![TestTopic::Global as u8]],
+            connected_users: vec![
+                TestUser::with_index(0, vec![TestTopic::Global.into()]),
+                TestUser::with_index(1, vec![TestTopic::Global.into()]),
+            ],
             connected_brokers: vec![],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Benchmark
@@ -71,14 +75,18 @@ fn bench_broadcast_broker(c: &mut Criterion) {
     // Set up our broker under test
     let run = benchmark_runtime.block_on(async move {
         let run_definition = TestDefinition {
-            connected_users: vec![vec![]],
+            connected_users: vec![TestUser::with_index(0, vec![])],
             connected_brokers: vec![
-                (vec![], vec![TestTopic::Global as u8]),
-                (vec![], vec![TestTopic::Global as u8]),
+                TestBroker {
+                    connected_users: vec![TestUser::with_index(1, vec![TestTopic::Global.into()])],
+                },
+                TestBroker {
+                    connected_users: vec![TestUser::with_index(2, vec![TestTopic::Global.into()])],
+                },
             ],
         };
 
-        run_definition.into_run().await
+        run_definition.into_run::<Memory, Memory>().await
     });
 
     // Benchmark

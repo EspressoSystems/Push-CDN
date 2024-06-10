@@ -9,9 +9,9 @@ use tracing::error;
 
 use crate::{
     bail,
-    connection::protocols::Connection as _,
+    connection::protocols::Connection,
     crypto::signature::SignatureScheme,
-    def::{Connection, PublicKey, RunDef, Scheme},
+    def::{PublicKey, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
@@ -69,7 +69,7 @@ impl<R: RunDef> BrokerAuth<R> {
     /// - If authentication fails
     /// - If our connection fails
     pub async fn verify_user(
-        connection: &Connection<R::User>,
+        connection: &Connection,
         #[cfg(not(feature = "global-permits"))] broker_identifier: &BrokerIdentifier,
         discovery_client: &mut R::DiscoveryClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
@@ -152,7 +152,7 @@ impl<R: RunDef> BrokerAuth<R> {
     /// - If we fail to authenticate
     /// - If we have a connection failure
     pub async fn authenticate_with_broker(
-        connection: &Connection<R::Broker>,
+        connection: &Connection,
         keypair: &KeyPair<Scheme<R::Broker>>,
     ) -> Result<BrokerIdentifier> {
         // Get the current timestamp, which we sign to avoid replay attacks
@@ -231,7 +231,7 @@ impl<R: RunDef> BrokerAuth<R> {
     /// # Errors
     /// - If verification has failed
     pub async fn verify_broker(
-        connection: &Connection<R::Broker>,
+        connection: &Connection,
         our_identifier: &BrokerIdentifier,
         our_public_key: &PublicKey<R::Broker>,
     ) -> Result<()> {

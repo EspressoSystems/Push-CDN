@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use cdn_proto::{
-    connection::{auth::marshal::MarshalAuth, protocols::Connection as _},
-    def::{Connection, RunDef},
+    connection::{auth::marshal::MarshalAuth, protocols::Connection},
+    def::RunDef,
     mnemonic,
 };
 use tokio::time::timeout;
@@ -13,7 +13,7 @@ use crate::Marshal;
 impl<R: RunDef> Marshal<R> {
     /// Handles a user's connection, including authentication.
     pub async fn handle_connection(
-        connection: Connection<R::User>,
+        connection: Connection,
         mut discovery_client: R::DiscoveryClientType,
     ) {
         // Verify (authenticate) the connection
@@ -26,7 +26,7 @@ impl<R: RunDef> Marshal<R> {
             info!(id = mnemonic(&user_public_key), "user authenticated");
         }
 
-        // Finish the connection, sending any remaining data.
-        connection.finish().await;
+        // Soft close the connection, ensuring all data was sent
+        let _ = connection.soft_close().await;
     }
 }

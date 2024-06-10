@@ -6,9 +6,6 @@ pub mod connection {
         pub use cdn_proto::connection::protocols::quic::Quic;
         pub use cdn_proto::connection::protocols::tcp::Tcp;
     }
-    pub use cdn_proto::connection::middleware::{
-        Middleware, NoMiddleware, TrustedMiddleware, UntrustedMiddleware,
-    };
 }
 
 pub mod discovery {
@@ -32,5 +29,5 @@ pub mod error {
 /// This is not guarded by `![cfg(test)]` because we use the same functions
 /// when doing benchmarks.
 pub mod tests {
-    pub use crate::tests::{TestDefinition, TestRun};
+    pub use crate::tests::{TestBroker, TestDefinition, TestRun, TestUser};
 }

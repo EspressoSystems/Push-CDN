@@ -1,7 +1,7 @@
 version: "0.5"
 
 environment:
-  - RUST_LOG=debug
+  - RUST_LOG=info
 
 processes:
   redis:
@@ -11,18 +11,23 @@ processes:
     command: cargo run --bin marshal -- -d "redis://:changeme!@localhost:6379"
 
   broker_0:
-    command: cargo run --bin broker -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --bin broker -- -d "redis://:changeme!@localhost:6379" --metrics-bind-endpoint localhost:9090
 
+  # Note: `local_ip` is a special value that will be replaced with the host's local IP address
   broker_1:
     command: cargo run --bin broker --release -- 
       --public-bind-endpoint 0.0.0.0:1740
       --public-advertise-endpoint local_ip:1740
       --private-bind-endpoint 0.0.0.0:1741
       --private-advertise-endpoint local_ip:1741
+      --metrics-bind-endpoint localhost:9091
       -d "redis://:changeme!@localhost:6379"
 
-  client_0:
-    command: cargo run --bin client --release -- -m "127.0.0.1:1737"
+  heavy_load:
+    command: cargo run --bin bad-sender -- -m "127.0.0.1:1737"
+    depends_on:
+      marshal_0:
+        condition: process_started
 
   # Uncomment the following lines to run misbehaving processes and the Tokio console
 
@@ -41,12 +46,6 @@ processes:
 
   # bad_connector:
   #   command: cargo run --bin bad-connector -- -m "127.0.0.1:1737"
-  #   depends_on:
-  #     marshal_0:
-  #       condition: process_started
-
-  # bad_sender:
-  #   command: cargo run --bin bad-sender -- -m "127.0.0.1:1737"
   #   depends_on:
   #     marshal_0:
   #       condition: process_started

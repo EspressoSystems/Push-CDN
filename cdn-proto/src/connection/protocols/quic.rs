@@ -2,7 +2,6 @@
 //! connection that implements our message framing and connection
 //! logic.
 
-use std::marker::PhantomData;
 use std::time::Duration;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
@@ -10,25 +9,18 @@ use std::{
 };
 
 use async_trait::async_trait;
-use quinn::{ClientConfig, Endpoint, Incoming, ServerConfig, TransportConfig, VarInt};
+use quinn::{ClientConfig, Endpoint, Incoming, SendStream, ServerConfig, TransportConfig, VarInt};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::RootCertStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use super::{
-    read_length_delimited, write_length_delimited, Connection, Listener, Protocol,
-    UnfinalizedConnection,
-};
+use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
-use crate::connection::Bytes;
-use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
+use crate::crypto::tls::generate_root_certificate_store;
 use crate::parse_endpoint;
 use crate::{
     bail, bail_option,
     error::{Error, Result},
-    message::Message,
 };
 
 /// The `Quic` protocol. We use this to define commonalities between QUIC
@@ -37,16 +29,15 @@ use crate::{
 pub struct Quic;
 
 #[async_trait]
-impl<M: Middleware> Protocol<M> for Quic {
-    type Connection = QuicConnection<M>;
-
+impl Protocol for Quic {
     type UnfinalizedConnection = UnfinalizedQuicConnection;
     type Listener = QuicListener;
 
     async fn connect(
         remote_endpoint: &str,
         use_local_authority: bool,
-    ) -> Result<QuicConnection<M>> {
+        middleware: Middleware,
+    ) -> Result<Connection> {
         // Parse the endpoint
         let remote_endpoint = bail_option!(
             bail!(
@@ -70,24 +61,8 @@ impl<M: Middleware> Protocol<M> for Quic {
             "failed to bind to local endpoint"
         );
 
-        // Pick which authority to trust based on whether or not we have requested
-        // to use the local one
-        let root_ca = if use_local_authority {
-            LOCAL_CA_CERT
-        } else {
-            PROD_CA_CERT
-        };
-
-        // Parse the provided CA in `.PEM` format
-        let root_ca = bail!(pem::parse(root_ca), Parse, "failed to parse PEM file").into_contents();
-
-        // Create root certificate store and add our CA
-        let mut root_cert_store = RootCertStore::empty();
-        bail!(
-            root_cert_store.add(CertificateDer::from(root_ca)),
-            File,
-            "failed to add certificate to root store"
-        );
+        // Generate root certificate store based on the local authority
+        let root_cert_store = generate_root_certificate_store(use_local_authority)?;
 
         // Create config from the root store
         let mut config: ClientConfig = bail!(
@@ -124,30 +99,18 @@ impl<M: Middleware> Protocol<M> for Quic {
         );
 
         // Open an outgoing bidirectional stream
-        let (mut sender, receiver) = bail!(
+        let (sender, receiver) = bail!(
             bail!(
-                timeout(Duration::from_secs(5), connection.open_bi()).await,
+                timeout(Duration::from_secs(5), open_bi(&connection)).await,
                 Connection,
-                "timed out accepting stream"
+                "timed out opening bidirectional stream"
             ),
             Connection,
-            "failed to accept bidirectional stream"
+            "failed to open bidirectional stream"
         );
 
-        // Write a `u8` to bootstrap the connection (make the sender aware of our
-        // outbound stream request)
-        bail!(
-            sender.write_u8(0).await,
-            Connection,
-            "failed to bootstrap connection"
-        );
-
-        // Create connection
-        let connection = QuicConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        };
+        // Convert the streams into a `Connection`
+        let connection = Connection::from_streams::<_, _>(sender, receiver, middleware);
 
         Ok(connection)
     }
@@ -190,114 +153,33 @@ impl<M: Middleware> Protocol<M> for Quic {
     }
 }
 
-#[derive(Clone)]
-pub struct QuicConnection<M: Middleware> {
-    sender: Arc<Mutex<quinn::SendStream>>,
-    receiver: Arc<Mutex<quinn::RecvStream>>,
-    pd: PhantomData<M>,
-}
-
-#[async_trait]
-impl<M: Middleware> Connection for QuicConnection<M> {
-    /// Send an unserialized message over the stream.
-    ///
-    /// # Errors
-    /// If we fail to send or serialize the message
-    async fn send_message(&self, message: Message) -> Result<()> {
-        // Serialize our message
-        let raw_message = Bytes::from_unchecked(bail!(
-            message.serialize(),
-            Serialize,
-            "failed to serialize message"
-        ));
-
-        // Send the message in its raw form
-        self.send_message_raw(raw_message).await
-    }
-
-    /// Send a pre-serialized message over the connection.
-    ///
-    /// # Errors
-    /// - If we fail to deliver the message. This usually means a connection problem.
-    async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
-        // Write the message length-delimited
-        write_length_delimited(&mut *self.sender.lock().await, raw_message).await
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    /// - if we fail to deserialize the message
-    async fn recv_message(&self) -> Result<Message> {
-        // Receive the raw message
-        let raw_message = self.recv_message_raw().await?;
-
-        // Deserialize and return the message
-        Ok(bail!(
-            Message::deserialize(&raw_message),
-            Deserialize,
-            "failed to deserialize message"
-        ))
-    }
-
-    /// Receives a single message over the stream and deserializes
-    /// it.
-    ///
-    /// # Errors
-    /// - if we fail to receive the message
-    async fn recv_message_raw(&self) -> Result<Bytes> {
-        // Receive the length-delimited message
-        read_length_delimited::<_, M>(&mut *self.receiver.lock().await).await
-    }
-
-    /// Finish the connection, sending any remaining data.
-    async fn finish(&self) {
-        let mut sender = self.sender.lock().await;
-
-        // Finish the stream
-        if sender.finish().is_ok() {
-            // Wait for the stream to be stopped with a timeout
-            let _ = timeout(Duration::from_secs(5), sender.stopped()).await;
-        };
-    }
-}
-
 /// A connection that has yet to be finalized. Allows us to keep accepting
 /// connections while we process this one.
 pub struct UnfinalizedQuicConnection(Incoming);
 
 #[async_trait]
-impl<M: Middleware> UnfinalizedConnection<QuicConnection<M>> for UnfinalizedQuicConnection {
+impl UnfinalizedConnection for UnfinalizedQuicConnection {
     /// Finalize the connection by awaiting on `Connecting` and cloning the connection.
     ///
     /// # Errors
     /// If we to finalize our connection.
-    async fn finalize(self) -> Result<QuicConnection<M>> {
+    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
         // Accept an incoming bidirectional stream
-        let (sender, mut receiver) = bail!(
-            connection.accept_bi().await,
+        let (sender, receiver) = bail!(
+            bail!(
+                timeout(Duration::from_secs(5), accept_bi(&connection)).await,
+                Connection,
+                "timed out accepting bidirectional stream"
+            ),
             Connection,
             "failed to accept bidirectional stream"
         );
 
-        // Read the `u8` required to bootstrap the connection
-        bail!(
-            receiver.read_u8().await,
-            Connection,
-            "failed to bootstrap connection"
-        );
-
-        // Create connection
-        let connection = QuicConnection {
-            sender: Arc::from(Mutex::from(sender)),
-            receiver: Arc::from(Mutex::from(receiver)),
-            pd: PhantomData,
-        };
+        // Create a sender and receiver
+        let connection = Connection::from_streams(sender, receiver, middleware);
 
         // Clone and return the connection
         Ok(connection)
@@ -324,6 +206,67 @@ impl Listener<UnfinalizedQuicConnection> for QuicListener {
         );
 
         Ok(UnfinalizedQuicConnection(connection))
+    }
+}
+
+/// A helper function for opening a new connection and atomically
+/// writing to it to bootstrap it.
+///
+/// # Errors
+/// - If we fail to open a bidirectional stream
+/// - If we fail to write to the stream
+async fn open_bi(connection: &quinn::Connection) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    // Open a bidirectional stream
+    let (mut sender, receiver) = bail!(
+        connection.open_bi().await,
+        Connection,
+        "failed to open unidirectional stream"
+    );
+
+    // Write a `u8` to bootstrap the connection
+    bail!(
+        sender.write_u8(0).await,
+        Connection,
+        "failed to write `u8` to unidirectional stream"
+    );
+
+    Ok((sender, receiver))
+}
+
+/// A helper function for accepting a new connection and atomically
+/// reading from it to bootstrap it.
+///
+/// # Errors
+/// - If we fail to accept a bidirectional stream
+/// - If we fail to read from the stream
+async fn accept_bi(
+    connection: &quinn::Connection,
+) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    // Accept an incoming bidirectional stream
+    let (sender, mut receiver) = bail!(
+        connection.accept_bi().await,
+        Connection,
+        "failed to accept bidirectional stream"
+    );
+
+    // Read the `u8` required to bootstrap the connection
+    bail!(
+        receiver.read_u8().await,
+        Connection,
+        "failed to read `u8` from bidirectional stream"
+    );
+
+    Ok((sender, receiver))
+}
+
+#[async_trait]
+impl SoftClose for SendStream {
+    /// Soft close the stream by shutting down the write side and waiting for the
+    /// read side to close (with a timeout of 3 seconds).
+    async fn soft_close(&mut self) {
+        if self.finish().is_ok() {
+            let _ = timeout(Duration::from_secs(3), self.stopped()).await;
+        }
     }
 }
 
