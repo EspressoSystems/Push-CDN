@@ -11,7 +11,7 @@ processes:
     command: cargo run --bin marshal -- -d "redis://:changeme!@localhost:6379"
 
   broker_0:
-    command: cargo run --bin broker -- -d "redis://:changeme!@localhost:6379"
+    command: cargo run --bin broker -- -d "redis://:changeme!@localhost:6379" --metrics-bind-endpoint localhost:9090
 
   broker_1:
     command: cargo run --bin broker --release -- 
@@ -20,9 +20,6 @@ processes:
       --private-bind-endpoint 0.0.0.0:1741
       --private-advertise-endpoint local_ip:1741
       -d "redis://:changeme!@localhost:6379"
-
-  client_0:
-    command: cargo run --bin client --release -- -m "127.0.0.1:1737"
 
   # Uncomment the following lines to run misbehaving processes and the Tokio console
 
@@ -45,8 +42,8 @@ processes:
   #     marshal_0:
   #       condition: process_started
 
-  # bad_sender:
-  #   command: cargo run --bin bad-sender -- -m "127.0.0.1:1737"
-  #   depends_on:
-  #     marshal_0:
-  #       condition: process_started
+  bad_sender:
+    command: cargo run --bin bad-sender -- -m "127.0.0.1:1737"
+    depends_on:
+      marshal_0:
+        condition: process_started
