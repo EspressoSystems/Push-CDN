@@ -7,11 +7,13 @@
 //! receive a message, we await on allocating it. When we are done sending it out to everyone,
 //! we drop the `Parc`, allowing for re-allocation.
 
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc, time::Instant};
 
 use anyhow::Result;
 use derivative::Derivative;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+use crate::connection::metrics;
 
 /// A global memory arena that tracks but does not allocate memory.
 /// Allows for asynchronous capping of memory usage.
@@ -28,7 +30,15 @@ impl MemoryPool {
 /// An acquired permit that allows for allocation of a memory region
 /// of a particular size.
 #[allow(dead_code)]
-pub struct AllocationPermit(OwnedSemaphorePermit);
+pub struct AllocationPermit(OwnedSemaphorePermit, Instant);
+
+/// When dropped, log the time of allocation to deallocation
+/// as latency.
+impl Drop for AllocationPermit {
+    fn drop(&mut self) {
+        metrics::LATENCY.observe(self.1.elapsed().as_secs_f64());
+    }
+}
 
 impl MemoryPool {
     /// Asynchronously allocate `n` bytes from the global pool, waiting
@@ -39,7 +49,7 @@ impl MemoryPool {
     pub async fn alloc(&self, n: u32) -> Result<AllocationPermit> {
         // Acquire many permits to the underlying semaphore
         let permit = self.0.clone().acquire_many_owned(n).await?;
-        Ok(AllocationPermit(permit))
+        Ok(AllocationPermit(permit, Instant::now()))
     }
 }
 
