@@ -13,6 +13,7 @@ use anyhow::Result;
 use derivative::Derivative;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+#[cfg(feature = "metrics")]
 use crate::connection::metrics;
 
 /// A global memory arena that tracks but does not allocate memory.
@@ -30,12 +31,13 @@ impl MemoryPool {
 /// An acquired permit that allows for allocation of a memory region
 /// of a particular size.
 #[allow(dead_code)]
-pub struct AllocationPermit(OwnedSemaphorePermit, Instant);
+pub struct AllocationPermit(OwnedSemaphorePermit, #[cfg(feature = "metrics")] Instant);
 
 /// When dropped, log the time of allocation to deallocation
 /// as latency.
 impl Drop for AllocationPermit {
     fn drop(&mut self) {
+        #[cfg(feature = "metrics")]
         metrics::LATENCY.observe(self.1.elapsed().as_secs_f64());
     }
 }
@@ -49,7 +51,11 @@ impl MemoryPool {
     pub async fn alloc(&self, n: u32) -> Result<AllocationPermit> {
         // Acquire many permits to the underlying semaphore
         let permit = self.0.clone().acquire_many_owned(n).await?;
-        Ok(AllocationPermit(permit, Instant::now()))
+        
+        #[cfg(feature = "metrics")]
+        return Ok(AllocationPermit(permit, Instant::now()));
+        #[cfg(not(feature = "metrics"))]
+        return Ok(AllocationPermit(permit));
     }
 }
 
