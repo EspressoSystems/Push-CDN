@@ -13,7 +13,6 @@ use tokio::{
 };
 
 use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
-#[cfg(feature = "metrics")]
 use crate::{
     bail,
     connection::middleware::Middleware,
