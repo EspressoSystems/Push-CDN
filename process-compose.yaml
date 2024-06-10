@@ -16,9 +16,10 @@ processes:
   broker_1:
     command: cargo run --bin broker --release -- 
       --public-bind-endpoint 0.0.0.0:1740
-      --public-advertise-endpoint local_ip:1740
+      --public-advertise-endpoint local_ip:1740 # local_ip is a special value that will be replaced with the host's local IP address
       --private-bind-endpoint 0.0.0.0:1741
       --private-advertise-endpoint local_ip:1741
+      --metrics-bind-endpoint localhost:9091
       -d "redis://:changeme!@localhost:6379"
 
   # Uncomment the following lines to run misbehaving processes and the Tokio console
