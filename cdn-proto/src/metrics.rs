@@ -48,7 +48,9 @@ pub async fn running_latency_calculator() {
         latency_sum = metrics::LATENCY.get_sample_sum() - latency_sum;
         latency_count = metrics::LATENCY.get_sample_count() - latency_count;
 
-        // Set the running latency
-        metrics::RUNNING_LATENCY.set(latency_sum / latency_count as f64);
+        // Set the running latency if the new count is not 0
+        if latency_count != 0 {
+            metrics::RUNNING_LATENCY.set(latency_sum / latency_count as f64);
+        }
     }
 }
