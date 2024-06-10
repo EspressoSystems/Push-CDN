@@ -14,5 +14,9 @@ lazy_static! {
 
     // Per-message latency
     pub static ref LATENCY: Histogram =
-        register_histogram!("message_latency", "message delivery latency").unwrap();
+        register_histogram!("latency", "message delivery latency").unwrap();
+
+    // The per-message latency over the last 30 seconds
+    pub static ref RUNNING_LATENCY: Gauge =
+        register_gauge!("running_latency", "average message delivery latency over the last 30s").unwrap();
 }

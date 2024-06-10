@@ -19,6 +19,10 @@ struct Args {
     /// The remote marshal endpoint to connect to, including the port.
     #[arg(short, long)]
     marshal_endpoint: String,
+
+    /// The size of the messages to be sent to the broker
+    #[arg(long, default_value = "9000000")]
+    message_size: u32,
 }
 
 #[tokio::main]
@@ -56,7 +60,7 @@ async fn main() {
     // Create a client, specifying the BLS signature algorithm
     // and the `QUIC` protocol.
     let client = Client::<ProductionClientConnection>::new(config);
-    let message = vec![0u8; 10000];
+    let message = vec![0u8; args.message_size as usize];
 
     // In a loop,
     loop {
