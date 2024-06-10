@@ -348,7 +348,7 @@ async fn inject_brokers<B: Protocol, U: Protocol>(
         // Create a map of our users
         let mut user_map = DirectMap::new(identifier.clone());
         for user in broker.connected_users {
-            user_map.insert(Arc::from(user.public_key), identifier.clone());
+            user_map.insert(user.public_key, identifier.clone());
         }
 
         // Sync the map to the broker under test

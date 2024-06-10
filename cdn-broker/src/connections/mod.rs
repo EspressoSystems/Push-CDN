@@ -155,7 +155,7 @@ impl Connections {
         let differences = (added.copied().collect(), removed.copied().collect());
 
         // Set the previous to the new one
-        *previous = now.clone();
+        previous.clone_from(&now);
 
         // Return the differences
         differences
