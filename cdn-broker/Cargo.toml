@@ -39,7 +39,7 @@ path = "src/binaries/bad-broker.rs"
 
 # This dependency is used for the Tokio console
 [target.'cfg(tokio_unstable)'.dependencies]
-console-subscriber = "0.2"
+console-subscriber = "0.3"
 
 
 [dependencies]
