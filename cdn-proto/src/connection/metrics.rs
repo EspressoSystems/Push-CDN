@@ -18,5 +18,5 @@ lazy_static! {
 
     // The per-message latency over the last 30 seconds
     pub static ref RUNNING_LATENCY: Gauge =
-        register_gauge!("running_latency", "average message delivery latency over the last 30s").unwrap();
+        register_gauge!("running_latency", "average tail latency over the last 30s").unwrap();
 }
