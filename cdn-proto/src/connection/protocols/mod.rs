@@ -130,11 +130,10 @@ impl Connection {
         // Create the channels that will be used to send and receive messages.
         // Conditionally create bounded channels if the user specifies a size
         let ((send_to_caller, receive_from_task), (send_to_task, receive_from_caller)) =
-            if let Some(size) = middleware.connection_message_pool_size() {
-                (kanal::bounded_async(size), kanal::bounded_async(size))
-            } else {
-                (kanal::unbounded_async(), kanal::unbounded_async())
-            };
+            middleware.connection_message_pool_size().map_or_else(
+                || (kanal::unbounded_async(), kanal::unbounded_async()),
+                |size| (kanal::bounded_async(size), kanal::bounded_async(size)),
+            );
 
         // Spawn the task that receives from the caller and sends to the stream
         let sender_task = tokio::spawn(async move {
@@ -314,7 +313,7 @@ async fn read_length_delimited<R: AsyncReadExt + Unpin + Send>(
 
     // Add to our metrics, if desired
     #[cfg(feature = "metrics")]
-    metrics::BYTES_RECV.add(message_size as f64);
+    metrics::BYTES_RECV.add(f64::from(message_size));
 
     Ok(Bytes::from(buffer, permit))
 }
@@ -355,7 +354,7 @@ async fn write_length_delimited<W: AsyncWriteExt + Unpin + Send>(
 
     // Increment the number of bytes we've sent by this amount
     #[cfg(feature = "metrics")]
-    metrics::BYTES_SENT.add(message_len as f64);
+    metrics::BYTES_SENT.add(f64::from(message_len));
 
     Ok(())
 }

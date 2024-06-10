@@ -34,7 +34,7 @@ impl Middleware {
     /// Create a new middleware with no global memory pool and no connection message pool size.
     /// This means an unbounded channel will be used for connections and no global memory pool
     /// will be checked.
-    pub fn none() -> Self {
+    pub const fn none() -> Self {
         // Create a new middleware with no global memory pool and no connection message pool size.
         Self {
             global_memory_pool: None,
@@ -44,6 +44,9 @@ impl Middleware {
 
     /// Allocate a permit for a message of `num_bytes` bytes.
     /// If the global memory pool is not set, this will return `None`.
+    ///
+    /// # Panics
+    /// - If the required semaphore has been dropped. This should never happen
     pub async fn allocate_message_bytes(&self, num_bytes: u32) -> Option<AllocationPermit> {
         if let Some(pool) = &self.global_memory_pool {
             // If the global memory pool is set, allocate a permit
@@ -59,7 +62,7 @@ impl Middleware {
     }
 
     /// Get the connection message pool size, if set.
-    pub fn connection_message_pool_size(&self) -> Option<usize> {
+    pub const fn connection_message_pool_size(&self) -> Option<usize> {
         // Return the connection message pool size
         self.connection_message_pool_size
     }

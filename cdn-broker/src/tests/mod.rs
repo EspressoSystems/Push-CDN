@@ -337,7 +337,7 @@ async fn inject_brokers<B: Protocol, U: Protocol>(
 
         // Aggregate the topics we should be subscribed to
         let mut topics = Vec::new();
-        for user in broker.connected_users.iter() {
+        for user in &broker.connected_users {
             topics.extend(user.subscribed_topics.clone());
         }
 
