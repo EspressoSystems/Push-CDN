@@ -11,13 +11,12 @@ use std::{
 use async_trait::async_trait;
 use quinn::{ClientConfig, Endpoint, Incoming, SendStream, ServerConfig, TransportConfig, VarInt};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::RootCertStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
 use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
 use crate::connection::middleware::Middleware;
-use crate::crypto::tls::{LOCAL_CA_CERT, PROD_CA_CERT};
+use crate::crypto::tls::generate_root_certificate_store;
 use crate::parse_endpoint;
 use crate::{
     bail, bail_option,
@@ -62,24 +61,8 @@ impl Protocol for Quic {
             "failed to bind to local endpoint"
         );
 
-        // Pick which authority to trust based on whether or not we have requested
-        // to use the local one
-        let root_ca = if use_local_authority {
-            LOCAL_CA_CERT
-        } else {
-            PROD_CA_CERT
-        };
-
-        // Parse the provided CA in `.PEM` format
-        let root_ca = bail!(pem::parse(root_ca), Parse, "failed to parse PEM file").into_contents();
-
-        // Create root certificate store and add our CA
-        let mut root_cert_store = RootCertStore::empty();
-        bail!(
-            root_cert_store.add(CertificateDer::from(root_ca)),
-            File,
-            "failed to add certificate to root store"
-        );
+        // Generate root certificate store based on the local authority
+        let root_cert_store = generate_root_certificate_store(use_local_authority)?;
 
         // Create config from the root store
         let mut config: ClientConfig = bail!(

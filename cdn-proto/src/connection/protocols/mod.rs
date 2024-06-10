@@ -26,6 +26,7 @@ use crate::connection::metrics;
 pub mod memory;
 pub mod quic;
 pub mod tcp;
+pub mod tcp_tls;
 
 /// The `Protocol` trait lets us be generic over a connection type (Tcp, Quic, etc).
 #[async_trait]
@@ -143,6 +144,13 @@ impl Connection {
                     BytesOrSoftClose::Bytes(message) => {
                         // Write the message to the stream
                         if write_length_delimited(&mut writer, message).await.is_err() {
+                            receive_from_caller.close();
+                            return;
+                        };
+
+                        // Flush the writer
+                        // Is a no-op for everything but TCP+TLS
+                        if writer.flush().await.is_err() {
                             receive_from_caller.close();
                             return;
                         };
