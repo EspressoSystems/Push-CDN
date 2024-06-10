@@ -3,7 +3,6 @@ use std::{
     hash::Hash,
 };
 
-
 /// A relational, bidirectional multimap that relates keys to a set of values,
 /// and values to a set of keys.
 pub struct RelationalMap<K: Hash + PartialEq + Eq + Clone, V: Hash + PartialEq + Eq + Clone> {
