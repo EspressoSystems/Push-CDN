@@ -51,7 +51,7 @@ impl MemoryPool {
     pub async fn alloc(&self, n: u32) -> Result<AllocationPermit> {
         // Acquire many permits to the underlying semaphore
         let permit = self.0.clone().acquire_many_owned(n).await?;
-        
+
         #[cfg(feature = "metrics")]
         return Ok(AllocationPermit(permit, Instant::now()));
         #[cfg(not(feature = "metrics"))]
