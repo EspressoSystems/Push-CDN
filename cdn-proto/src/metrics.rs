@@ -44,13 +44,21 @@ pub async fn running_latency_calculator() {
         // Sleep for 30s
         sleep(Duration::from_secs(30)).await;
 
+        // Fetch the current sum and count
+        let current_sum = metrics::LATENCY.get_sample_sum();
+        let current_count = metrics::LATENCY.get_sample_count();
+
         // Calculate the running latency by subtracting the previous sum and count
-        latency_sum = metrics::LATENCY.get_sample_sum() - latency_sum;
-        latency_count = metrics::LATENCY.get_sample_count() - latency_count;
+        latency_sum = current_sum - latency_sum;
+        latency_count = current_count - latency_count;
 
         // Set the running latency if the new count is not 0
         if latency_count != 0 {
             metrics::RUNNING_LATENCY.set(latency_sum / latency_count as f64);
         }
+
+        // Update the previous sum and count for the next iteration
+        latency_sum = current_sum;
+        latency_count = current_count;
     }
 }
