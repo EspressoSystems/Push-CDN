@@ -23,7 +23,10 @@ use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, Sign
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::spawn;
 
-use crate::{connections::DirectMap, Broker, Config};
+use crate::{
+    connections::{DirectMap, SubscriptionStatus, TopicSyncMap},
+    Broker, Config,
+};
 
 #[cfg(test)]
 mod broadcast;
@@ -341,9 +344,20 @@ async fn inject_brokers<B: Protocol, U: Protocol>(
             topics.extend(user.subscribed_topics.clone());
         }
 
-        // Send our subscriptions to it
-        let subscribe_message = Message::Subscribe(topics);
-        send_message_as!(outgoing_connection, subscribe_message);
+        // Create a map of our topics
+        // TODO: somehow make these automatically adjust to what really happens
+        let mut topic_sync_map = TopicSyncMap::new(0);
+        for topic in topics {
+            topic_sync_map.insert(topic, SubscriptionStatus::Subscribed);
+        }
+
+        // Sync the map to the broker under test
+        let topic_sync_message = Message::TopicSync(
+            rkyv::to_bytes::<_, 256>(&topic_sync_map.diff())
+                .expect("failed to serialize map")
+                .to_vec(),
+        );
+        send_message_as!(outgoing_connection, topic_sync_message);
 
         // Create a map of our users
         let mut user_map = DirectMap::new(identifier.clone());

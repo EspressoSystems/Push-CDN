@@ -94,6 +94,8 @@ pub enum Message {
 
     /// A message containing a map which we use to converge on user connection state
     UserSync(Vec<u8>),
+    /// A message containing a map which we use to converge on subscribed topic state
+    TopicSync(Vec<u8>),
 }
 
 impl Message {
@@ -185,6 +187,10 @@ impl Message {
 
             Self::UserSync(to_serialize) => {
                 root.set_user_sync(to_serialize);
+            }
+
+            Self::TopicSync(to_serialize) => {
+                root.set_topic_sync(to_serialize);
             }
         }
 
@@ -287,6 +293,13 @@ impl Message {
                         bail!(maybe_message, Deserialize, "failed to deserialize message");
 
                     Self::UserSync(message.to_vec())
+                }
+
+                messages_capnp::message::TopicSync(maybe_message) => {
+                    let message =
+                        bail!(maybe_message, Deserialize, "failed to deserialize message");
+
+                    Self::TopicSync(message.to_vec())
                 }
             },
         )

@@ -3,22 +3,25 @@
 
 use std::collections::{HashMap, HashSet};
 
+use broadcast::BroadcastMap;
 use cdn_proto::{
     connection::{protocols::Connection, UserPublicKey},
     discovery::BrokerIdentifier,
     message::Topic,
     mnemonic,
 };
-pub use direct::DirectMap;
 use tokio::task::AbortHandle;
 use tracing::{error, info, warn};
+pub use {
+    broadcast::{SubscriptionStatus, TopicSyncMap},
+    direct::DirectMap,
+};
 
 use crate::metrics;
 
-use self::broadcast::BroadcastMap;
-
 mod broadcast;
 mod direct;
+mod versioned_map;
 
 pub struct Connections {
     // Our identity. Used for versioned vector conflict resolution.
@@ -135,30 +138,53 @@ impl Connections {
 
     /// Get the full list of topics that we are interested in.
     /// We send this to new brokers when they start.
-    pub fn get_full_topic_sync(&self) -> Vec<Topic> {
-        self.broadcast_map.users.get_values()
+    pub fn get_full_topic_sync(&self) -> TopicSyncMap {
+        // Create an empty map
+        let mut map = TopicSyncMap::new(0);
+
+        // Add all topics we are subscribed to.
+        // The initial version will be 0.
+        for topic in self.broadcast_map.users.get_values() {
+            map.insert(topic, SubscriptionStatus::Subscribed);
+        }
+
+        map
     }
 
-    /// Get the partial list of topics that we are interested in. Returns the
-    /// additions and removals as a tuple `(a, r)` in that order. We send this
-    /// to other brokers whenever there are changes.
-    pub fn get_partial_topic_sync(&mut self) -> (Vec<Topic>, Vec<Topic>) {
+    /// Get the partial list of topics that we are interested in.
+    /// We send this to existing brokers every so often.
+    pub fn get_partial_topic_sync(&mut self) -> Option<TopicSyncMap> {
         // Lock the maps
         let previous = &mut self.broadcast_map.previous_subscribed_topics;
         let now = HashSet::from_iter(self.broadcast_map.users.get_values());
 
         // Calculate additions and removals
-        let added = now.difference(previous);
-        let removed = previous.difference(&now);
+        let added: Vec<u8> = now.difference(previous).copied().collect();
+        let removed: Vec<u8> = previous.difference(&now).copied().collect();
 
-        // Clone them
-        let differences = (added.copied().collect(), removed.copied().collect());
+        // If there are no changes, return `None`
+        if added.is_empty() && removed.is_empty() {
+            return None;
+        }
 
-        // Set the previous to the new one
+        // Set the previous to the new values
         previous.clone_from(&now);
 
-        // Return the differences
-        differences
+        // Update the topic sync map
+        for topic in added {
+            self.broadcast_map
+                .topic_sync_map
+                .insert(topic, SubscriptionStatus::Subscribed);
+        }
+
+        for topic in removed {
+            self.broadcast_map
+                .topic_sync_map
+                .insert(topic, SubscriptionStatus::Unsubscribed);
+        }
+
+        // Return the partial map
+        Some(self.broadcast_map.topic_sync_map.diff())
     }
 
     /// Get all the brokers we are connected to. We use this to forward
