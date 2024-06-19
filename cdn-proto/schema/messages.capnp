@@ -23,6 +23,8 @@ struct Message {
 
         # A message containing a map which we use to converge on user connection state
         userSync @7: Data;
+        # A message containing a map which we use to converge on subscribed topic state
+        topicSync @8: Data;
     }
 }
 

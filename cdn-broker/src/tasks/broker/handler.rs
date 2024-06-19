@@ -14,7 +14,10 @@ use cdn_proto::{
 use tokio::{spawn, time::timeout};
 use tracing::{debug, error};
 
-use crate::{connections::DirectMap, Inner};
+use crate::{
+    connections::{DirectMap, SubscriptionStatus, TopicSyncMap},
+    Inner,
+};
 
 impl<Def: RunDef> Inner<Def> {
     /// This function is the callback for handling a broker (private) connection.
@@ -79,33 +82,32 @@ impl<Def: RunDef> Inner<Def> {
         })
         .abort_handle();
 
+        // Add to our list of connections, removing the old one if it exists
+        self.connections
+            .write()
+            .add_broker(broker_identifier.clone(), connection, receive_handle);
+
         // Send a full topic sync
         if let Err(err) = self.full_topic_sync(&broker_identifier).await {
             error!("failed to perform full topic sync: {err}");
+
+            // Remove the broker if we fail the initial sync
+            self.connections
+                .write()
+                .remove_broker(&broker_identifier, "failed to send full topic sync");
+
             return;
         };
 
         // Send a full user sync
         if let Err(err) = self.full_user_sync(&broker_identifier).await {
             error!("failed to perform full user sync: {err}");
-            return;
+
+            // Remove the broker if we fail the initial sync
+            self.connections
+                .write()
+                .remove_broker(&broker_identifier, "failed to send full user sync");
         };
-
-        // If we have `strong-consistency` enabled, send partials
-        #[cfg(feature = "strong-consistency")]
-        {
-            if let Err(err) = self.partial_topic_sync().await {
-                error!("failed to perform partial topic sync: {err}");
-            }
-            if let Err(err) = self.partial_user_sync().await {
-                error!("failed to perform partial user sync: {err}");
-            }
-        }
-
-        // Add to our broker and remove the old one if it exists
-        self.connections
-            .write()
-            .add_broker(broker_identifier, connection, receive_handle);
     }
 
     /// This is the default loop for handling broker connections
@@ -114,6 +116,9 @@ impl<Def: RunDef> Inner<Def> {
         broker_identifier: &BrokerIdentifier,
         connection: Connection,
     ) -> Result<()> {
+        // The broker's topic sync map
+        let mut topic_sync_map = TopicSyncMap::new(0);
+
         loop {
             // Receive a message from the broker
             let raw_message = connection.recv_message_raw().await?;
@@ -138,20 +143,6 @@ impl<Def: RunDef> Inner<Def> {
                         .await;
                 }
 
-                // If we receive a subscribe message from a broker, we add them as "interested" locally.
-                Message::Subscribe(subscribe) => {
-                    self.connections
-                        .write()
-                        .subscribe_broker_to(broker_identifier, subscribe);
-                }
-
-                // If we receive a subscribe message from a broker, we remove them as "interested" locally.
-                Message::Unsubscribe(unsubscribe) => {
-                    self.connections
-                        .write()
-                        .unsubscribe_broker_from(broker_identifier, &unsubscribe);
-                }
-
                 // If we receive a `UserSync` message, we want to sync with our map
                 Message::UserSync(user_sync) => {
                     // Deserialize via `rkyv`
@@ -162,6 +153,39 @@ impl<Def: RunDef> Inner<Def> {
                     );
 
                     self.connections.write().apply_user_sync(user_sync);
+                }
+
+                // If we receive a `TopicSync` message, we want to sync with our version of their map
+                Message::TopicSync(topic_sync) => {
+                    // Deserialize via `rkyv`
+                    let topic_sync: TopicSyncMap = bail!(
+                        rkyv::from_bytes(&topic_sync),
+                        Deserialize,
+                        "failed to deserialize topic sync message"
+                    );
+
+                    // Merge the topic sync maps
+                    let changed_topics = topic_sync_map.merge(topic_sync);
+
+                    // For each key changed,
+                    for topic in changed_topics {
+                        // Get the actual value
+                        let Some(value) = topic_sync_map.get(&topic) else {
+                            return Err(Error::Parse("desynchronized topic sync map".to_string()));
+                        };
+
+                        // If the value is `Subscribed`, add the broker to the topic
+                        if *value == SubscriptionStatus::Subscribed {
+                            self.connections
+                                .write()
+                                .subscribe_broker_to(broker_identifier, vec![topic]);
+                        } else {
+                            // Otherwise, remove the broker from the topic
+                            self.connections
+                                .write()
+                                .unsubscribe_broker_from(broker_identifier, &[topic]);
+                        }
+                    }
                 }
 
                 // Do nothing if we receive an unexpected message
