@@ -774,7 +774,7 @@ checksum = "96c51067fd44124faa7f870b4b1c969379ad32b2ba805aa959430ceaa384f695"
 
 [[package]]
 name = "cdn-broker"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "async-std",
  "cdn-proto",
@@ -799,7 +799,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-client"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "async-std",
  "cdn-proto",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-marshal"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "async-std",
  "cdn-proto",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-proto"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "ark-serialize",
@@ -3732,7 +3732,7 @@ dependencies = [
 
 [[package]]
 name = "tests"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "cdn-broker",
  "cdn-client",
