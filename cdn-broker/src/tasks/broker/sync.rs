@@ -42,7 +42,9 @@ impl<Def: RunDef> Inner<Def> {
     /// - If we fail to send the message
     pub async fn full_user_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full user sync map
-        let full_sync_map = self.connections.read().get_full_user_sync();
+        let Some(full_sync_map) = self.connections.read().get_full_user_sync() else {
+            return Ok(());
+        };
 
         // Serialize and send the message to the broker
         self.try_send_to_broker(
@@ -61,12 +63,9 @@ impl<Def: RunDef> Inner<Def> {
     /// - If we fail to serialize the message
     pub async fn partial_user_sync(self: &Arc<Self>) -> Result<()> {
         // Get partial user sync map
-        let partial_sync_map = self.connections.write().get_partial_user_sync();
-
-        // Return if we haven't had any changes
-        if partial_sync_map.underlying_map.is_empty() {
+        let Some(partial_sync_map) = self.connections.write().get_partial_user_sync() else {
             return Ok(());
-        }
+        };
 
         // Serialize the message
         let raw_message = prepare_sync_message!(partial_sync_map, Message::UserSync);
@@ -84,7 +83,9 @@ impl<Def: RunDef> Inner<Def> {
     /// - if we fail to serialize the message
     pub async fn full_topic_sync(self: &Arc<Self>, broker: &BrokerIdentifier) -> Result<()> {
         // Get full topic sync map
-        let full_sync_map = self.connections.read().get_full_topic_sync();
+        let Some(full_sync_map) = self.connections.read().get_full_topic_sync() else {
+            return Ok(());
+        };
 
         // Serialize and send the message to the broker
         self.try_send_to_broker(

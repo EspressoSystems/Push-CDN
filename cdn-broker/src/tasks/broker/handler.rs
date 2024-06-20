@@ -15,7 +15,7 @@ use tokio::{spawn, time::timeout};
 use tracing::{debug, error};
 
 use crate::{
-    connections::{DirectMap, SubscriptionStatus, TopicSyncMap},
+    connections::{DirectMap, TopicSyncMap},
     Inner,
 };
 
@@ -116,9 +116,6 @@ impl<Def: RunDef> Inner<Def> {
         broker_identifier: &BrokerIdentifier,
         connection: Connection,
     ) -> Result<()> {
-        // The broker's topic sync map
-        let mut topic_sync_map = TopicSyncMap::new(0);
-
         loop {
             // Receive a message from the broker
             let raw_message = connection.recv_message_raw().await?;
@@ -164,28 +161,10 @@ impl<Def: RunDef> Inner<Def> {
                         "failed to deserialize topic sync message"
                     );
 
-                    // Merge the topic sync maps
-                    let changed_topics = topic_sync_map.merge(topic_sync);
-
-                    // For each key changed,
-                    for topic in changed_topics {
-                        // Get the actual value
-                        let Some(value) = topic_sync_map.get(&topic) else {
-                            return Err(Error::Parse("desynchronized topic sync map".to_string()));
-                        };
-
-                        // If the value is `Subscribed`, add the broker to the topic
-                        if *value == SubscriptionStatus::Subscribed {
-                            self.connections
-                                .write()
-                                .subscribe_broker_to(broker_identifier, vec![topic]);
-                        } else {
-                            // Otherwise, remove the broker from the topic
-                            self.connections
-                                .write()
-                                .unsubscribe_broker_from(broker_identifier, &[topic]);
-                        }
-                    }
+                    // Apply the topic sync
+                    self.connections
+                        .write()
+                        .apply_topic_sync(broker_identifier, topic_sync);
                 }
 
                 // Do nothing if we receive an unexpected message

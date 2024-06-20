@@ -17,14 +17,14 @@ type Tombstone<T> = Option<T>;
 
 /// A `VersionedValue` defines a value with a global version that
 /// we use for syncing purposes.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Archive)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Archive, Debug)]
 #[archive(check_bytes)]
 pub struct VersionedValue<T> {
     version: u64,
     value: Tombstone<T>,
 }
 
-#[derive(Clone, Archive, Serialize, Deserialize, Derivative)]
+#[derive(Clone, Archive, Serialize, Deserialize, Derivative, Debug)]
 #[archive(check_bytes)]
 #[derivative(PartialEq)]
 /// A data structure responsible for remaining eventually consistent. It does this by
@@ -58,6 +58,11 @@ impl<
             locally_modified_keys: HashSet::new(),
             conflict_identity,
         }
+    }
+
+    /// Check if the map is empty.
+    pub fn is_empty(&self) -> bool {
+        self.underlying_map.is_empty()
     }
 
     /// Get a value from the underlying map, returning it as an optional reference. This maintains parity with
@@ -183,10 +188,13 @@ impl<
     }
 
     /// Merge the changes from two `VersionedMap`s, keeping only the newest changes. On a conflict,
-    /// use the `conflict_identity` to figure out who should get the value.
-    pub fn merge(&mut self, remote: Self) -> Vec<K> {
+    /// uses the `conflict_identity` to figure out who should get the value.
+    ///
+    /// Returns a vector of `(K, Option<V>)` pairs that represent the changes that were made.
+    /// TODO: `Rc` or `Arc` the cloned values?
+    pub fn merge(&mut self, remote: Self) -> Vec<(K, Option<V>)> {
         // We want to return the changes
-        let mut changes: Vec<K> = Vec::new();
+        let mut changes: Vec<(K, Option<V>)> = Vec::new();
 
         // For each `(k,v)` pair that has allegedly changed,
         for (remote_key, remote_value) in remote.underlying_map {
@@ -198,7 +206,7 @@ impl<
                     Ordering::Greater => {
                         if remote_value.value.is_some() {
                             // Update our value if it is something.
-                            local_value.value = remote_value.value;
+                            local_value.value.clone_from(&remote_value.value);
                             local_value.version = remote_value.version;
                         } else {
                             // Remove if they sent us a tombstone.
@@ -208,8 +216,8 @@ impl<
                         // Remove it from our locally modified keys, in case we also tried to update it.
                         self.locally_modified_keys.remove(&remote_key);
 
-                        // Push to our changes that we return.
-                        changes.push(remote_key);
+                        // Push to the changes that we return.
+                        changes.push((remote_key, remote_value.value));
                     }
 
                     // If the remote value is equal to our value,
@@ -220,7 +228,7 @@ impl<
                             // TODO: duplicate code here and above. macro it?
                             if remote_value.value.is_some() {
                                 // Update our value
-                                local_value.value = remote_value.value;
+                                local_value.value.clone_from(&remote_value.value);
                                 local_value.version = remote_value.version;
                             } else {
                                 // Remove the value if it wa snothing
@@ -229,8 +237,8 @@ impl<
 
                             // Remove it from our locally modified keys, in case we also tried to update it.
                             self.locally_modified_keys.remove(&remote_key);
-                            // Push to our changes that we return.
-                            changes.push(remote_key);
+                            // Push to the changes that we return.
+                            changes.push((remote_key, remote_value.value));
                         }
                     }
 
@@ -241,8 +249,11 @@ impl<
                 // If we don't have a local value for it already,
                 if remote_value.value.is_some() {
                     // If the value is something, insert it
-                    self.underlying_map.insert(remote_key.clone(), remote_value);
-                    changes.push(remote_key);
+                    self.underlying_map
+                        .insert(remote_key.clone(), remote_value.clone());
+
+                    // Push it to the changes that we return
+                    changes.push((remote_key, remote_value.value));
                 }
             };
         }

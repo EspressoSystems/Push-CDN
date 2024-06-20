@@ -118,6 +118,16 @@ trait SoftClose {
 }
 
 impl Connection {
+    /// Create a new connection with a set of dummy streams.
+    /// Used for testing purposes.
+    pub fn new_test() -> Self {
+        Self(Arc::new(ConnectionRef {
+            sender: kanal::unbounded_async().0,
+            receiver: kanal::unbounded_async().1,
+            tasks: Arc::new(vec![]),
+        }))
+    }
+
     /// Converts a set of writer and reader streams into a connection.
     /// Under the hood, this spawns sending and receiving tasks.
     fn from_streams<
