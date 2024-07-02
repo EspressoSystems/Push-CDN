@@ -50,7 +50,7 @@ pub struct Inner<C: ConnectionDef> {
     connection: Arc<RwLock<Option<Connection>>>,
 
     /// The semaphore to ensure only one reconnection is happening at a time
-    connecting_guard: Semaphore,
+    connecting_guard: Arc<Semaphore>,
 
     /// The keypair to use when authenticating
     pub keypair: KeyPair<Scheme<C>>,
@@ -159,7 +159,7 @@ impl<C: ConnectionDef> Retry<C> {
         let Some(connection) = possible_connection else {
             // If the connection is not initialized for one reason or another, try to reconnect
             // Acquire the semaphore to ensure only one reconnection is happening at a time
-            if let Ok(permit) = self.inner.connecting_guard.try_acquire() {
+            if let Ok(permit) = Arc::clone(&self.inner.connecting_guard).try_acquire_owned() {
                 // We were the first to try reconnecting, spawn a reconnection task
                 let inner = self.inner.clone();
                 spawn(async move {
@@ -174,15 +174,15 @@ impl<C: ConnectionDef> Retry<C> {
                                 *connection = Some(new_connection);
                                 break;
                             }
-                            Err(e) => {
+                            Err(err) => {
                                 // We failed to reconnect
                                 // Sleep for 2 seconds and then try again
-                                error!(error = %e, "failed to reconnect");
+                                error!("failed to connect: {err}");
                                 sleep(Duration::from_secs(2)).await;
                             }
                         }
                     }
-                    _ = permit;
+                    drop(permit);
                 });
             }
 
@@ -243,7 +243,7 @@ impl<C: ConnectionDef> Retry<C> {
                 use_local_authority,
                 // TODO: parameterize batch params
                 connection: Arc::default(),
-                connecting_guard: Semaphore::const_new(1),
+                connecting_guard: Arc::from(Semaphore::const_new(1)),
                 keypair,
                 subscribed_topics,
             }),
@@ -252,11 +252,13 @@ impl<C: ConnectionDef> Retry<C> {
 
     /// Returns only when the connection is fully initialized
     pub async fn ensure_initialized(&self) {
-        // Try to get the underlying connection
-        while let Err(err) = self.get_connection().await {
-            error!("failed to initialize connection: {err}");
-            sleep(Duration::from_secs(2)).await;
+        // If we are already connected, return
+        if self.try_get_connection().is_ok() {
+            return;
         }
+
+        // Otherwise, wait to acquire the connecting guard
+        let _ = self.inner.connecting_guard.acquire().await;
     }
 
     /// Sends a message to the underlying connection. Reconnection is handled under

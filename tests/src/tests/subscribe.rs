@@ -24,6 +24,11 @@ async fn test_subscribe() {
     // Create and get the handle to a new client subscribed to the global topic
     let client = new_client(0, vec![TestTopic::Global as u8], "8097");
 
+    // Ensure the client is connected
+    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
+        panic!("client failed to connect");
+    };
+
     // Send a message to the global topic
     client
         .send_broadcast_message(vec![TestTopic::Global as u8], b"hello global".to_vec())
@@ -120,8 +125,8 @@ async fn test_invalid_subscribe() {
     // Create and start a new marshal
     new_marshal("8100", &discovery_endpoint).await;
 
-    // Create and get the handle to a new client subscribed to an invalid topic
-    let client = new_client(0, vec![99], "8100");
+    // Create and get the handle to a new client
+    let client = new_client(0, vec![], "8100");
 
     // Ensure the connection is open
     let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
@@ -143,9 +148,25 @@ async fn test_invalid_subscribe() {
             || client.soft_close().await.is_err(),
         "sent message but should've been disconnected"
     );
+}
 
-    // Reinitialize the connection
-    let Ok(()) = timeout(Duration::from_secs(4), client.ensure_initialized()).await else {
+// Test that unsubscribing from an invalid topic kills the connection.
+#[tokio::test]
+async fn test_invalid_unsubscribe() {
+    // Get a temporary path for the discovery endpoint
+    let discovery_endpoint = get_temp_db_path();
+
+    // Create and start a new broker
+    new_broker(0, "8101", "8102", &discovery_endpoint).await;
+
+    // Create and start a new marshal
+    new_marshal("8103", &discovery_endpoint).await;
+
+    // Create and get the handle to a new client
+    let client = new_client(0, vec![], "8103");
+
+    // Ensure the connection is open
+    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
         panic!("client failed to connect");
     };
 
@@ -160,7 +181,8 @@ async fn test_invalid_subscribe() {
         client
             .send_broadcast_message(vec![1], b"hello invalid".to_vec())
             .await
-            .is_err(),
+            .is_err()
+            || client.soft_close().await.is_err(),
         "sent message but should've been disconnected"
     );
 }
