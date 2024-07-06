@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! An asynchronous memory-Permitted `Arc`. Allows for atomic tracking for allocations and deallocations.
 //!
 //! Almost like a bounded channel, but has globally allocated counters of bytes instead of

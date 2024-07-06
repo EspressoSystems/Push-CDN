@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! This file contains the implementation of the `Marshal`, which the user
 //! connects to before a broker. It is used to "marshal" a user to the broker
 //! (right now) with the least amount of connections. It's basically a load

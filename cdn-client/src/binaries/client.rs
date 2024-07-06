@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! The following is an example of a Push CDN client implementation.
 //! In this example, we send messages to ourselves via broadcast and direct
 //! systems.

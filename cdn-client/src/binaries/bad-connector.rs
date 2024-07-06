@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! "Bad connector" is a simple example of a client that connects to the broker every
 //! 200ms. This is useful for testing the broker's ability to handle many connections.
 
