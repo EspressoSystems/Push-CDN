@@ -244,7 +244,6 @@ impl<R: RunDef> BrokerAuth<R> {
 
         // See if we're the right type of message
         let Message::AuthenticateWithKey(auth_message) = auth_message else {
-            // TODO: macro for this error thing
             fail_verification_with_message!(connection, "wrong message type");
         };
 

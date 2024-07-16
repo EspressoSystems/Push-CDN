@@ -241,7 +241,6 @@ impl<C: ConnectionDef> Retry<C> {
             inner: Arc::from(Inner {
                 endpoint,
                 use_local_authority,
-                // TODO: parameterize batch params
                 connection: Arc::default(),
                 connecting_guard: Arc::from(Semaphore::const_new(1)),
                 keypair,

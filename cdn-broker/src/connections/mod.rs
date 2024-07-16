@@ -8,7 +8,7 @@ use cdn_proto::{
     connection::{protocols::Connection, UserPublicKey},
     discovery::BrokerIdentifier,
     message::Topic,
-    mnemonic,
+    util::mnemonic,
 };
 use tokio::task::AbortHandle;
 use tracing::{error, info, warn};

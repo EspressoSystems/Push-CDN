@@ -3,7 +3,7 @@ use std::time::Duration;
 use cdn_proto::{
     connection::{auth::marshal::MarshalAuth, protocols::Connection},
     def::RunDef,
-    mnemonic,
+    util::mnemonic,
 };
 use tokio::time::timeout;
 use tracing::info;

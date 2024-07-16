@@ -9,7 +9,8 @@ use cdn_proto::{
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
-    mnemonic, verify_broker,
+    util::mnemonic,
+    verify_broker,
 };
 use tokio::{spawn, time::timeout};
 use tracing::{debug, error};
