@@ -246,39 +246,41 @@ impl<R: RunDef> Broker<R> {
         // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
         // We also use it to check for new brokers who may have joined.
         let inner_ = self.inner.clone();
-        let heartbeat_task = spawn(inner_.run_heartbeat_task());
+        let heartbeat_task = AbortOnDropHandle(spawn(inner_.run_heartbeat_task()));
 
         // Spawn the sync task, which updates other brokers with our keys periodically.
         let inner_ = self.inner.clone();
-        let sync_task = spawn(inner_.run_sync_task());
+        let sync_task = AbortOnDropHandle(spawn(inner_.run_sync_task()));
 
         // Spawn the public (user) listener task
         // TODO: maybe macro this, since it's repeat code with the private listener task
         let inner_ = self.inner.clone();
-        let user_listener_task = spawn(inner_.clone().run_user_listener_task(self.user_listener));
+        let user_listener_task = AbortOnDropHandle(spawn(
+            inner_.clone().run_user_listener_task(self.user_listener),
+        ));
 
         // Spawn the private (broker) listener task
         let inner_ = self.inner.clone();
-        let broker_listener_task = spawn(inner_.run_broker_listener_task(self.broker_listener));
+        let broker_listener_task =
+            AbortOnDropHandle(spawn(inner_.run_broker_listener_task(self.broker_listener)));
 
         // Serve the (possible) metrics task
-        if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
-            // Spawn the serving task
-            spawn(proto_metrics::serve_metrics(metrics_bind_endpoint));
-        }
+        let _possible_metrics_task = self
+            .metrics_bind_endpoint
+            .map(|endpoint| AbortOnDropHandle(spawn(proto_metrics::serve_metrics(endpoint))));
 
         // If one of the tasks exists, we want to return (stopping the program)
         select! {
-            _ = AbortOnDropHandle(heartbeat_task) => {
+            _ = heartbeat_task => {
                 Err(Error::Exited("heartbeat task exited!".to_string()))
             }
-            _ = AbortOnDropHandle(sync_task) => {
+            _ = sync_task => {
                 Err(Error::Exited("sync task exited!".to_string()))
             }
-            _ = AbortOnDropHandle(user_listener_task) => {
+            _ = user_listener_task => {
                 Err(Error::Exited("user listener task exited!".to_string()))
             }
-            _ = AbortOnDropHandle(broker_listener_task) => {
+            _ = broker_listener_task => {
                 Err(Error::Exited("broker listener task exited!".to_string()))
             }
         }

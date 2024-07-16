@@ -144,14 +144,9 @@ impl<R: RunDef> Marshal<R> {
     /// Right now, we return a `Result` but don't actually ever error.
     pub async fn start(self) -> Result<()> {
         // Serve the (possible) metrics task
-        let _possible_handle = if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
-            // Spawn the serving task
-            Some(AbortOnDropHandle(spawn(proto_metrics::serve_metrics(
-                metrics_bind_endpoint,
-            ))))
-        } else {
-            None
-        };
+        let _possible_metrics_task = self
+            .metrics_bind_endpoint
+            .map(|endpoint| AbortOnDropHandle(spawn(proto_metrics::serve_metrics(endpoint))));
 
         // Listen for connections forever
         loop {

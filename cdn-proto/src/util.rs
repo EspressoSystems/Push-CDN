@@ -20,7 +20,7 @@ pub struct AbortOnDropHandle<T>(pub JoinHandle<T>);
 
 impl<T> Drop for AbortOnDropHandle<T> {
     fn drop(&mut self) {
-        let _ = self.0.abort();
+        self.0.abort();
     }
 }
 
