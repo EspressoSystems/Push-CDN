@@ -23,6 +23,7 @@ use cdn_proto::{
     discovery::DiscoveryClient,
     error::{Error, Result},
     metrics as proto_metrics,
+    util::AbortOnDropHandle,
 };
 use tokio::spawn;
 use tracing::info;
@@ -143,10 +144,14 @@ impl<R: RunDef> Marshal<R> {
     /// Right now, we return a `Result` but don't actually ever error.
     pub async fn start(self) -> Result<()> {
         // Serve the (possible) metrics task
-        if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
+        let _possible_handle = if let Some(metrics_bind_endpoint) = self.metrics_bind_endpoint {
             // Spawn the serving task
-            spawn(proto_metrics::serve_metrics(metrics_bind_endpoint));
-        }
+            Some(AbortOnDropHandle(spawn(proto_metrics::serve_metrics(
+                metrics_bind_endpoint,
+            ))))
+        } else {
+            None
+        };
 
         // Listen for connections forever
         loop {

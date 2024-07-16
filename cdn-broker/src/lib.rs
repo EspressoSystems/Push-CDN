@@ -24,6 +24,7 @@ use cdn_proto::{
     def::{Listener, Protocol, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
+    util::AbortOnDropHandle,
 };
 use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
@@ -268,16 +269,16 @@ impl<R: RunDef> Broker<R> {
 
         // If one of the tasks exists, we want to return (stopping the program)
         select! {
-            _ = heartbeat_task => {
+            _ = AbortOnDropHandle(heartbeat_task) => {
                 Err(Error::Exited("heartbeat task exited!".to_string()))
             }
-            _ = sync_task => {
+            _ = AbortOnDropHandle(sync_task) => {
                 Err(Error::Exited("sync task exited!".to_string()))
             }
-            _ = user_listener_task => {
+            _ = AbortOnDropHandle(user_listener_task) => {
                 Err(Error::Exited("user listener task exited!".to_string()))
             }
-            _ = broker_listener_task => {
+            _ = AbortOnDropHandle(broker_listener_task) => {
                 Err(Error::Exited("broker listener task exited!".to_string()))
             }
         }
