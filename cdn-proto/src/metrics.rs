@@ -3,7 +3,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use tokio::time::sleep;
-use tracing::error;
+use tracing::{error, warn};
 use warp::Filter;
 
 use crate::connection::metrics;
@@ -39,14 +39,22 @@ pub async fn running_latency_calculator() {
     let mut latency_sum = 0.0;
     let mut latency_count = 0;
 
+    // Exit if the latency metrics could not be initialized
+    let (Some(latency_metric), Some(running_latency_metric)) =
+        (metrics::LATENCY.as_ref(), metrics::RUNNING_LATENCY.as_ref())
+    else {
+        warn!("Running latency calculator exiting: metrics could not be initialized");
+        return;
+    };
+
     // Start calculating the latency
     loop {
         // Sleep for 30s
         sleep(Duration::from_secs(30)).await;
 
         // Fetch the current sum and count
-        let current_sum = metrics::LATENCY.get_sample_sum();
-        let current_count = metrics::LATENCY.get_sample_count();
+        let current_sum = latency_metric.get_sample_sum();
+        let current_count = latency_metric.get_sample_count();
 
         // Calculate the running latency by subtracting the previous sum and count
         latency_sum = current_sum - latency_sum;
@@ -54,7 +62,7 @@ pub async fn running_latency_calculator() {
 
         // Set the running latency if the new count is not 0
         if latency_count != 0 {
-            metrics::RUNNING_LATENCY.set(latency_sum / latency_count as f64);
+            running_latency_metric.set(latency_sum / latency_count as f64);
         }
 
         // Update the previous sum and count for the next iteration

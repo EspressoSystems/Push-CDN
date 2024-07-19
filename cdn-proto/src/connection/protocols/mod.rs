@@ -335,9 +335,11 @@ async fn read_length_delimited<R: AsyncReadExt + Unpin + Send>(
         "failed to read message"
     );
 
-    // Add to our metrics, if desired
+    // Add to our metrics, if desired and available
     #[cfg(feature = "metrics")]
-    metrics::BYTES_RECV.add(f64::from(message_size));
+    if let Some(bytes_recv) = metrics::BYTES_RECV.as_ref() {
+        bytes_recv.add(f64::from(message_size));
+    }
 
     Ok(Bytes::from(buffer, permit))
 }
@@ -376,9 +378,11 @@ async fn write_length_delimited<W: AsyncWriteExt + Unpin + Send>(
         "failed to send message"
     );
 
-    // Increment the number of bytes we've sent by this amount
+    // Increment the number of bytes we've sent by this amount, if available
     #[cfg(feature = "metrics")]
-    metrics::BYTES_SENT.add(f64::from(message_len));
+    if let Some(bytes_sent) = metrics::BYTES_SENT.as_ref() {
+        bytes_sent.add(f64::from(message_len));
+    }
 
     Ok(())
 }
