@@ -37,8 +37,11 @@ pub struct AllocationPermit(OwnedSemaphorePermit, #[cfg(feature = "metrics")] In
 /// as latency.
 impl Drop for AllocationPermit {
     fn drop(&mut self) {
+        // Log the latency of the allocation (if available)
         #[cfg(feature = "metrics")]
-        metrics::LATENCY.observe(self.1.elapsed().as_secs_f64());
+        if let Some(latency) = metrics::LATENCY.as_ref() {
+            latency.observe(self.1.elapsed().as_secs_f64());
+        }
     }
 }
 
