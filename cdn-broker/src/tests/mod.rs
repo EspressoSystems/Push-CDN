@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! Commonalities for deterministic (non-networked) testing of our broker.
 //! This is not guarded by `![cfg(test)]` because we use the same functions
 //! when running benchmarks.

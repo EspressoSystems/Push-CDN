@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! In this module we describe the `DiscoveryClient` trait. It defines a client that allows
 //! us to derive a source of truth for the number of brokers, permits issued, and the
 //! number of users connected per broker.

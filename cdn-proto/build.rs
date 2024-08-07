@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 use std::{env, fs, path::Path};
 
 use rcgen::{CertificateParams, IsCa, KeyPair, PKCS_ECDSA_P256_SHA256};

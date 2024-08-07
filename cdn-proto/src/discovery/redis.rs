@@ -1,3 +1,9 @@
+// Copyright (c) 2024 Espresso Systems (espressosys.com)
+// This file is part of the Push-CDN repository.
+
+// You should have received a copy of the MIT License
+// along with the Push-CDN repository. If not, see <https://mit-license.org/>.
+
 //! This crate deals with `Redis` client abstractions. In the push CDN model,
 //! the users of `Redis` and their uses are:
 //! 1. Marshals and brokers to agree on the number of connections per broker
