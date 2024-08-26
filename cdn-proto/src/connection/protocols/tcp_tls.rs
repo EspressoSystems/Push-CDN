@@ -5,8 +5,7 @@
 // along with the Push-CDN repository. If not, see <https://mit-license.org/>.
 
 //! This file defines and implements a thin wrapper around a TCP
-//! + TLS connection that implements our message framing and connection
-//! logic.
+//! + TLS connection that implements our message framing and connection logic.
 
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
