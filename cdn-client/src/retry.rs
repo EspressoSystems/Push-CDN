@@ -23,7 +23,9 @@ use cdn_proto::{
     def::{ConnectionDef, Protocol, Scheme},
     error::{Error, Result},
     message::{Message, Topic},
+    util::AbortOnDropHandle,
 };
+use parking_lot::Mutex;
 use tokio::{
     spawn,
     sync::{RwLock, Semaphore},
@@ -57,6 +59,9 @@ pub struct Inner<C: ConnectionDef> {
 
     /// The semaphore to ensure only one reconnection is happening at a time
     connecting_guard: Arc<Semaphore>,
+
+    /// The (optional) task that is responsible for reconnecting
+    reconnection_task: Arc<Mutex<Option<AbortOnDropHandle<()>>>>,
 
     /// The keypair to use when authenticating
     pub keypair: KeyPair<Scheme<C>>,
@@ -168,7 +173,7 @@ impl<C: ConnectionDef> Retry<C> {
             if let Ok(permit) = Arc::clone(&self.inner.connecting_guard).try_acquire_owned() {
                 // We were the first to try reconnecting, spawn a reconnection task
                 let inner = self.inner.clone();
-                spawn(async move {
+                let reconnection_task = AbortOnDropHandle(spawn(async move {
                     let mut connection = inner.connection.write().await;
 
                     // Forever,
@@ -189,7 +194,10 @@ impl<C: ConnectionDef> Retry<C> {
                         }
                     }
                     drop(permit);
-                });
+                }));
+
+                // Update the reconnection task
+                *self.inner.reconnection_task.lock() = Some(reconnection_task);
             }
 
             // If we are in the middle of reconnecting, return an error
@@ -249,6 +257,7 @@ impl<C: ConnectionDef> Retry<C> {
                 use_local_authority,
                 connection: Arc::default(),
                 connecting_guard: Arc::from(Semaphore::const_new(1)),
+                reconnection_task: Arc::default(),
                 keypair,
                 subscribed_topics,
             }),

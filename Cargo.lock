@@ -808,6 +808,7 @@ dependencies = [
  "cdn-proto",
  "clap",
  "jf-signature",
+ "parking_lot",
  "rand",
  "tokio",
  "tracing",

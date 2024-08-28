@@ -24,6 +24,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "ansi",
 ] }
 clap = { version = "4", features = ["derive"] }
+parking_lot = "0.12"
 prometheus = { version = "0.13", default-features = false }
 lazy_static = "1"
 async-std = { version = "1", default-features = false, features = [
