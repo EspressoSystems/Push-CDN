@@ -32,3 +32,4 @@ tracing-subscriber.workspace = true
 rand.workspace = true
 tracing.workspace = true
 clap.workspace = true
+parking_lot.workspace = true
