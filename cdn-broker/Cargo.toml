@@ -41,6 +41,9 @@ path = "src/binaries/bad-broker.rs"
 [target.'cfg(tokio_unstable)'.dependencies]
 console-subscriber = "0.3"
 
+# This prevents clippy from warning about the `tokio_unstable` flag
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [dependencies]
 jf-signature.workspace = true
