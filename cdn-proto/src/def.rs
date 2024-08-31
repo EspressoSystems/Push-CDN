@@ -72,7 +72,7 @@ impl RunDef for ProductionRunDef {
 }
 
 /// The production broker connection configuration.
-/// Uses BLS signatures, TCP, and trusted middleware.
+/// Uses BLS signatures and TCP.
 pub struct ProductionBrokerConnection;
 impl ConnectionDef for ProductionBrokerConnection {
     type Scheme = BLS;
@@ -80,7 +80,7 @@ impl ConnectionDef for ProductionBrokerConnection {
 }
 
 /// The production user connection configuration.
-/// Uses BLS signatures, QUIC, and untrusted middleware.
+/// Uses BLS signatures and QUIC.
 pub struct ProductionUserConnection;
 impl ConnectionDef for ProductionUserConnection {
     type Scheme = BLS;
@@ -88,7 +88,7 @@ impl ConnectionDef for ProductionUserConnection {
 }
 
 /// The production client connection configuration.
-/// Uses BLS signatures, QUIC, and trusted middleware.
+/// Uses BLS signatures and QUIC.
 /// Differs from `ProductionUserConnection` in that this is used by
 /// the client, not the broker.
 pub struct ProductionClientConnection;
@@ -110,7 +110,7 @@ impl<B: ProtocolType, U: ProtocolType> RunDef for TestingRunDef<B, U> {
 }
 
 /// The testing connection configuration.
-/// Uses BLS signatures, generic protocols, and no middleware.
+/// Uses BLS signatures and generic protocols.
 pub struct TestingConnection<P: ProtocolType> {
     pd: PhantomData<P>,
 }

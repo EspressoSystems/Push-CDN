@@ -27,7 +27,7 @@ use tokio_rustls::TlsConnector;
 
 use super::SoftClose;
 use super::{Connection, Listener, Protocol, UnfinalizedConnection};
-use crate::connection::middleware::Middleware;
+use crate::connection::limiter::Limiter;
 use crate::crypto::tls::generate_root_certificate_store;
 use crate::{
     bail, bail_option,
@@ -53,7 +53,7 @@ impl Protocol for TcpTls {
     async fn connect(
         remote_endpoint: &str,
         use_local_authority: bool,
-        middleware: Middleware,
+        limiter: Limiter,
     ) -> Result<Connection>
     where
         Self: Sized,
@@ -124,7 +124,7 @@ impl Protocol for TcpTls {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, middleware);
+        let connection = Connection::from_streams(sender, receiver, limiter);
 
         Ok(connection)
     }
@@ -183,7 +183,7 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
     ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
-    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
+    async fn finalize(self, limiter: Limiter) -> Result<Connection> {
         // Wrap the stream in the TLS connection
         let stream = bail!(
             bail!(
@@ -203,7 +203,7 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, middleware);
+        let connection = Connection::from_streams(sender, receiver, limiter);
 
         Ok(connection)
     }

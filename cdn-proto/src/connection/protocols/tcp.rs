@@ -21,7 +21,7 @@ use tokio::time::timeout;
 
 use super::SoftClose;
 use super::{Connection, Listener, Protocol, UnfinalizedConnection};
-use crate::connection::middleware::Middleware;
+use crate::connection::limiter::Limiter;
 use crate::{
     bail, bail_option,
     error::{Error, Result},
@@ -46,7 +46,7 @@ impl Protocol for Tcp {
     async fn connect(
         remote_endpoint: &str,
         _use_local_authority: bool,
-        middleware: Middleware,
+        limiter: Limiter,
     ) -> Result<Connection>
     where
         Self: Sized,
@@ -85,7 +85,7 @@ impl Protocol for Tcp {
         let (receiver, sender) = stream.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, middleware);
+        let connection = Connection::from_streams(sender, receiver, limiter);
 
         Ok(connection)
     }
@@ -123,12 +123,12 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
     ///
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
-    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
+    async fn finalize(self, limiter: Limiter) -> Result<Connection> {
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, middleware);
+        let connection = Connection::from_streams(sender, receiver, limiter);
 
         Ok(connection)
     }

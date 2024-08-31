@@ -90,7 +90,7 @@ impl<Def: RunDef> Inner<Def> {
                     let connection =
                         // Our TCP protocol is unsecured, so the cert we use does not matter.
                         // Time out is at protocol level
-                        match Protocol::<Def::Broker>::connect(&to_connect_endpoint, true, inner.middleware.clone()).await
+                        match Protocol::<Def::Broker>::connect(&to_connect_endpoint, true, inner.limiter.clone()).await
                         {
                             Ok(connection) => connection,
                             Err(err) => {

@@ -8,7 +8,7 @@
 
 use cdn_proto::{
     connection::{
-        middleware::Middleware,
+        limiter::Limiter,
         protocols::{quic::Quic, tcp::Tcp, Connection, Listener, Protocol, UnfinalizedConnection},
         Bytes,
     },
@@ -70,13 +70,13 @@ fn set_up_bench<Proto: Protocol>(message_size: usize) -> (Runtime, Connection, C
 
             // Finalize the connection
             unfinalized_connection
-                .finalize(Middleware::none())
+                .finalize(Limiter::none())
                 .await
                 .expect("failed to finalize connection")
         });
 
         // Attempt to connect
-        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true, Middleware::none())
+        let conn1 = Proto::connect(&format!("127.0.0.1:{port}"), true, Limiter::none())
             .await
             .expect("failed to connect to listener");
 

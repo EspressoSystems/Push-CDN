@@ -25,7 +25,7 @@ use std::{
 mod metrics;
 use cdn_proto::{
     bail,
-    connection::{middleware::Middleware, protocols::Protocol as _},
+    connection::{limiter::Limiter, protocols::Protocol as _},
     crypto::tls::{generate_cert_from_ca, load_ca},
     def::{Listener, Protocol, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
@@ -60,6 +60,7 @@ pub struct Config<R: RunDef> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
+    /// The underlying (public) verification key, used to authenticate with other brokers.
     pub keypair: KeyPair<Scheme<R::Broker>>,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
@@ -90,8 +91,8 @@ struct Inner<R: RunDef> {
     /// state or send messages.
     connections: Arc<RwLock<Connections>>,
 
-    /// The shared middleware that we use for all connections.
-    middleware: Middleware,
+    /// The shared limiter that we use for all connections.
+    limiter: Limiter,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -221,8 +222,8 @@ impl<R: RunDef> Broker<R> {
             })
             .transpose()?;
 
-        // Create the globally shared middleware
-        let middleware = Middleware::new(global_memory_pool_size, None);
+        // Create the globally shared limiter
+        let limiter = Limiter::new(global_memory_pool_size, None);
 
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
@@ -231,7 +232,7 @@ impl<R: RunDef> Broker<R> {
                 identity: identity.clone(),
                 keypair,
                 connections: Arc::from(RwLock::from(Connections::new(identity))),
-                middleware,
+                limiter,
             }),
             metrics_bind_endpoint,
             user_listener,

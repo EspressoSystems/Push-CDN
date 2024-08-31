@@ -19,7 +19,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use super::{middleware::Middleware, Bytes};
+use super::{limiter::Limiter, Bytes};
 use crate::{
     bail,
     error::{Error, Result},
@@ -48,7 +48,7 @@ pub trait Protocol: Send + Sync + 'static {
     async fn connect(
         remote_endpoint: &str,
         use_local_authority: bool,
-        middleware: Middleware,
+        limiter: Limiter,
     ) -> Result<Connection>;
 
     /// Bind to the local endpoint, returning an instance of `Listener`.
@@ -77,7 +77,7 @@ pub trait UnfinalizedConnection {
     /// Finalize an incoming connection. This is separated so we can prevent
     /// actors who are slow from clogging up the incoming connection by offloading
     /// it to a separate task.
-    async fn finalize(self, middleware: Middleware) -> Result<Connection>;
+    async fn finalize(self, limiter: Limiter) -> Result<Connection>;
 }
 
 /// A connection to a remote endpoint.
@@ -142,12 +142,12 @@ impl Connection {
     >(
         mut writer: W,
         mut reader: R,
-        middleware: Middleware,
+        limiter: Limiter,
     ) -> Self {
         // Create the channels that will be used to send and receive messages.
         // Conditionally create bounded channels if the user specifies a size
         let ((send_to_caller, receive_from_task), (send_to_task, receive_from_caller)) =
-            middleware.connection_message_pool_size().map_or_else(
+            limiter.connection_message_pool_size().map_or_else(
                 || (kanal::unbounded_async(), kanal::unbounded_async()),
                 |size| (kanal::bounded_async(size), kanal::bounded_async(size)),
             );
@@ -190,7 +190,7 @@ impl Connection {
             // While we can successfully read messages from the stream,
             loop {
                 // Read the message from the stream
-                match read_length_delimited::<R>(&mut reader, &middleware).await {
+                match read_length_delimited::<R>(&mut reader, &limiter).await {
                     Ok(message) => {
                         // If successful, send the message to the caller
                         if send_to_caller.send(message).await.is_err() {
@@ -310,7 +310,7 @@ impl Connection {
 /// Has a bounds check for if the message is too big
 async fn read_length_delimited<R: AsyncReadExt + Unpin + Send>(
     stream: &mut R,
-    middleware: &Middleware,
+    limiter: &Limiter,
 ) -> Result<Bytes> {
     // Read the message size from the stream
     let message_size = bail!(
@@ -325,7 +325,7 @@ async fn read_length_delimited<R: AsyncReadExt + Unpin + Send>(
     }
 
     // Acquire the allocation if necessary
-    let permit = middleware.allocate_message_bytes(message_size).await;
+    let permit = limiter.allocate_message_bytes(message_size).await;
 
     // Create buffer of the proper size
     let mut buffer = vec![0; usize::try_from(message_size).expect(">= 32 bit system")];
@@ -400,7 +400,7 @@ pub mod tests {
 
     use super::{Listener, Protocol, UnfinalizedConnection};
     use crate::{
-        connection::middleware::Middleware,
+        connection::limiter::Limiter,
         crypto::tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
         message::{Direct, Message},
     };
@@ -438,7 +438,7 @@ pub mod tests {
             let unfinalized_connection = listener.accept().await?;
 
             // Finalize the connection
-            let connection = unfinalized_connection.finalize(Middleware::none()).await?;
+            let connection = unfinalized_connection.finalize(Limiter::none()).await?;
 
             // Send our message
             connection.send_message(listener_to_new_connection_).await?;
@@ -453,7 +453,7 @@ pub mod tests {
         // Spawn a task to connect and send and receive the message
         let new_connection_jh: JoinHandle<Result<()>> = spawn(async move {
             // Connect to the remote
-            let connection = P::connect(bind_endpoint.as_str(), true, Middleware::none()).await?;
+            let connection = P::connect(bind_endpoint.as_str(), true, Limiter::none()).await?;
 
             // Receive a message, assert it's the correct one
             let message = connection.recv_message().await?;
