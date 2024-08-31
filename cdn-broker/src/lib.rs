@@ -60,6 +60,7 @@ pub struct Config<R: RunDef> {
     /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
     pub discovery_endpoint: String,
 
+    /// The underlying (public) verification key, used to authenticate with other brokers.
     pub keypair: KeyPair<Scheme<R::Broker>>,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
