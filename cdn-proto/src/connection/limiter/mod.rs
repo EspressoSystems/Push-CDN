@@ -10,9 +10,9 @@ use self::pool::AllocationPermit;
 
 pub mod pool;
 
-/// Shared middleware for all connections.
+/// Shared limiter for all connections.
 #[derive(Clone)]
-pub struct Middleware {
+pub struct Limiter {
     /// The global memory pool to check with before allocating.
     global_memory_pool: Option<MemoryPool>,
 
@@ -20,8 +20,8 @@ pub struct Middleware {
     connection_message_pool_size: Option<usize>,
 }
 
-impl Middleware {
-    /// Create a new middleware with a global memory pool of `global_memory_pool_size` bytes
+impl Limiter {
+    /// Create a new limiter with a global memory pool of `global_memory_pool_size` bytes
     /// and a connection message pool size of `connection_message_pool_size` bytes.
     ///
     /// If the global memory pool is not set, it will not be used.
@@ -37,11 +37,11 @@ impl Middleware {
         }
     }
 
-    /// Create a new middleware with no global memory pool and no connection message pool size.
+    /// Create a new limiter with no global memory pool and no connection message pool size.
     /// This means an unbounded channel will be used for connections and no global memory pool
     /// will be checked.
     pub const fn none() -> Self {
-        // Create a new middleware with no global memory pool and no connection message pool size.
+        // Create a new limiter with no global memory pool and no connection message pool size.
         Self {
             global_memory_pool: None,
             connection_message_pool_size: None,

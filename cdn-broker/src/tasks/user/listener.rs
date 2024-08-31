@@ -34,9 +34,7 @@ impl<Def: RunDef> Inner<Def> {
             let inner = self.clone();
             spawn(async move {
                 // Finalize the connection
-                let Ok(connection) = unfinalized_connection
-                    .finalize(inner.middleware.clone())
-                    .await
+                let Ok(connection) = unfinalized_connection.finalize(inner.limiter.clone()).await
                 else {
                     return;
                 };

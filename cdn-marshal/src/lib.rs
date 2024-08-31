@@ -21,7 +21,7 @@ mod handlers;
 use cdn_proto::{
     bail,
     connection::{
-        middleware::Middleware,
+        limiter::Limiter,
         protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
     },
     crypto::tls::{generate_cert_from_ca, load_ca},
@@ -73,8 +73,8 @@ pub struct Marshal<R: RunDef> {
     /// metrics are not exposed.
     metrics_bind_endpoint: Option<SocketAddr>,
 
-    // The middleware to use for the connection
-    middleware: Middleware,
+    // The limiter to use for the connection
+    limiter: Limiter,
 }
 
 impl<R: RunDef> Marshal<R> {
@@ -131,15 +131,15 @@ impl<R: RunDef> Marshal<R> {
             })
             .transpose()?;
 
-        // Create the middleware
-        let middleware = Middleware::new(global_memory_pool_size, None);
+        // Create the limiter
+        let limiter = Limiter::new(global_memory_pool_size, None);
 
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
             metrics_bind_endpoint,
             discovery_client,
-            middleware,
+            limiter,
         })
     }
 
@@ -165,10 +165,10 @@ impl<R: RunDef> Marshal<R> {
 
             // Create a task to handle the connection
             let discovery_client = self.discovery_client.clone();
-            let middleware = self.middleware.clone();
+            let limiter = self.limiter.clone();
             spawn(async move {
                 // Finalize the connection
-                let Ok(connection) = unfinalized_connection.finalize(middleware).await else {
+                let Ok(connection) = unfinalized_connection.finalize(limiter).await else {
                     return;
                 };
 

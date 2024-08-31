@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use cdn_proto::{
     connection::{
-        middleware::Middleware,
+        limiter::Limiter,
         protocols::{Connection, Listener, Protocol, UnfinalizedConnection},
         UserPublicKey,
     },
@@ -190,14 +190,14 @@ async fn gen_connection_pairs<P: Protocol>(num: usize) -> Vec<(Connection, Conne
         // Spawn a task to connect the user to the broker
         let bind_endpoint_ = bind_endpoint.clone();
         let unfinalized_outgoing_connection =
-            spawn(async move { P::connect(&bind_endpoint_, true, Middleware::none()).await });
+            spawn(async move { P::connect(&bind_endpoint_, true, Limiter::none()).await });
 
         // Accept the connection from the user
         let incoming_connection = listener
             .accept()
             .await
             .expect("failed to accept connection")
-            .finalize(Middleware::none())
+            .finalize(Limiter::none())
             .await
             .expect("failed to finalize connection");
 

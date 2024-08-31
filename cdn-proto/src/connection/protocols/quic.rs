@@ -21,7 +21,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
 use super::{Connection, Listener, Protocol, SoftClose, UnfinalizedConnection};
-use crate::connection::middleware::Middleware;
+use crate::connection::limiter::Limiter;
 use crate::crypto::tls::generate_root_certificate_store;
 use crate::parse_endpoint;
 use crate::{
@@ -42,7 +42,7 @@ impl Protocol for Quic {
     async fn connect(
         remote_endpoint: &str,
         use_local_authority: bool,
-        middleware: Middleware,
+        limiter: Limiter,
     ) -> Result<Connection> {
         // Parse the endpoint
         let remote_endpoint = bail_option!(
@@ -116,7 +116,7 @@ impl Protocol for Quic {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _>(sender, receiver, middleware);
+        let connection = Connection::from_streams::<_, _>(sender, receiver, limiter);
 
         Ok(connection)
     }
@@ -169,7 +169,7 @@ impl UnfinalizedConnection for UnfinalizedQuicConnection {
     ///
     /// # Errors
     /// If we to finalize our connection.
-    async fn finalize(self, middleware: Middleware) -> Result<Connection> {
+    async fn finalize(self, limiter: Limiter) -> Result<Connection> {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
@@ -185,7 +185,7 @@ impl UnfinalizedConnection for UnfinalizedQuicConnection {
         );
 
         // Create a sender and receiver
-        let connection = Connection::from_streams(sender, receiver, middleware);
+        let connection = Connection::from_streams(sender, receiver, limiter);
 
         // Clone and return the connection
         Ok(connection)

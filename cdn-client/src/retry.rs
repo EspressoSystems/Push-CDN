@@ -16,7 +16,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use cdn_proto::{
     connection::{
         auth::user::UserAuth,
-        middleware::Middleware,
+        limiter::Limiter,
         protocols::{Connection, Protocol as _},
     },
     crypto::signature::KeyPair,
@@ -80,13 +80,12 @@ impl<C: ConnectionDef> Inner<C> {
     /// - If the connection failed
     /// - If authentication failed
     async fn connect(self: &Arc<Self>) -> Result<Connection> {
-        // Create the middleware we will use for all connections
-        let middleware = Middleware::new(None, Some(1));
+        // Create the limiter we will use for all connections
+        let limiter = Limiter::new(None, Some(1));
 
         // Make the connection to the marshal
         let connection = bail!(
-            Protocol::<C>::connect(&self.endpoint, self.use_local_authority, middleware.clone())
-                .await,
+            Protocol::<C>::connect(&self.endpoint, self.use_local_authority, limiter.clone()).await,
             Connection,
             "failed to connect to endpoint"
         );
@@ -100,7 +99,7 @@ impl<C: ConnectionDef> Inner<C> {
 
         // Make the connection to the broker
         let connection = bail!(
-            Protocol::<C>::connect(&broker_endpoint, self.use_local_authority, middleware).await,
+            Protocol::<C>::connect(&broker_endpoint, self.use_local_authority, limiter).await,
             Connection,
             "failed to connect to broker"
         );
