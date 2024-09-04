@@ -11,7 +11,7 @@ use std::{sync::Arc, time::Duration};
 use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{auth::broker::BrokerAuth, protocols::Connection, Bytes, UserPublicKey},
-    def::RunDef,
+    def::{MessageHookDef, RunDef},
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
@@ -123,12 +123,22 @@ impl<Def: RunDef> Inner<Def> {
         broker_identifier: &BrokerIdentifier,
         connection: Connection,
     ) -> Result<()> {
+        // Clone the hook
+        let local_message_hook = self.broker_message_hook.clone();
+
         loop {
             // Receive a message from the broker
             let raw_message = connection.recv_message_raw().await?;
 
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
+
+            // Call the hook for the broker
+            bail!(
+                local_message_hook.on_message_received(&message),
+                Connection,
+                "message hook returned error"
+            );
 
             match message {
                 // If we receive a direct message from a broker, we want to send it to the user with that key

@@ -7,7 +7,11 @@
 //! The following is the main `Broker` binary, which just instantiates and runs
 //! a `Broker` object.
 use cdn_broker::{Broker, Config};
-use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
+use cdn_proto::{
+    crypto::signature::KeyPair,
+    def::{NoMessageHook, ProductionRunDef},
+    error::Result,
+};
 use clap::Parser;
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
@@ -111,6 +115,9 @@ async fn main() -> Result<()> {
         private_bind_endpoint: args.private_bind_endpoint,
         private_advertise_endpoint: args.private_advertise_endpoint,
         global_memory_pool_size: Some(args.global_memory_pool_size),
+
+        user_message_hook: NoMessageHook,
+        broker_message_hook: NoMessageHook,
     };
 
     // Create new `Broker`

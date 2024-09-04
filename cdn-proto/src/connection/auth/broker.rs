@@ -180,7 +180,7 @@ impl<R: RunDef> BrokerAuth<R> {
         let public_key_bytes = bail!(
             keypair.public_key.serialize(),
             Serialize,
-            "failed to serialize publi key"
+            "failed to serialize public key"
         );
 
         // We authenticate to the marshal with a key
