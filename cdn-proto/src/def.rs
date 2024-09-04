@@ -80,7 +80,7 @@ pub trait MessageHookDef: Send + Sync + 'static + Clone {
     ///
     /// # Errors
     /// Is supposed to return an error if the other end should be disconnected.
-    fn on_message_received(&self, _message: &Message) -> AnyhowResult<HookResult> {
+    fn on_message_received(&self, _message: &mut Message) -> AnyhowResult<HookResult> {
         Ok(HookResult::ProcessMessage)
     }
 }

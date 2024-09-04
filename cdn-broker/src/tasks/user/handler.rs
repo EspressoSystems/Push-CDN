@@ -105,10 +105,10 @@ impl<Def: RunDef> Inner<Def> {
             let raw_message = connection.recv_message_raw().await?;
 
             // Attempt to deserialize the message
-            let message = Message::deserialize(&raw_message)?;
+            let mut message = Message::deserialize(&raw_message)?;
 
             // Call the hook for the user and handle the result
-            match local_message_hook.on_message_received(&message) {
+            match local_message_hook.on_message_received(&mut message) {
                 Ok(HookResult::SkipMessage) => continue,
                 Ok(HookResult::ProcessMessage) => (),
                 Err(err) => {
