@@ -35,6 +35,10 @@ pub mod error {
     pub use cdn_proto::error::{Error, Result};
 }
 
+pub mod message {
+    pub use cdn_proto::message::{Broadcast, Direct, Message};
+}
+
 /// This is not guarded by `![cfg(test)]` because we use the same functions
 /// when doing benchmarks.
 pub mod tests {
