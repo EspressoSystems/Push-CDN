@@ -20,6 +20,9 @@ pub mod discovery {
 
 pub mod def {
     pub use cdn_proto::def::{ConnectionDef, RunDef, Topic};
+    pub mod hook {
+        pub use cdn_proto::def::{HookResult, MessageHook, MessageHookDef, NoMessageHook};
+    }
 }
 
 pub mod crypto {

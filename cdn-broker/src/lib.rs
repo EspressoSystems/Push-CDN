@@ -27,7 +27,7 @@ use cdn_proto::{
     bail,
     connection::{limiter::Limiter, protocols::Protocol as _},
     crypto::tls::{generate_cert_from_ca, load_ca},
-    def::{MessageHook, Listener, Protocol, RunDef, Scheme},
+    def::{Listener, MessageHook, Protocol, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     util::AbortOnDropHandle,

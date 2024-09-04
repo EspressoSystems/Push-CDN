@@ -10,9 +10,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdn_proto::bail;
 use cdn_proto::connection::{protocols::Connection, UserPublicKey};
-use cdn_proto::def::{MessageHookDef, RunDef, Topic as _};
+use cdn_proto::def::{HookResult, MessageHookDef, RunDef, Topic as _};
 use cdn_proto::error::{Error, Result};
 use cdn_proto::util::mnemonic;
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message};
@@ -108,12 +107,14 @@ impl<Def: RunDef> Inner<Def> {
             // Attempt to deserialize the message
             let message = Message::deserialize(&raw_message)?;
 
-            // Call the hook for the user, returning on error
-            bail!(
-                local_message_hook.on_message_received(&message),
-                Connection,
-                "message hook returned error"
-            );
+            // Call the hook for the user and handle the result
+            match local_message_hook.on_message_received(&message) {
+                Ok(HookResult::SkipMessage) => continue,
+                Ok(HookResult::ProcessMessage) => (),
+                Err(err) => {
+                    Err(Error::Connection(format!("hook failed: {err}")))?;
+                }
+            }
 
             match message {
                 // If we get a direct message from a user, send it to both users and brokers.

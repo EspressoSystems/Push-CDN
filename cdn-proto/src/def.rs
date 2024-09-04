@@ -64,14 +64,24 @@ pub trait ConnectionDef: 'static {
     type MessageHook: MessageHookDef;
 }
 
+/// The result of a message hooking operation
+pub enum HookResult {
+    /// Skip processing the message
+    SkipMessage,
+
+    /// Process the message
+    ProcessMessage,
+}
+
 /// This trait defines a hook that we use to perform additional actions on receiving a message
 pub trait MessageHookDef: Send + Sync + 'static + Clone {
-    /// The hook that is called when a message is received. If the hook returns `true`, the message
-    /// will be processed as normal. If the hook returns `false`, the message will be ignored.
+    /// The hook that is called when a message is received. If an error is returned, the connection
+    /// will be closed.
     ///
-    /// If the hook returns an error, the connection will be closed.
-    fn on_message_received(&self, _message: &Message) -> AnyhowResult<bool> {
-        Ok(true)
+    /// # Errors
+    /// Is supposed to return an error if the other end should be disconnected.
+    fn on_message_received(&self, _message: &Message) -> AnyhowResult<HookResult> {
+        Ok(HookResult::ProcessMessage)
     }
 }
 
