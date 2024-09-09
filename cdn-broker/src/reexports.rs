@@ -20,6 +20,9 @@ pub mod discovery {
 
 pub mod def {
     pub use cdn_proto::def::{ConnectionDef, RunDef, Topic};
+    pub mod hook {
+        pub use cdn_proto::def::{HookResult, MessageHook, MessageHookDef, NoMessageHook};
+    }
 }
 
 pub mod crypto {
@@ -30,6 +33,10 @@ pub mod crypto {
 
 pub mod error {
     pub use cdn_proto::error::{Error, Result};
+}
+
+pub mod message {
+    pub use cdn_proto::message::{Broadcast, Direct, Message};
 }
 
 /// This is not guarded by `![cfg(test)]` because we use the same functions

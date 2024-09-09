@@ -21,7 +21,7 @@ use cdn_proto::{
         signature::KeyPair,
         tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
     },
-    def::TestingRunDef,
+    def::{NoMessageHook, TestingRunDef},
     discovery::BrokerIdentifier,
     message::{Message, Topic},
 };
@@ -240,6 +240,8 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
         global_memory_pool_size: None,
         ca_cert_path: None,
         ca_key_path: None,
+        user_message_hook: NoMessageHook,
+        broker_message_hook: NoMessageHook,
     };
 
     // Create and return the broker

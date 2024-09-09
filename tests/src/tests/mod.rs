@@ -10,7 +10,7 @@ use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{
     connection::protocols::memory::Memory,
     crypto::signature::{KeyPair, Serializable, SignatureScheme},
-    def::{TestingConnection, TestingRunDef},
+    def::{NoMessageHook, TestingConnection, TestingRunDef},
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
     message::Topic,
 };
@@ -78,6 +78,8 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
         public_advertise_endpoint: public_ep.to_string(),
         public_bind_endpoint: public_ep.to_string(),
         global_memory_pool_size: None,
+        user_message_hook: NoMessageHook,
+        broker_message_hook: NoMessageHook,
     };
 
     // Create broker

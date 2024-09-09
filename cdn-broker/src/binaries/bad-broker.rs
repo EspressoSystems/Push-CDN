@@ -10,7 +10,11 @@
 use std::time::Duration;
 
 use cdn_broker::{Broker, Config};
-use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
+use cdn_proto::{
+    crypto::signature::KeyPair,
+    def::{NoMessageHook, ProductionRunDef},
+    error::Result,
+};
 use clap::Parser;
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
@@ -76,6 +80,9 @@ async fn main() -> Result<()> {
             private_bind_endpoint: format!("0.0.0.0:{private_port}"),
             private_advertise_endpoint: format!("local_ip:{private_port}"),
             global_memory_pool_size: None,
+
+            user_message_hook: NoMessageHook,
+            broker_message_hook: NoMessageHook,
         };
 
         // Create new `Broker`

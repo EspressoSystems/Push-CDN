@@ -15,6 +15,8 @@ use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
 use crate::discovery::{redis::Redis, DiscoveryClient};
 use crate::error::{Error, Result};
+use crate::message::Message;
+use anyhow::Result as AnyhowResult;
 
 /// An implementation of `Topic` for testing purposes.
 #[repr(u8)]
@@ -55,11 +57,38 @@ pub trait RunDef: 'static {
     type Topic: Topic;
 }
 
-/// This trait defines the connection configuration for a single CDN component.
+/// This trait defines the connection configuration for a single CDN component
 pub trait ConnectionDef: 'static {
     type Scheme: SignatureScheme;
     type Protocol: ProtocolType;
+    type MessageHook: MessageHookDef;
 }
+
+/// The result of a message hooking operation
+pub enum HookResult {
+    /// Skip processing the message
+    SkipMessage,
+
+    /// Process the message
+    ProcessMessage,
+}
+
+/// This trait defines a hook that we use to perform additional actions on receiving a message
+pub trait MessageHookDef: Send + Sync + 'static + Clone {
+    /// The hook that is called when a message is received. If an error is returned, the connection
+    /// will be closed.
+    ///
+    /// # Errors
+    /// Is supposed to return an error if the other end should be disconnected.
+    fn on_message_received(&mut self, _message: &mut Message) -> AnyhowResult<HookResult> {
+        Ok(HookResult::ProcessMessage)
+    }
+}
+
+/// The no-op hook
+#[derive(Clone)]
+pub struct NoMessageHook;
+impl MessageHookDef for NoMessageHook {}
 
 /// The production run configuration.
 /// Uses the real network protocols and Redis for discovery.
@@ -77,6 +106,7 @@ pub struct ProductionBrokerConnection;
 impl ConnectionDef for ProductionBrokerConnection {
     type Scheme = BLS;
     type Protocol = Tcp;
+    type MessageHook = NoMessageHook;
 }
 
 /// The production user connection configuration.
@@ -85,6 +115,7 @@ pub struct ProductionUserConnection;
 impl ConnectionDef for ProductionUserConnection {
     type Scheme = BLS;
     type Protocol = Quic;
+    type MessageHook = NoMessageHook;
 }
 
 /// The production client connection configuration.
@@ -95,6 +126,7 @@ pub struct ProductionClientConnection;
 impl ConnectionDef for ProductionClientConnection {
     type Scheme = Scheme<<ProductionRunDef as RunDef>::User>;
     type Protocol = Protocol<<ProductionRunDef as RunDef>::User>;
+    type MessageHook = NoMessageHook;
 }
 
 /// The testing run configuration.
@@ -117,11 +149,13 @@ pub struct TestingConnection<P: ProtocolType> {
 impl<P: ProtocolType> ConnectionDef for TestingConnection<P> {
     type Scheme = BLS;
     type Protocol = P;
+    type MessageHook = NoMessageHook;
 }
 
 // Type aliases to automatically disambiguate usage
 pub type Scheme<A> = <A as ConnectionDef>::Scheme;
 pub type PublicKey<A> = <Scheme<A> as SignatureScheme>::PublicKey;
+pub type MessageHook<A> = <A as ConnectionDef>::MessageHook;
 
 // Type aliases to automatically disambiguate usage
 pub type Protocol<A> = <A as ConnectionDef>::Protocol;
