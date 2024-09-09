@@ -98,7 +98,7 @@ impl<Def: RunDef> Inner<Def> {
         connection: Connection,
     ) -> Result<()> {
         // Clone the hook
-        let local_message_hook = self.user_message_hook.clone();
+        let mut local_message_hook = self.user_message_hook.clone();
 
         loop {
             // Receive a message from the user
