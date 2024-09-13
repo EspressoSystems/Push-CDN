@@ -16,6 +16,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::Connection,
+    crypto::signature::Namespace,
     def::{PublicKey, RunDef, Scheme},
     discovery::DiscoveryClient,
     error::{Error, Result},
@@ -64,6 +65,7 @@ impl<R: RunDef> MarshalAuth<R> {
         // Verify the signature
         if !Scheme::<R::User>::verify(
             &public_key,
+            Namespace::UserMarshalAuth.as_str(),
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,
         ) {
