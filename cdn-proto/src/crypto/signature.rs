@@ -15,6 +15,22 @@ use jf_signature::{
 
 use super::rng::DeterministicRng;
 
+/// The auth namespaces for the signature scheme
+pub enum Namespace {
+    UserMarshalAuth,
+    BrokerBrokerAuth,
+}
+
+impl Namespace {
+    /// Get the namespace as a string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Namespace::UserMarshalAuth => "espresso-cdn-user-marshal-auth",
+            Namespace::BrokerBrokerAuth => "espresso-cdn-broker-broker-auth",
+        }
+    }
+}
+
 /// This trait defines a generic signature scheme, wherein we can sign and verify messages
 /// with the associated public and private keys.
 pub trait SignatureScheme: Send + Sync + 'static {
@@ -27,14 +43,23 @@ pub trait SignatureScheme: Send + Sync + 'static {
     ///
     /// # Errors
     /// If signing fails
-    fn sign(private_key: &Self::PrivateKey, message: &[u8]) -> Result<Vec<u8>>;
+    fn sign(
+        private_key: &Self::PrivateKey,
+        namespace: &'static str,
+        message: &[u8],
+    ) -> Result<Vec<u8>>;
 
     /// Verify a message with the public key, the message itself, and the signature.
     ///
     /// # Returns
     /// - false if verification failed
     /// - true if verification succeeded
-    fn verify(public_key: &Self::PublicKey, message: &[u8], signature: &[u8]) -> bool;
+    fn verify(
+        public_key: &Self::PublicKey,
+        namespace: &'static str,
+        message: &[u8],
+        signature: &[u8],
+    ) -> bool;
 }
 
 /// Allows for us to be generic over a serializable [signature | public key].
@@ -96,10 +121,22 @@ impl SignatureScheme for BLS {
     /// # Errors
     /// - If serialization fails
     /// - If signing fails
-    fn sign(private_key: &Self::PrivateKey, message: &[u8]) -> Result<Vec<u8>> {
+    fn sign(
+        private_key: &Self::PrivateKey,
+        namespace: &'static str,
+        message: &[u8],
+    ) -> Result<Vec<u8>> {
+        // Add the namespace to the message
+        let mut namespaced_message = namespace.as_bytes().to_vec();
+        namespaced_message.extend_from_slice(message);
+
         // Sign the message
-        let serialized_signature =
-            <Self as JfSignatureScheme>::sign(&(), private_key, message, &mut DeterministicRng(0))?;
+        let serialized_signature = <Self as JfSignatureScheme>::sign(
+            &(),
+            private_key,
+            namespaced_message,
+            &mut DeterministicRng(0),
+        )?;
 
         // Serialize the signature
         let mut buf = vec![];
@@ -115,7 +152,16 @@ impl SignatureScheme for BLS {
     /// # Errors
     /// - If signature deserialization fails
     /// - If signing fails
-    fn verify(public_key: &Self::PublicKey, message: &[u8], signature: &[u8]) -> bool {
+    fn verify(
+        public_key: &Self::PublicKey,
+        namespace: &'static str,
+        message: &[u8],
+        signature: &[u8],
+    ) -> bool {
+        // Add the namespace to the message
+        let mut namespaced_message = namespace.as_bytes().to_vec();
+        namespaced_message.extend_from_slice(message);
+
         // Deserialize the signature
         let Ok(signature) =
             <Self as JfSignatureScheme>::Signature::deserialize_uncompressed(signature)
@@ -124,6 +170,50 @@ impl SignatureScheme for BLS {
         };
 
         // Verify the signature
-        <Self as JfSignatureScheme>::verify(&(), public_key, message, &signature).is_ok()
+        <Self as JfSignatureScheme>::verify(&(), public_key, namespaced_message, &signature).is_ok()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::{rngs::StdRng, SeedableRng};
+
+    use super::*;
+
+    #[test]
+    fn signature_namespace_parity() {
+        // Generate a keypair
+        let keypair =
+            BLS::key_gen(&(), &mut StdRng::seed_from_u64(0)).expect("failed to generate key");
+
+        // Sign a message with the namespace `UserMarshalAuth`
+        let signature = <BLS as SignatureScheme>::sign(
+            &keypair.0,
+            crate::crypto::signature::Namespace::UserMarshalAuth.as_str(),
+            b"hello world",
+        )
+        .expect("failed to sign message");
+
+        // Verify the signature with the namespace `UserMarshalAuth`
+        assert!(
+            <BLS as SignatureScheme>::verify(
+                &keypair.1,
+                crate::crypto::signature::Namespace::UserMarshalAuth.as_str(),
+                b"hello world",
+                &signature,
+            ),
+            "failed to verify signature"
+        );
+
+        // Make sure it fails with the wrong namespace
+        assert!(
+            !<BLS as SignatureScheme>::verify(
+                &keypair.1,
+                crate::crypto::signature::Namespace::BrokerBrokerAuth.as_str(),
+                b"hello world",
+                &signature,
+            ),
+            "verified signature with wrong namespace"
+        );
     }
 }

@@ -10,7 +10,8 @@ use std::marker::PhantomData;
 use jf_signature::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolType};
+use crate::connection::protocols::tcp_tls::TcpTls;
+use crate::connection::protocols::{tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
 use crate::discovery::{redis::Redis, DiscoveryClient};
@@ -111,16 +112,16 @@ impl ConnectionDef for ProductionBrokerConnection {
 }
 
 /// The production user connection configuration.
-/// Uses BLS signatures and QUIC.
+/// Uses BLS signatures and TCP+TLS.
 pub struct ProductionUserConnection;
 impl ConnectionDef for ProductionUserConnection {
     type Scheme = BLS;
-    type Protocol = Quic;
+    type Protocol = TcpTls;
     type MessageHook = NoMessageHook;
 }
 
 /// The production client connection configuration.
-/// Uses BLS signatures and QUIC.
+/// Uses BLS signatures and TCP+TLS.
 /// Differs from `ProductionUserConnection` in that this is used by
 /// the client, not the broker.
 pub struct ProductionClientConnection;
