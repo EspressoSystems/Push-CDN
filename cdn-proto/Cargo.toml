@@ -7,7 +7,7 @@ description = "Contains the common protocol definition and common code for the b
 [build-dependencies]
 rcgen.workspace = true
 rustls-pki-types = { version = "1", default-features = false }
-capnpc = "0.19"
+capnpc = "0.20"
 
 [features]
 metrics = ["dep:prometheus"]
@@ -26,7 +26,7 @@ harness = false
 
 
 [dependencies]
-redis = { version = "0.25", default-features = false, features = [
+redis = { version = "0.27", default-features = false, features = [
     "connection-manager",
     "tokio-comp",
 ] }
@@ -44,7 +44,7 @@ lazy_static = { workspace = true }
 
 tokio = { workspace = true }
 
-capnp = "0.19"
+capnp = "0.20"
 thiserror = "1"
 quinn = { version = "0.11", default-features = false, features = [
     "rustls",

@@ -744,18 +744,18 @@ checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
 
 [[package]]
 name = "capnp"
-version = "0.19.8"
+version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e985a566bdaae9a428a957d12b10c318d41b2afddb54cfbb764878059df636e"
+checksum = "c9e0676a27d3cf41fc949b3061cca99c67791a8a3baf1544b30ef712936e7e3b"
 dependencies = [
  "embedded-io",
 ]
 
 [[package]]
 name = "capnpc"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c75ba30e0f08582d53c2f3710cf4bb65ff562614b1ba86906d7391adffe189ec"
+checksum = "8d13cb6e2643fd1f9fb804ba938323636ef52e07d6e495e372d933ad0cb98207"
 dependencies = [
  "capnp",
 ]
@@ -2807,9 +2807,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.25.4"
+version = "0.27.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0d7a6955c7511f60f3ba9e86c6d02b3c3f144f8c24b288d1f4e18074ab8bbec"
+checksum = "81cccf17a692ce51b86564334614d72dcae1def0fd5ecebc9f02956da74352b5"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2818,11 +2818,12 @@ dependencies = [
  "futures",
  "futures-util",
  "itoa",
+ "num-bigint",
  "percent-encoding",
  "pin-project-lite",
  "ryu",
  "tokio",
- "tokio-retry",
+ "tokio-retry2",
  "tokio-util",
  "url",
 ]
@@ -3754,10 +3755,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-retry"
-version = "0.3.0"
+name = "tokio-retry2"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
+checksum = "903934dba1c4c2f2e9cb460ef10b5695e0b0ecad3bf9ee7c8675e540c5e8b2d1"
 dependencies = [
  "pin-project",
  "rand",
