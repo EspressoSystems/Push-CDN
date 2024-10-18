@@ -174,6 +174,7 @@ impl<C: ConnectionDef> Retry<C> {
                 let inner = self.inner.clone();
                 let reconnection_task = AbortOnDropHandle(spawn(async move {
                     let mut connection = inner.connection.write().await;
+                    let mut retry_count = 0;
 
                     // Forever,
                     loop {
@@ -186,8 +187,10 @@ impl<C: ConnectionDef> Retry<C> {
                             }
                             Err(err) => {
                                 // We failed to reconnect
+                                retry_count += 1;
                                 // Sleep for 2 seconds and then try again
-                                error!("failed to connect: {err}");
+                                error!("failed to connect: {err}. attempts: {retry_count}");
+                                tokio::task::yield_now().await;
                                 sleep(Duration::from_secs(2)).await;
                             }
                         }
