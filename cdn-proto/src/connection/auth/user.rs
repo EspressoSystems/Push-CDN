@@ -12,7 +12,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::connection::protocols::Connection;
 use crate::crypto::signature::Serializable;
 use crate::{
     bail,
@@ -21,6 +20,7 @@ use crate::{
     error::{Error, Result},
     message::{AuthenticateWithKey, AuthenticateWithPermit, Message, Topic},
 };
+use crate::{connection::protocols::Connection, crypto::signature::Namespace};
 
 /// This is the `UserAuth` struct that we define methods to for authentication purposes.
 pub struct UserAuth<C: ConnectionDef>(PhantomData<C>);
@@ -48,7 +48,11 @@ impl<C: ConnectionDef> UserAuth<C> {
 
         // Sign the timestamp from above
         let signature = bail!(
-            Scheme::<C>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<C>::sign(
+                &keypair.private_key,
+                Namespace::UserMarshalAuth.as_str(),
+                &timestamp.to_le_bytes()
+            ),
             Crypto,
             "failed to sign message"
         );

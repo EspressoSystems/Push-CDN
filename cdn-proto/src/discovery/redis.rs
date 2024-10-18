@@ -142,7 +142,7 @@ impl DiscoveryClient for Redis {
             // Get the number of connections the broker has
             let num_connections: u64 = bail!(
                 redis::cmd("GET")
-                    .arg(&format!("{broker}/num_connections"))
+                    .arg(format!("{broker}/num_connections"))
                     .query_async(&mut self.underlying_connection)
                     .await,
                 Connection,
@@ -152,7 +152,7 @@ impl DiscoveryClient for Redis {
             // Get the number of permits the broker has
             let num_permits: u64 = bail!(
                 redis::cmd("SCARD")
-                    .arg(&format!("{broker}/permits"))
+                    .arg(format!("{broker}/permits"))
                     .query_async(&mut self.underlying_connection)
                     .await,
                 Connection,
