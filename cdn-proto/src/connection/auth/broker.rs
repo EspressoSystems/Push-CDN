@@ -16,7 +16,7 @@ use tracing::error;
 use crate::{
     bail,
     connection::protocols::Connection,
-    crypto::signature::SignatureScheme,
+    crypto::signature::{Namespace, SignatureScheme},
     def::{PublicKey, RunDef, Scheme},
     discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
@@ -169,9 +169,13 @@ impl<R: RunDef> BrokerAuth<R> {
         )
         .as_secs();
 
-        // Sign the timestamp from above
+        // Sign the timestamp from above (with a namespace)
         let signature = bail!(
-            Scheme::<R::Broker>::sign(&keypair.private_key, &timestamp.to_le_bytes()),
+            Scheme::<R::Broker>::sign(
+                &keypair.private_key,
+                Namespace::BrokerBrokerAuth.as_str(),
+                &timestamp.to_le_bytes()
+            ),
             Crypto,
             "failed to sign message"
         );
@@ -261,6 +265,7 @@ impl<R: RunDef> BrokerAuth<R> {
         // Verify the signature
         if !Scheme::<R::Broker>::verify(
             &public_key,
+            Namespace::BrokerBrokerAuth.as_str(),
             &auth_message.timestamp.to_le_bytes(),
             &auth_message.signature,
         ) {

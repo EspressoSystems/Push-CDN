@@ -11,6 +11,7 @@ pub mod connection {
     pub mod protocols {
         pub use cdn_proto::connection::protocols::quic::Quic;
         pub use cdn_proto::connection::protocols::tcp::Tcp;
+        pub use cdn_proto::connection::protocols::tcp_tls::TcpTls;
     }
 }
 
