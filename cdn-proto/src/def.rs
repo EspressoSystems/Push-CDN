@@ -10,6 +10,8 @@ use std::marker::PhantomData;
 use jf_signature::bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+use crate::connection::protocols::memory2::Memory2;
+use crate::connection::protocols::tcp_tls::TcpTls;
 use crate::connection::protocols::{quic::Quic, tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
 use crate::discovery::embedded::Embedded;
@@ -53,6 +55,7 @@ impl Topic for TestTopic {}
 pub trait RunDef: 'static {
     type Broker: ConnectionDef;
     type User: ConnectionDef;
+    type User2: ConnectionDef;
     type DiscoveryClientType: DiscoveryClient;
     type Topic: Topic;
 }
@@ -97,6 +100,7 @@ pub struct ProductionRunDef;
 impl RunDef for ProductionRunDef {
     type Broker = ProductionBrokerConnection;
     type User = ProductionUserConnection;
+    type User2 = ProductionUserConnectionTcp;
     type DiscoveryClientType = Redis;
     type Topic = TestTopic;
 }
@@ -119,6 +123,14 @@ impl ConnectionDef for ProductionUserConnection {
     type MessageHook = NoMessageHook;
 }
 
+/// The (second) production user connection configuration.
+pub struct ProductionUserConnectionTcp;
+impl ConnectionDef for ProductionUserConnectionTcp {
+    type Scheme = BLS;
+    type Protocol = TcpTls;
+    type MessageHook = NoMessageHook;
+}
+
 /// The production client connection configuration.
 /// Uses BLS signatures and QUIC.
 /// Differs from `ProductionUserConnection` in that this is used by
@@ -138,6 +150,7 @@ pub struct TestingRunDef<B: ProtocolType, U: ProtocolType> {
 impl<B: ProtocolType, U: ProtocolType> RunDef for TestingRunDef<B, U> {
     type Broker = TestingConnection<B>;
     type User = TestingConnection<U>;
+    type User2 = TestingConnection<Memory2>;
     type DiscoveryClientType = Embedded;
     type Topic = TestTopic;
 }

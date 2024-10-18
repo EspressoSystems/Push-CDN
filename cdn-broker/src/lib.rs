@@ -115,6 +115,9 @@ pub struct Broker<R: RunDef> {
     /// The public (user -> broker) listener
     user_listener: Listener<R::User>,
 
+    /// The public (second) (user -> broker) listener
+    user_listener_2: Listener<R::User2>,
+
     /// The private (broker <-> broker) listener
     broker_listener: Listener<R::Broker>,
 
@@ -201,6 +204,21 @@ impl<R: RunDef> Broker<R> {
             )
         );
 
+        // Create the second user (public) listener
+        let user_listener_2 = bail!(
+            Protocol::<R::User2>::bind(
+                public_bind_endpoint.as_str(),
+                tls_cert.clone(),
+                tls_key.clone_key()
+            )
+            .await,
+            Connection,
+            format!(
+                "failed to bind to public (user) bind endpoint {}",
+                public_bind_endpoint
+            )
+        );
+
         // Create the broker (private) listener
         let broker_listener = bail!(
             Protocol::<R::Broker>::bind(private_bind_endpoint.as_str(), tls_cert, tls_key).await,
@@ -253,6 +271,7 @@ impl<R: RunDef> Broker<R> {
             }),
             metrics_bind_endpoint,
             user_listener,
+            user_listener_2,
             broker_listener,
         })
     }
@@ -280,7 +299,17 @@ impl<R: RunDef> Broker<R> {
         // TODO: maybe macro this, since it's repeat code with the private listener task
         let inner_ = self.inner.clone();
         let user_listener_task = AbortOnDropHandle(spawn(
-            inner_.clone().run_user_listener_task(self.user_listener),
+            inner_
+                .clone()
+                .run_user_listener_task::<R::User>(self.user_listener),
+        ));
+
+        // Spawn the second public (user) listener task
+        let inner_ = self.inner.clone();
+        let user_listener_task_2 = AbortOnDropHandle(spawn(
+            inner_
+                .clone()
+                .run_user_listener_task::<R::User2>(self.user_listener_2),
         ));
 
         // Spawn the private (broker) listener task
@@ -303,6 +332,9 @@ impl<R: RunDef> Broker<R> {
             }
             _ = user_listener_task => {
                 Err(Error::Exited("user listener task exited!".to_string()))
+            }
+            _ = user_listener_task_2 => {
+                Err(Error::Exited("user listener task 2 exited!".to_string()))
             }
             _ = broker_listener_task => {
                 Err(Error::Exited("broker listener task exited!".to_string()))
