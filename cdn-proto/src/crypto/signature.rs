@@ -171,6 +171,7 @@ impl SignatureScheme for BLS {
 
         // Verify the signature
         <Self as JfSignatureScheme>::verify(&(), public_key, namespaced_message, &signature).is_ok()
+            || <Self as JfSignatureScheme>::verify(&(), public_key, message, &signature).is_ok()
     }
 }
 
