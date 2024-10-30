@@ -85,6 +85,10 @@ pub trait MessageHookDef: Send + Sync + 'static + Clone {
     fn on_message_received(&mut self, _message: &mut Message) -> AnyhowResult<HookResult> {
         Ok(HookResult::ProcessMessage)
     }
+
+    /// Set a unique identifier for the hook. This can be included with the hook and can be
+    /// used to deterministically identify message producers.
+    fn set_identifier(&mut self, _identifier: u64) {}
 }
 
 /// The no-op hook

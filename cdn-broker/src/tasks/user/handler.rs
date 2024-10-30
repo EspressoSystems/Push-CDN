@@ -13,7 +13,7 @@ use std::time::Duration;
 use cdn_proto::connection::{protocols::Connection, UserPublicKey};
 use cdn_proto::def::{HookResult, MessageHookDef, RunDef, Topic as _};
 use cdn_proto::error::{Error, Result};
-use cdn_proto::util::mnemonic;
+use cdn_proto::util::{hash, mnemonic};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message};
 use tokio::spawn;
 use tokio::time::timeout;
@@ -99,6 +99,7 @@ impl<Def: RunDef> Inner<Def> {
     ) -> Result<()> {
         // Clone the hook
         let mut local_message_hook = self.user_message_hook.clone();
+        local_message_hook.set_identifier(hash(public_key));
 
         loop {
             // Receive a message from the user
