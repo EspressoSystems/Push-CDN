@@ -7,12 +7,18 @@ use std::{
 
 use tokio::task::{JoinError, JoinHandle};
 
-/// A function for generating a cute little user mnemonic from a hash
+/// A function for generating a cute little user mnemonic from a hashable value
 #[must_use]
 pub fn mnemonic<H: Hash>(bytes: H) -> String {
+    mnemonic::to_string(hash(bytes).to_le_bytes())
+}
+
+/// A helper function for generating a 64-bit hash from a value
+#[must_use]
+pub fn hash<H: Hash>(bytes: H) -> u64 {
     let mut state = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut state);
-    mnemonic::to_string(state.finish().to_le_bytes())
+    state.finish()
 }
 
 /// A wrapper for a `JoinHandle` that will abort the task if dropped

@@ -15,7 +15,7 @@ use cdn_proto::{
     discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
-    util::mnemonic,
+    util::{hash, mnemonic},
     verify_broker,
 };
 use tokio::{spawn, time::timeout};
@@ -123,8 +123,9 @@ impl<Def: RunDef> Inner<Def> {
         broker_identifier: &BrokerIdentifier,
         connection: Connection,
     ) -> Result<()> {
-        // Clone the hook
+        // Clone the hook and set its identifier
         let mut local_message_hook = self.broker_message_hook.clone();
+        local_message_hook.set_identifier(hash(broker_identifier));
 
         loop {
             // Receive a message from the broker
