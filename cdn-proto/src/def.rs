@@ -66,7 +66,7 @@ pub trait ConnectionDef: 'static {
 }
 
 /// The result of a message hooking operation
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HookResult {
     /// Skip processing the message
     SkipMessage,
