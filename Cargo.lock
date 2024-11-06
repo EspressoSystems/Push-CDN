@@ -1940,8 +1940,8 @@ dependencies = [
 
 [[package]]
 name = "jf-signature"
-version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/jellyfish.git?tag=0.4.5#7d71dbeff14f1a501b0b0dc391f1dffa1b8374fb"
+version = "0.2.0"
+source = "git+https://github.com/EspressoSystems/jellyfish.git?tag=jf-signature-v0.2.0#ca160ce3452b560cad512b750a742a87c48c5881"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
