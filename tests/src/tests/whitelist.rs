@@ -29,15 +29,13 @@ async fn test_whitelist() {
 
     // Create a client with keypair 2
     let client2_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed(2));
-    let client2 = new_client(2, vec![TestTopic::Global as u8], "8085");
+    let _client2 = new_client(2, vec![TestTopic::Global as u8], "8085");
 
     // Assert both clients can connect
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
-        panic!("failed to connect as client1");
-    };
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
-        panic!("failed to connect as client2");
-    };
+    timeout(Duration::from_secs(1), client1.ensure_initialized())
+        .await
+        .expect("client2 timed out while connecting")
+        .unwrap();
 
     // Create a new DB client
     let mut db = new_db_client(&discovery_endpoint, None).await;
@@ -64,9 +62,10 @@ async fn test_whitelist() {
     let client2 = new_client(2, vec![TestTopic::Global as u8], "8085");
 
     // Assert we can connect as client1
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
-        panic!("failed to connect as client1");
-    };
+    timeout(Duration::from_secs(1), client1.ensure_initialized())
+        .await
+        .expect("client1 timed out while connecting")
+        .unwrap();
 
     // Assert we can't connect as client2
     assert!(

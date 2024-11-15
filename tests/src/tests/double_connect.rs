@@ -29,12 +29,14 @@ async fn test_double_connect_same_broker() {
     let client2 = new_client(1, vec![TestTopic::Global as u8], "8088");
 
     // Assert both clients are connected
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
-        panic!("failed to connect as client1");
-    };
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
-        panic!("failed to connect as client2");
-    };
+    timeout(Duration::from_secs(1), client1.ensure_initialized())
+        .await
+        .expect("client1 timed out while connecting")
+        .unwrap();
+    timeout(Duration::from_secs(1), client2.ensure_initialized())
+        .await
+        .expect("client2 timed out while connecting")
+        .unwrap();
 
     // Wait for a bit
     sleep(Duration::from_millis(50)).await;
@@ -101,9 +103,10 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the first client
-    let Ok(()) = timeout(Duration::from_secs(1), client1.ensure_initialized()).await else {
-        panic!("failed to connect as client1");
-    };
+    timeout(Duration::from_secs(1), client1.ensure_initialized())
+        .await
+        .expect("client1 timed out while connecting")
+        .unwrap();
 
     // Set the number of connections for the first broker to be higher
     broker0_db_client
@@ -112,9 +115,10 @@ async fn test_double_connect_different_broker() {
         .expect("broker failed to perform heartbeat");
 
     // Connect the second client
-    let Ok(()) = timeout(Duration::from_secs(1), client2.ensure_initialized()).await else {
-        panic!("failed to connect as client2");
-    };
+    timeout(Duration::from_secs(1), client2.ensure_initialized())
+        .await
+        .expect("client2 timed out while connecting")
+        .unwrap();
 
     // Sleep for a bit
     sleep(Duration::from_millis(50)).await;

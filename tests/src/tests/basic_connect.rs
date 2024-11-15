@@ -31,9 +31,10 @@ async fn test_end_to_end_connection() {
     let client_public_key = keypair_from_seed(0).1;
 
     // Ensure we are connected
-    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
-        panic!("client failed to connect");
-    };
+    timeout(Duration::from_secs(1), client.ensure_initialized())
+        .await
+        .expect("client timed out while connecting")
+        .unwrap();
 
     // Send a message to ourself
     client
