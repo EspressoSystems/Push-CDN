@@ -16,7 +16,7 @@ pub fn mnemonic<H: Hash>(bytes: H) -> String {
     mnemonic::to_string(state.finish().to_le_bytes())
 }
 
-/// A wrapper for a `JoinHandle` that will abort the task if 
+/// A wrapper for a `JoinHandle` that will abort the task if
 #[derive(Deref)]
 pub struct AbortOnDropHandle<T>(pub JoinHandle<T>);
 
