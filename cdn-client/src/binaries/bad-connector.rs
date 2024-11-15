@@ -67,7 +67,7 @@ async fn main() {
         // and the `QUIC` protocol.
         let client = Client::<ProductionClientConnection>::new(config);
 
-        client.ensure_initialized().await;
+        client.ensure_initialized().await.unwrap();
         sleep(Duration::from_millis(200)).await;
     }
 }
