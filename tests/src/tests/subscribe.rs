@@ -31,9 +31,10 @@ async fn test_subscribe() {
     let client = new_client(0, vec![TestTopic::Global as u8], "8097");
 
     // Ensure the client is connected
-    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
-        panic!("client failed to connect");
-    };
+    timeout(Duration::from_secs(1), client.ensure_initialized())
+        .await
+        .expect("client timed out while connecting")
+        .unwrap();
 
     // Send a message to the global topic
     client
@@ -135,9 +136,10 @@ async fn test_invalid_subscribe() {
     let client = new_client(0, vec![], "8100");
 
     // Ensure the connection is open
-    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
-        panic!("client failed to connect");
-    };
+    timeout(Duration::from_secs(1), client.ensure_initialized())
+        .await
+        .expect("client timed out while connecting")
+        .unwrap();
 
     // Subscribe to an invalid topic
     let _ = client.subscribe(vec![99]).await;
@@ -172,9 +174,10 @@ async fn test_invalid_unsubscribe() {
     let client = new_client(0, vec![], "8103");
 
     // Ensure the connection is open
-    let Ok(()) = timeout(Duration::from_secs(1), client.ensure_initialized()).await else {
-        panic!("client failed to connect");
-    };
+    timeout(Duration::from_secs(1), client.ensure_initialized())
+        .await
+        .expect("client timed out while connecting")
+        .unwrap();
 
     // Unsubscribe from the invalid topic
     let _ = client.unsubscribe(vec![99]).await;

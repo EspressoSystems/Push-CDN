@@ -5,6 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use derive_more::derive::Deref;
 use tokio::task::{JoinError, JoinHandle};
 
 /// A function for generating a cute little user mnemonic from a hashable value
@@ -21,7 +22,8 @@ pub fn hash<H: Hash>(bytes: H) -> u64 {
     state.finish()
 }
 
-/// A wrapper for a `JoinHandle` that will abort the task if dropped
+/// A wrapper for a `JoinHandle` that will abort the task if
+#[derive(Deref)]
 pub struct AbortOnDropHandle<T>(pub JoinHandle<T>);
 
 impl<T> Drop for AbortOnDropHandle<T> {
