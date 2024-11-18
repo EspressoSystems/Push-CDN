@@ -276,6 +276,11 @@ impl<R: RunDef> Broker<R> {
         let inner_ = self.inner.clone();
         let sync_task = AbortOnDropHandle(spawn(inner_.run_sync_task()));
 
+        // Spawn the whitelist task, which retroactively checks if existing users are still
+        // whitelisted
+        let inner_ = self.inner.clone();
+        let whitelist_task = AbortOnDropHandle(spawn(inner_.run_whitelist_task()));
+
         // Spawn the public (user) listener task
         // TODO: maybe macro this, since it's repeat code with the private listener task
         let inner_ = self.inner.clone();
@@ -306,6 +311,9 @@ impl<R: RunDef> Broker<R> {
             }
             _ = broker_listener_task => {
                 Err(Error::Exited("broker listener task exited!".to_string()))
+            }
+            _ = whitelist_task => {
+                Err(Error::Exited("whitelist task exited!".to_string()))
             }
         }
     }
