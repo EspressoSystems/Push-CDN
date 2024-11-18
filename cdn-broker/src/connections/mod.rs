@@ -242,6 +242,12 @@ impl Connections {
         self.brokers.keys().cloned().collect()
     }
 
+    /// Get all of the users that are connected to us. We use this when we need
+    /// to check if they are still whitelisted.
+    pub fn all_users(&self) -> Vec<UserPublicKey> {
+        self.users.keys().cloned().collect()
+    }
+
     /// Insert a broker with its connection into our map.
     pub fn add_broker(
         &mut self,
