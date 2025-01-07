@@ -2,6 +2,9 @@
 
 The Push-CDN is a distributed and fault tolerant messaging system built to accelerate peer-to-peer networks. It does this by keeping track of the network topology, which enables it to route messages more efficiently than traditional gossip-based protocols.
 
+![Example message flow](example.svg)
+_Bob wants to broadcast an identical message to two of his close friends, Alice and Charlie. The CDN knows where each friend is located, so the message is routed to them directly and no other users (like Dan) receive the message as a consequence._
+
 ## Feature highlights
 - Fast, reliable, and efficient
 - Support for both publish-subscribe and direct messaging models
