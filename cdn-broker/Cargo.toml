@@ -39,7 +39,7 @@ path = "src/binaries/bad-broker.rs"
 
 # This dependency is used for the Tokio console
 [target.'cfg(tokio_unstable)'.dependencies]
-console-subscriber = "0.3"
+console-subscriber = "0.4"
 
 # This prevents clippy from warning about the `tokio_unstable` flag
 [lints.rust]
@@ -59,7 +59,6 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 rkyv.workspace = true
 derivative.workspace = true
-dashmap = { version = "6", default-features = false }
 rand.workspace = true
 local-ip-address = "0.6"
 parking_lot.workspace = true
