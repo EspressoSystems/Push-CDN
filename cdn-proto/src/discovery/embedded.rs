@@ -67,7 +67,7 @@ impl DiscoveryClient for Embedded {
 
         // Perform migrations on the DB
         bail!(
-            query(include_str!("../../../local_db/migrations.sql"),)
+            query(include_str!("../../local_db/migrations.sql"),)
                 .execute(&pool)
                 .await,
             File,
