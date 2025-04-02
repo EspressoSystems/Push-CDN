@@ -9,8 +9,8 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
+use async_channel::{unbounded, Receiver, Sender};
 use async_trait::async_trait;
-use kanal::{unbounded_async, AsyncReceiver, AsyncSender};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{duplex, DuplexStream},
@@ -25,7 +25,7 @@ use crate::{
     error::{Error, Result},
 };
 
-type ChannelExchange = (AsyncSender<DuplexStream>, AsyncReceiver<DuplexStream>);
+type ChannelExchange = (Sender<DuplexStream>, Receiver<DuplexStream>);
 
 /// A global list of listeners that are initialized later. This is to help
 /// connections find listeners.
@@ -95,8 +95,8 @@ impl Protocol for Memory {
         _key: PrivateKeyDer<'static>,
     ) -> Result<Self::Listener> {
         // Create our channels
-        let (send_to_us, receive_from_them) = unbounded_async();
-        let (send_to_them, receive_from_us) = unbounded_async();
+        let (send_to_us, receive_from_them) = unbounded();
+        let (send_to_them, receive_from_us) = unbounded();
 
         // Add to our listeners
         let mut listeners = LISTENERS.get_or_init(RwLock::default).write().await;
@@ -134,8 +134,8 @@ impl UnfinalizedConnection for UnfinalizedMemoryConnection {
 /// so we can remove on drop.
 pub struct MemoryListener {
     bind_endpoint: String,
-    receive_new_connection: AsyncReceiver<DuplexStream>,
-    send_to_new_connection: AsyncSender<DuplexStream>,
+    receive_new_connection: Receiver<DuplexStream>,
+    send_to_new_connection: Sender<DuplexStream>,
 }
 
 #[async_trait]
