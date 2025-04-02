@@ -8,8 +8,8 @@
 
 use std::{sync::Arc, time::Duration};
 
+use async_channel::{bounded, unbounded, Receiver, Sender};
 use async_trait::async_trait;
-use kanal::{AsyncReceiver, AsyncSender};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -96,8 +96,8 @@ enum BytesOrSoftClose {
 /// receiver channels.
 #[derive(Clone)]
 pub struct ConnectionRef {
-    sender: AsyncSender<BytesOrSoftClose>,
-    receiver: AsyncReceiver<Bytes>,
+    sender: Sender<BytesOrSoftClose>,
+    receiver: Receiver<Bytes>,
 
     tasks: Arc<Vec<AbortHandle>>,
 }
@@ -128,8 +128,8 @@ impl Connection {
     /// Used for testing purposes.
     pub fn new_test() -> Self {
         Self(Arc::new(ConnectionRef {
-            sender: kanal::unbounded_async().0,
-            receiver: kanal::unbounded_async().1,
+            sender: unbounded().0,
+            receiver: unbounded().1,
             tasks: Arc::new(vec![]),
         }))
     }
@@ -148,8 +148,8 @@ impl Connection {
         // Conditionally create bounded channels if the user specifies a size
         let ((send_to_caller, receive_from_task), (send_to_task, receive_from_caller)) =
             limiter.connection_message_pool_size().map_or_else(
-                || (kanal::unbounded_async(), kanal::unbounded_async()),
-                |size| (kanal::bounded_async(size), kanal::bounded_async(size)),
+                || (unbounded(), unbounded()),
+                |size| (bounded(size), bounded(size)),
             );
 
         // Spawn the task that receives from the caller and sends to the stream

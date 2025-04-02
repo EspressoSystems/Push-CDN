@@ -837,13 +837,13 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "ark-serialize",
+ "async-channel",
  "async-trait",
  "capnp",
  "criterion",
  "derivative",
  "derive_more",
  "jf-signature",
- "kanal",
  "lazy_static",
  "mnemonic",
  "num_enum",
@@ -2256,16 +2256,6 @@ checksum = "1cfaf33c695fc6e08064efbc1f72ec937429614f25eef83af942d0e227c3a28f"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.0-pre8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b05d55519627edaf7fd0f29981f6dc03fb52df3f5b257130eb8d0bf2801ea1d7"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]

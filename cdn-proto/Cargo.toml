@@ -61,7 +61,7 @@ tokio-rustls = { version = "0.26", default-features = false }
 async-trait = "0.1"
 warp = { version = "0.3", default-features = false }
 anyhow = "1"
-kanal = "0.1.0-pre8"
+async-channel = "2"
 rkyv.workspace = true
 mnemonic = "1"
 rcgen.workspace = true
