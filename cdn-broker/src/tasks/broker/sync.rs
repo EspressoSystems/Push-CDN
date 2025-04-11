@@ -11,8 +11,8 @@ use std::{sync::Arc, time::Duration};
 use cdn_proto::{
     bail,
     connection::Bytes,
+    database::BrokerIdentifier,
     def::RunDef,
-    discovery::BrokerIdentifier,
     error::{Error, Result},
     message::Message,
 };

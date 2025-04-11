@@ -4,7 +4,7 @@
 // You should have received a copy of the MIT License
 // along with the Push-CDN repository. If not, see <https://mit-license.org/>.
 
-//! In this module we describe the `DiscoveryClient` trait. It defines a client that allows
+//! In this module we describe the `DatabaseClient` trait. It defines a client that allows
 //! us to derive a source of truth for the number of brokers, permits issued, and the
 //! number of users connected per broker.
 
@@ -23,10 +23,10 @@ pub mod embedded;
 pub mod redis;
 
 #[async_trait]
-// Defines a client that allows us to derive a source of truth for
-// the number of brokers, permits issued, and the number of users connected per broker.
-pub trait DiscoveryClient: Sized + Clone + Sync + Send + 'static {
-    /// Create a new `DiscoveryClient` from the path to it (file or otherwise) and an optional
+// Defines a client that allows us to derive a source of truth for shared state between
+// Push-CDN components.
+pub trait DatabaseClient: Sized + Clone + Sync + Send + 'static {
+    /// Create a new `DatabaseClient` from the path to it (file or otherwise) and an optional
     /// identity that we store alongside our data, if appropriate.
     async fn new(path: String, identity: Option<BrokerIdentifier>) -> Result<Self>;
 

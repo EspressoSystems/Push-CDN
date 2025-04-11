@@ -22,11 +22,11 @@ use tracing_subscriber::EnvFilter;
 #[command(author, version, about, long_about = None)]
 /// The main component of the push CDN.
 struct Args {
-    /// The discovery client endpoint (including scheme) to connect to.
-    /// With the local discovery feature, this is a file path.
-    /// With the remote (redis) discovery feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
+    /// The database endpoint (including scheme) to connect to.
+    /// With the local database feature, this is a file path.
+    /// With the remote (redis) database feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
     #[arg(short, long)]
-    discovery_endpoint: String,
+    database_endpoint: String,
 
     /// The user-facing endpoint in `IP:port` form to bind to for connections from users
     #[arg(long, default_value = "0.0.0.0:1738")]
@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
         ca_cert_path: args.ca_cert_path,
         ca_key_path: args.ca_key_path,
 
-        discovery_endpoint: args.discovery_endpoint,
+        database_endpoint: args.database_endpoint,
         metrics_bind_endpoint: args.metrics_bind_endpoint,
         keypair: KeyPair {
             public_key,

@@ -11,8 +11,8 @@ use std::{sync::Arc, time::Duration};
 use cdn_proto::{
     authenticate_with_broker, bail,
     connection::{auth::broker::BrokerAuth, protocols::Connection, Bytes, UserPublicKey},
+    database::BrokerIdentifier,
     def::{HookResult, MessageHookDef, RunDef},
-    discovery::BrokerIdentifier,
     error::{Error, Result},
     message::{Message, Topic},
     util::{hash, mnemonic},

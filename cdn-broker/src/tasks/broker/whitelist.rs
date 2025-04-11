@@ -8,7 +8,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use cdn_proto::{def::RunDef, discovery::DiscoveryClient};
+use cdn_proto::{database::DatabaseClient, def::RunDef};
 use tokio::time::sleep;
 
 use crate::Inner;
@@ -17,8 +17,8 @@ impl<Def: RunDef> Inner<Def> {
     /// Run the whitelist task. This is responsible for checking if users are still whitelisted
     /// and kicking them off the network if they are not.
     pub async fn run_whitelist_task(self: Arc<Self>) {
-        // Clone the discovery client because it's behind an `Arc`
-        let mut discovery_client = self.discovery_client.clone();
+        // Clone the database client because it's behind an `Arc`
+        let mut database_client = self.database_client.clone();
 
         loop {
             // Run every minute
@@ -29,11 +29,7 @@ impl<Def: RunDef> Inner<Def> {
 
             // Make sure each user is still whitelisted
             for user in users {
-                if !discovery_client
-                    .check_whitelist(&user)
-                    .await
-                    .unwrap_or(true)
-                {
+                if !database_client.check_whitelist(&user).await.unwrap_or(true) {
                     // Kick the user off the network if they are not
                     self.connections
                         .write()

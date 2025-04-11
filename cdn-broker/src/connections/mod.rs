@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use broadcast::BroadcastMap;
 use cdn_proto::{
     connection::{protocols::Connection, UserPublicKey},
-    discovery::BrokerIdentifier,
+    database::BrokerIdentifier,
     message::Topic,
     util::mnemonic,
 };
@@ -392,7 +392,7 @@ mod test {
     use std::sync::Arc;
 
     use cdn_proto::{
-        connection::protocols::Connection, def::TestTopic, discovery::BrokerIdentifier,
+        connection::protocols::Connection, database::BrokerIdentifier, def::TestTopic,
     };
     use tokio::spawn;
 

@@ -25,8 +25,8 @@ use cdn_proto::{
         protocols::{Listener as _, Protocol as _, UnfinalizedConnection},
     },
     crypto::tls::{generate_cert_from_ca, load_ca},
+    database::DatabaseClient,
     def::{Listener, Protocol, RunDef},
-    discovery::DiscoveryClient,
     error::{Error, Result},
     metrics as proto_metrics,
     util::AbortOnDropHandle,
@@ -40,8 +40,8 @@ pub struct Config {
     /// The bind endpoint that users will reach. Example: `0.0.0.0:1738`
     pub bind_endpoint: String,
 
-    /// The discovery client endpoint (either Redis or local depending on feature)
-    pub discovery_endpoint: String,
+    /// The database client endpoint (either Redis or local depending on feature)
+    pub database_endpoint: String,
 
     /// An optional TLS CA cert path. If not specified, will use the local one.
     pub ca_cert_path: Option<String>,
@@ -67,7 +67,7 @@ pub struct Marshal<R: RunDef> {
     listener: Arc<Listener<R::User>>,
 
     /// The client we use to issue permits and check for brokers that are up
-    discovery_client: R::DiscoveryClientType,
+    database_client: R::DatabaseClientType,
 
     /// The endpoint to bind to for externalizing metrics (in `IP:port` form). If not provided,
     /// metrics are not exposed.
@@ -87,7 +87,7 @@ impl<R: RunDef> Marshal<R> {
         // Extrapolate values from the underlying marshal configuration
         let Config {
             bind_endpoint,
-            discovery_endpoint,
+            database_endpoint,
             metrics_bind_endpoint,
             ca_cert_path,
             ca_key_path,
@@ -109,11 +109,11 @@ impl<R: RunDef> Marshal<R> {
 
         info!(bind = bind_endpoint, "listening for users");
 
-        // Create the discovery client
-        let discovery_client = bail!(
-            R::DiscoveryClientType::new(discovery_endpoint, None).await,
+        // Create the database client
+        let database_client = bail!(
+            R::DatabaseClientType::new(database_endpoint, None).await,
             Connection,
-            "failed to create discovery client"
+            "failed to create database client"
         );
 
         // Parse the metrics IP and port
@@ -138,7 +138,7 @@ impl<R: RunDef> Marshal<R> {
         Ok(Self {
             listener: Arc::from(listener),
             metrics_bind_endpoint,
-            discovery_client,
+            database_client,
             limiter,
         })
     }
@@ -164,7 +164,7 @@ impl<R: RunDef> Marshal<R> {
             );
 
             // Create a task to handle the connection
-            let discovery_client = self.discovery_client.clone();
+            let database_client = self.database_client.clone();
             let limiter = self.limiter.clone();
             spawn(async move {
                 // Finalize the connection
@@ -173,7 +173,7 @@ impl<R: RunDef> Marshal<R> {
                 };
 
                 // Handle the connection
-                Self::handle_connection(connection, discovery_client).await;
+                Self::handle_connection(connection, database_client).await;
             });
         }
     }

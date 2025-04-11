@@ -5,7 +5,7 @@
 // along with the Push-CDN repository. If not, see <https://mit-license.org/>.
 
 //! This is where we define routing for direct messages.
-use cdn_proto::{connection::UserPublicKey, discovery::BrokerIdentifier};
+use cdn_proto::{connection::UserPublicKey, database::BrokerIdentifier};
 
 use super::versioned_map::VersionedMap;
 

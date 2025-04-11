@@ -13,8 +13,8 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::connection::protocols::tcp_tls::TcpTls;
 use crate::connection::protocols::{tcp::Tcp, Protocol as ProtocolType};
 use crate::crypto::signature::SignatureScheme;
-use crate::discovery::embedded::Embedded;
-use crate::discovery::{redis::Redis, DiscoveryClient};
+use crate::database::embedded::Embedded;
+use crate::database::{redis::Redis, DatabaseClient};
 use crate::error::{Error, Result};
 use crate::message::Message;
 use anyhow::Result as AnyhowResult;
@@ -54,7 +54,7 @@ impl Topic for TestTopic {}
 pub trait RunDef: 'static {
     type Broker: ConnectionDef;
     type User: ConnectionDef;
-    type DiscoveryClientType: DiscoveryClient;
+    type DatabaseClientType: DatabaseClient;
     type Topic: Topic;
 }
 
@@ -100,12 +100,12 @@ impl MessageHookDef for NoMessageHook {
 }
 
 /// The production run configuration.
-/// Uses the real network protocols and Redis for discovery.
+/// Uses the real network protocols and Redis for database.
 pub struct ProductionRunDef;
 impl RunDef for ProductionRunDef {
     type Broker = ProductionBrokerConnection;
     type User = ProductionUserConnection;
-    type DiscoveryClientType = Redis;
+    type DatabaseClientType = Redis;
     type Topic = TestTopic;
 }
 
@@ -139,14 +139,14 @@ impl ConnectionDef for ProductionClientConnection {
 }
 
 /// The testing run configuration.
-/// Uses generic protocols and an embedded discovery client.
+/// Uses generic protocols and an embedded database client.
 pub struct TestingRunDef<B: ProtocolType, U: ProtocolType> {
     pd: PhantomData<(B, U)>,
 }
 impl<B: ProtocolType, U: ProtocolType> RunDef for TestingRunDef<B, U> {
     type Broker = TestingConnection<B>;
     type User = TestingConnection<U>;
-    type DiscoveryClientType = Embedded;
+    type DatabaseClientType = Embedded;
     type Topic = TestTopic;
 }
 

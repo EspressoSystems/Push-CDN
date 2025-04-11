@@ -32,7 +32,7 @@ impl<Def: RunDef> Inner<Def> {
                 &connection,
                 #[cfg(not(feature = "global-permits"))]
                 &self.identity,
-                &mut self.discovery_client.clone(),
+                &mut self.database_client.clone(),
             ),
         )
         .await

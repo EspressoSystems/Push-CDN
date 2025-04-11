@@ -17,8 +17,8 @@ use crate::{
     bail,
     connection::protocols::Connection,
     crypto::signature::Namespace,
+    database::DatabaseClient,
     def::{PublicKey, RunDef, Scheme},
-    discovery::DiscoveryClient,
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, Message},
@@ -43,7 +43,7 @@ impl<R: RunDef> MarshalAuth<R> {
     /// - If our connection fails
     pub async fn verify_user(
         connection: &Connection,
-        discovery_client: &mut R::DiscoveryClientType,
+        database_client: &mut R::DatabaseClientType,
     ) -> Result<UserPublicKey> {
         // Receive the signed message from the user
         let auth_message = bail!(
@@ -88,7 +88,7 @@ impl<R: RunDef> MarshalAuth<R> {
         };
 
         // Check if the user is in the whitelist
-        match discovery_client
+        match database_client
             .check_whitelist(&UserPublicKey::from(public_key.clone()))
             .await
         {
@@ -106,19 +106,17 @@ impl<R: RunDef> MarshalAuth<R> {
 
         // Get the broker with the least amount of connections
         // TODO: do a macro for this
-        let broker_with_least_connections = match discovery_client
-            .get_with_least_connections()
-            .await
+        let broker_with_least_connections = match database_client.get_with_least_connections().await
         {
             Ok(broker) => broker,
             Err(err) => {
-                error!("failed to get the broker with the least connections from discovery client: {err}");
+                error!("failed to get the broker with the least connections from database client: {err}");
                 fail_verification_with_message!(connection, "internal server error");
             }
         };
 
         // Generate and issue a permit for said broker
-        let permit = match discovery_client
+        let permit = match database_client
             .issue_permit(
                 #[cfg(not(feature = "global-permits"))]
                 &broker_with_least_connections,

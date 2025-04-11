@@ -11,8 +11,8 @@
 
 pub mod connection;
 pub mod crypto;
+pub mod database;
 pub mod def;
-pub mod discovery;
 pub mod error;
 pub mod message;
 pub mod util;
