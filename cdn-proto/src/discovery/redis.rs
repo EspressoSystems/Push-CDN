@@ -15,7 +15,7 @@ use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use redis::aio::ConnectionManager;
+use redis::{aio::ConnectionManager, ExpireOption};
 
 use super::{BrokerIdentifier, DiscoveryClient};
 use crate::{
@@ -84,31 +84,30 @@ impl DiscoveryClient for Redis {
         heartbeat_expiry: Duration,
     ) -> Result<()> {
         // Atomically execute the following commands
+        let mut pipeline = redis::pipe();
+        let pipeline = pipeline.atomic();
+
+        // Add to the list of brokers
+        pipeline.hset("brokers", &self.identifier.to_string(), 1);
+        pipeline.hexpire(
+            "brokers",
+            heartbeat_expiry.as_secs() as i64,
+            ExpireOption::NONE,
+            &self.identifier.to_string(),
+        );
+
+        // Set the number of connections we have
+        pipeline.set_ex(
+            format!("{}/num_connections", self.identifier),
+            num_connections,
+            heartbeat_expiry.as_secs() as u64,
+        );
+
+        // Execute the pipeline
         bail!(
-            redis::pipe()
-                .atomic()
-                // Add our identifier to the broker list (if not there already)
-                .cmd("SADD")
-                .arg(&["brokers", &self.identifier.to_string()])
-                // Set our expiry
-                .cmd("EXPIREMEMBER")
-                .arg(&[
-                    "brokers",
-                    &self.identifier.to_string(),
-                    &heartbeat_expiry.as_secs().to_string()
-                ])
-                // Set our number of connections
-                .cmd("SET")
-                .arg(&[
-                    format!("{}/num_connections", self.identifier),
-                    num_connections.to_string(),
-                    "EX".to_string(),
-                    heartbeat_expiry.as_secs().to_string()
-                ])
-                .query_async(&mut self.underlying_connection)
-                .await,
+            pipeline.query_async(&mut self.underlying_connection).await,
             Connection,
-            "failed to connect to Redis"
+            "failed to perform heartbeat"
         );
 
         Ok(())
@@ -178,7 +177,7 @@ impl DiscoveryClient for Redis {
     async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
         // Get all registered brokers
         let mut brokers: HashSet<String> = bail!(
-            redis::cmd("SMEMBERS")
+            redis::cmd("HGETALL")
                 .arg("brokers")
                 .query_async(&mut self.underlying_connection)
                 .await,
