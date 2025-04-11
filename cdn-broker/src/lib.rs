@@ -28,7 +28,7 @@ use cdn_proto::{
     connection::{limiter::Limiter, protocols::Protocol as _},
     crypto::tls::{generate_cert_from_ca, load_ca},
     database::{BrokerIdentifier, DatabaseClient},
-    def::{Listener, MessageHook, Protocol, RunDef, Scheme},
+    def::{Listener, Protocol, RunDef, Scheme},
     error::{Error, Result},
     util::AbortOnDropHandle,
 };
@@ -74,12 +74,6 @@ pub struct Config<R: RunDef> {
     /// tries to allocate more than this amount until some memory is freed.
     /// Default is 1GB.
     pub global_memory_pool_size: Option<usize>,
-
-    /// The hook we use when receiving incoming messages from users
-    pub user_message_hook: MessageHook<R::User>,
-
-    /// The hook we use when receiving incoming messages from brokers
-    pub broker_message_hook: MessageHook<R::Broker>,
 }
 
 /// The broker `Inner` that we use to share common data between broker tasks.
@@ -99,12 +93,6 @@ struct Inner<R: RunDef> {
 
     /// The shared limiter that we use for all connections.
     limiter: Limiter,
-
-    /// The hook we use when receiving incoming messages from users
-    user_message_hook: MessageHook<R::User>,
-
-    /// The hook we use when receiving incoming messages from brokers
-    broker_message_hook: MessageHook<R::Broker>,
 }
 
 /// The main `Broker` struct. We instantiate this when we want to run a broker.
@@ -148,9 +136,6 @@ impl<R: RunDef> Broker<R> {
             ca_key_path,
 
             global_memory_pool_size,
-
-            user_message_hook,
-            broker_message_hook,
         } = config;
 
         // Get the local IP address so we can replace in
@@ -248,8 +233,6 @@ impl<R: RunDef> Broker<R> {
                 keypair,
                 connections: Arc::from(RwLock::from(Connections::new(identity))),
                 limiter,
-                user_message_hook,
-                broker_message_hook,
             }),
             metrics_bind_endpoint,
             user_listener,
