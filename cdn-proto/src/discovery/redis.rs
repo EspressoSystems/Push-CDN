@@ -121,7 +121,7 @@ impl DiscoveryClient for Redis {
     async fn get_with_least_connections(&mut self) -> Result<BrokerIdentifier> {
         // Get all registered brokers
         let brokers: HashSet<String> = bail!(
-            redis::cmd("SMEMBERS")
+            redis::cmd("HKEYS")
                 .arg("brokers")
                 .query_async(&mut self.underlying_connection)
                 .await,
@@ -177,7 +177,7 @@ impl DiscoveryClient for Redis {
     async fn get_other_brokers(&mut self) -> Result<HashSet<BrokerIdentifier>> {
         // Get all registered brokers
         let mut brokers: HashSet<String> = bail!(
-            redis::cmd("HGETALL")
+            redis::cmd("HKEYS")
                 .arg("brokers")
                 .query_async(&mut self.underlying_connection)
                 .await,
