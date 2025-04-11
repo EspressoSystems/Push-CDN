@@ -17,8 +17,8 @@ use crate::{
     bail,
     connection::protocols::Connection,
     crypto::signature::{Namespace, SignatureScheme},
+    database::{BrokerIdentifier, DatabaseClient},
     def::{PublicKey, RunDef, Scheme},
-    discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     fail_verification_with_message,
     message::{AuthenticateResponse, AuthenticateWithKey, Message, Topic},
@@ -77,7 +77,7 @@ impl<R: RunDef> BrokerAuth<R> {
     pub async fn verify_user(
         connection: &Connection,
         #[cfg(not(feature = "global-permits"))] broker_identifier: &BrokerIdentifier,
-        discovery_client: &mut R::DiscoveryClientType,
+        database_client: &mut R::DatabaseClientType,
     ) -> Result<(UserPublicKey, Vec<Topic>)> {
         // Receive the permit
         let auth_message = bail!(
@@ -92,7 +92,7 @@ impl<R: RunDef> BrokerAuth<R> {
         };
 
         // Check the permit
-        let serialized_public_key = match discovery_client
+        let serialized_public_key = match database_client
             .validate_permit(
                 #[cfg(not(feature = "global-permits"))]
                 broker_identifier,

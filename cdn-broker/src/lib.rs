@@ -27,8 +27,8 @@ use cdn_proto::{
     bail,
     connection::{limiter::Limiter, protocols::Protocol as _},
     crypto::tls::{generate_cert_from_ca, load_ca},
+    database::{BrokerIdentifier, DatabaseClient},
     def::{Listener, MessageHook, Protocol, RunDef, Scheme},
-    discovery::{BrokerIdentifier, DiscoveryClient},
     error::{Error, Result},
     util::AbortOnDropHandle,
 };
@@ -57,8 +57,8 @@ pub struct Config<R: RunDef> {
     /// The port we want to serve metrics on
     pub metrics_bind_endpoint: Option<String>,
 
-    /// The discovery endpoint. We use this to maintain consistency between brokers and marshals.
-    pub discovery_endpoint: String,
+    /// The database endpoint
+    pub database_endpoint: String,
 
     /// The underlying (public) verification key, used to authenticate with other brokers.
     pub keypair: KeyPair<Scheme<R::Broker>>,
@@ -87,8 +87,8 @@ struct Inner<R: RunDef> {
     /// A broker identifier that we can use to establish uniqueness among brokers.
     identity: BrokerIdentifier,
 
-    /// The (clonable) `Discovery` client that we will use to maintain consistency between brokers and marshals
-    discovery_client: R::DiscoveryClientType,
+    /// The (clonable) `Database` client that we will use to maintain consistency between brokers and marshals
+    database_client: R::DatabaseClientType,
 
     /// The underlying (public) verification key, used to authenticate with other brokers.
     keypair: KeyPair<Scheme<R::Broker>>,
@@ -127,7 +127,7 @@ impl<R: RunDef> Broker<R> {
     /// Create a new `Broker` from a `Config`
     ///
     /// # Errors
-    /// - If we fail to create the `Discovery` client
+    /// - If we fail to create the `Database` client
     /// - If we fail to bind to our public endpoint
     /// - If we fail to bind to our private endpoint
     pub async fn new(config: Config<R>) -> Result<Self> {
@@ -143,7 +143,7 @@ impl<R: RunDef> Broker<R> {
 
             keypair,
 
-            discovery_endpoint,
+            database_endpoint,
             ca_cert_path,
             ca_key_path,
 
@@ -173,11 +173,11 @@ impl<R: RunDef> Broker<R> {
             private_advertise_endpoint: private_advertise_endpoint.clone(),
         };
 
-        // Create the `Discovery` client we will use to maintain consistency
-        let discovery_client = bail!(
-            R::DiscoveryClientType::new(discovery_endpoint, Some(identity.clone()),).await,
+        // Create the `Database` client we will use to maintain consistency
+        let database_client = bail!(
+            R::DatabaseClientType::new(database_endpoint, Some(identity.clone()),).await,
             Parse,
-            "failed to create discovery client"
+            "failed to create database client"
         );
 
         // Conditionally load CA cert and key in
@@ -243,7 +243,7 @@ impl<R: RunDef> Broker<R> {
         // Create and return `Self` as wrapping an `Inner` (with things that we need to share)
         Ok(Self {
             inner: Arc::from(Inner {
-                discovery_client,
+                database_client,
                 identity: identity.clone(),
                 keypair,
                 connections: Arc::from(RwLock::from(Connections::new(identity))),
@@ -262,12 +262,12 @@ impl<R: RunDef> Broker<R> {
     ///
     /// # Errors
     /// If any of the following tasks exit:
-    /// - The heartbeat (Discovery) task
+    /// - The heartbeat (Database) task
     /// - The user connection handler
     /// - The broker connection handler
     /// - If time went backwards :(
     pub async fn start(self) -> Result<()> {
-        // Spawn the heartbeat task, which we use to register with `Discovery` every so often.
+        // Spawn the heartbeat task, which we use to register with `Database` every so often.
         // We also use it to check for new brokers who may have joined.
         let inner_ = self.inner.clone();
         let heartbeat_task = AbortOnDropHandle(spawn(inner_.run_heartbeat_task()));

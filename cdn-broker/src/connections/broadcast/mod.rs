@@ -10,7 +10,7 @@ mod relational_map;
 
 use std::collections::HashSet;
 
-use cdn_proto::{connection::UserPublicKey, discovery::BrokerIdentifier, message::Topic};
+use cdn_proto::{connection::UserPublicKey, database::BrokerIdentifier, message::Topic};
 use relational_map::RelationalMap;
 use rkyv::{Archive, Deserialize, Serialize};
 

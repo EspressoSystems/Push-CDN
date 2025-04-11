@@ -18,14 +18,14 @@ use super::*;
 /// on a single broker.
 #[tokio::test]
 async fn test_subscribe() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8095", "8096", &discovery_endpoint).await;
+    new_broker(0, "8095", "8096", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8097", &discovery_endpoint).await;
+    new_marshal("8097", &database_endpoint).await;
 
     // Create and get the handle to a new client subscribed to the global topic
     let client = new_client(0, vec![TestTopic::Global as u8], "8097");
@@ -123,14 +123,14 @@ async fn test_subscribe() {
 /// Test that subscribing to an invalid topic kills the connection.
 #[tokio::test]
 async fn test_invalid_subscribe() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8098", "8099", &discovery_endpoint).await;
+    new_broker(0, "8098", "8099", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8100", &discovery_endpoint).await;
+    new_marshal("8100", &database_endpoint).await;
 
     // Create and get the handle to a new client
     let client = new_client(0, vec![], "8100");
@@ -161,14 +161,14 @@ async fn test_invalid_subscribe() {
 // Test that unsubscribing from an invalid topic kills the connection.
 #[tokio::test]
 async fn test_invalid_unsubscribe() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8101", "8102", &discovery_endpoint).await;
+    new_broker(0, "8101", "8102", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8103", &discovery_endpoint).await;
+    new_marshal("8103", &database_endpoint).await;
 
     // Create and get the handle to a new client
     let client = new_client(0, vec![], "8103");

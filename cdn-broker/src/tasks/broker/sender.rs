@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use cdn_proto::{connection::Bytes, def::RunDef, discovery::BrokerIdentifier};
+use cdn_proto::{connection::Bytes, database::BrokerIdentifier, def::RunDef};
 use tracing::error;
 
 use crate::Inner;

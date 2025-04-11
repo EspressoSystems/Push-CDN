@@ -18,9 +18,9 @@ use tracing_subscriber::EnvFilter;
 #[command(author, version, about, long_about = None)]
 /// The main component of the push CDN.
 struct Args {
-    /// The discovery client endpoint (including scheme) to connect to
+    /// The database client endpoint (including scheme) to connect to
     #[arg(short, long)]
-    discovery_endpoint: String,
+    database_endpoint: String,
 
     /// The port to bind to for connections (from users)
     #[arg(short, long, default_value_t = 1737)]
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
 
     // Create a new `Config`
     let config = Config {
-        discovery_endpoint: args.discovery_endpoint,
+        database_endpoint: args.database_endpoint,
         bind_endpoint: format!("0.0.0.0:{}", args.bind_port),
         metrics_bind_endpoint: args.metrics_bind_endpoint,
         ca_cert_path: args.ca_cert_path,

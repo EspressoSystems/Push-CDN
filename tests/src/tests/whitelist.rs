@@ -14,14 +14,14 @@ use crate::tests::*;
 /// Test that the whitelist works
 #[tokio::test]
 async fn test_whitelist() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8083", "8084", &discovery_endpoint).await;
+    new_broker(0, "8083", "8084", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8085", &discovery_endpoint).await;
+    new_marshal("8085", &database_endpoint).await;
 
     // Create a client with keypair 1
     let client1_public_key: UserPublicKey = Arc::from(serialized_public_key_from_seed(1));
@@ -38,7 +38,7 @@ async fn test_whitelist() {
         .unwrap();
 
     // Create a new DB client
-    let mut db = new_db_client(&discovery_endpoint, None).await;
+    let mut db = new_db_client(&database_endpoint, None).await;
 
     // Set the whitelist to only allow client1
     db.set_whitelist(vec![client1_public_key.clone()])

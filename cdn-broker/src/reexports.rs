@@ -15,8 +15,8 @@ pub mod connection {
     }
 }
 
-pub mod discovery {
-    pub use cdn_proto::discovery::{embedded::Embedded, redis::Redis, DiscoveryClient};
+pub mod database {
+    pub use cdn_proto::database::{embedded::Embedded, redis::Redis, DatabaseClient};
 }
 
 pub mod def {

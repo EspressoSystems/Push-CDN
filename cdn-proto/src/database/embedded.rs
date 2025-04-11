@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sqlx::{query, query_as, sqlite::SqliteConnectOptions, QueryBuilder, Row, SqlitePool};
 
-use super::{BrokerIdentifier, DiscoveryClient};
+use super::{BrokerIdentifier, DatabaseClient};
 use crate::{
     bail,
     connection::UserPublicKey,
@@ -36,7 +36,7 @@ struct BrokerRow {
 }
 
 #[async_trait]
-impl DiscoveryClient for Embedded {
+impl DatabaseClient for Embedded {
     /// Create a new `Client` from the `SQLite` path and optional identifier. This is clonable, and
     /// we don't have to worry about reconnections anywhere.
     ///

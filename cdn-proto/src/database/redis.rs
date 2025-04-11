@@ -9,7 +9,7 @@
 //! 1. Marshals and brokers to agree on the number of connections per broker
 //! 2. Marshals to store permits
 //! 3. Brokers to verify permits
-//! 4. Brokers for peer discovery
+//! 4. Brokers for peer database
 
 use std::{collections::HashSet, time::Duration};
 
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use redis::{aio::ConnectionManager, ExpireOption};
 
-use super::{BrokerIdentifier, DiscoveryClient};
+use super::{BrokerIdentifier, DatabaseClient};
 use crate::{
     bail,
     connection::UserPublicKey,
@@ -35,7 +35,7 @@ pub struct Redis {
 }
 
 #[async_trait]
-impl DiscoveryClient for Redis {
+impl DatabaseClient for Redis {
     /// Create a new `Client` from the `Redis` endpoint and optional identifier. This is clonable, and
     /// we don't have to worry about reconnections anywhere.
     ///
@@ -88,19 +88,19 @@ impl DiscoveryClient for Redis {
         let pipeline = pipeline.atomic();
 
         // Add to the list of brokers
-        pipeline.hset("brokers", &self.identifier.to_string(), 1);
+        pipeline.hset("brokers", self.identifier.to_string(), 1);
         pipeline.hexpire(
             "brokers",
             heartbeat_expiry.as_secs() as i64,
             ExpireOption::NONE,
-            &self.identifier.to_string(),
+            self.identifier.to_string(),
         );
 
         // Set the number of connections we have
         pipeline.set_ex(
             format!("{}/num_connections", self.identifier),
             num_connections,
-            heartbeat_expiry.as_secs() as u64,
+            heartbeat_expiry.as_secs(),
         );
 
         // Execute the pipeline
