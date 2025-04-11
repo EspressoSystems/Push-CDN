@@ -22,7 +22,7 @@ use cdn_proto::{
         tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
     },
     database::BrokerIdentifier,
-    def::{NoMessageHook, TestingRunDef},
+    def::TestingRunDef,
     message::{Message, Topic},
 };
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
@@ -240,8 +240,6 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
         global_memory_pool_size: None,
         ca_cert_path: None,
         ca_key_path: None,
-        user_message_hook: NoMessageHook,
-        broker_message_hook: NoMessageHook,
     };
 
     // Create and return the broker

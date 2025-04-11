@@ -11,7 +11,7 @@ use cdn_proto::{
     connection::protocols::memory::Memory,
     crypto::signature::{KeyPair, Serializable, SignatureScheme},
     database::{embedded::Embedded, BrokerIdentifier, DatabaseClient},
-    def::{NoMessageHook, TestingConnection, TestingRunDef},
+    def::{TestingConnection, TestingRunDef},
     message::Topic,
 };
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme as _};
@@ -78,8 +78,6 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, database_ep: &s
         public_advertise_endpoint: public_ep.to_string(),
         public_bind_endpoint: public_ep.to_string(),
         global_memory_pool_size: None,
-        user_message_hook: NoMessageHook,
-        broker_message_hook: NoMessageHook,
     };
 
     // Create broker
