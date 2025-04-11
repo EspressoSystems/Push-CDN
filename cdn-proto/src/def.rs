@@ -82,19 +82,22 @@ pub trait MessageHookDef: Send + Sync + 'static + Clone {
     ///
     /// # Errors
     /// Is supposed to return an error if the other end should be disconnected.
-    fn on_message_received(&mut self, _message: &mut Message) -> AnyhowResult<HookResult> {
-        Ok(HookResult::ProcessMessage)
-    }
+    fn on_message_received(&mut self, _message: &mut Message) -> AnyhowResult<HookResult>;
 
     /// Set a unique identifier for the hook. This can be included with the hook and can be
     /// used to deterministically identify message producers.
-    fn set_identifier(&mut self, _identifier: u64) {}
+    fn set_identifier(&mut self, _identifier: u64);
 }
 
 /// The no-op hook
 #[derive(Clone)]
 pub struct NoMessageHook;
-impl MessageHookDef for NoMessageHook {}
+impl MessageHookDef for NoMessageHook {
+    fn on_message_received(&mut self, _message: &mut Message) -> AnyhowResult<HookResult> {
+        Ok(HookResult::ProcessMessage)
+    }
+    fn set_identifier(&mut self, _identifier: u64) {}
+}
 
 /// The production run configuration.
 /// Uses the real network protocols and Redis for discovery.

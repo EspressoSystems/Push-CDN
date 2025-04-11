@@ -25,7 +25,7 @@ harness = false
 
 
 [dependencies]
-redis = { version = "0.27", default-features = false, features = [
+redis = { version = "0.29", default-features = false, features = [
     "connection-manager",
     "tokio-comp",
 ] }
