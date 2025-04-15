@@ -20,12 +20,12 @@ impl<R: RunDef> Marshal<R> {
     /// Handles a user's connection, including authentication.
     pub async fn handle_connection(
         connection: Connection,
-        mut discovery_client: R::DiscoveryClientType,
+        mut database_client: R::DatabaseClientType,
     ) {
         // Verify (authenticate) the connection
         if let Ok(Ok(user_public_key)) = timeout(
             Duration::from_secs(5),
-            MarshalAuth::<R>::verify_user(&connection, &mut discovery_client),
+            MarshalAuth::<R>::verify_user(&connection, &mut database_client),
         )
         .await
         {

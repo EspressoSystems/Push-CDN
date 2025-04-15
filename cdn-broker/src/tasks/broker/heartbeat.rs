@@ -10,8 +10,8 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use cdn_proto::{
     connection::protocols::Protocol as _,
+    database::{BrokerIdentifier, DatabaseClient},
     def::{Protocol, RunDef},
-    discovery::{BrokerIdentifier, DiscoveryClient},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use tokio::{
@@ -26,17 +26,17 @@ impl<Def: RunDef> Inner<Def> {
     /// This task deals with setting the number of our connected users in Redis or the embedded db. It allows
     /// the marshal to correctly choose the broker with the least amount of connections.
     pub async fn run_heartbeat_task(self: Arc<Self>) {
-        // Clone the `discovery` client, which needs to be mutable
-        let mut discovery_client = self.discovery_client.clone();
+        // Clone the `database` client, which needs to be mutable
+        let mut database_client = self.database_client.clone();
 
         // Run this forever, unless we run into a panic (e.g. the "as" conversion.)
         loop {
             let num_connections = self.connections.read().num_users() as u64;
 
-            // Register with the discovery service every n seconds, updating our number of connected users
+            // Register with the database service every n seconds, updating our number of connected users
             match timeout(
                 Duration::from_secs(5),
-                discovery_client.perform_heartbeat(num_connections, Duration::from_secs(60)),
+                database_client.perform_heartbeat(num_connections, Duration::from_secs(60)),
             )
             .await
             {
@@ -51,7 +51,7 @@ impl<Def: RunDef> Inner<Def> {
 
             // Attempt to get all other brokers
             let other_brokers =
-                match timeout(Duration::from_secs(5), discovery_client.get_other_brokers()).await {
+                match timeout(Duration::from_secs(5), database_client.get_other_brokers()).await {
                     Ok(Ok(brokers)) => brokers,
                     Ok(Err(err)) => {
                         error!("failed to get other brokers: {}", err);

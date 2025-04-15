@@ -17,14 +17,14 @@ use crate::tests::*;
 /// Test that an end-to-end connection succeeds
 #[tokio::test]
 async fn test_end_to_end_connection() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8080", "8081", &discovery_endpoint).await;
+    new_broker(0, "8080", "8081", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8082", &discovery_endpoint).await;
+    new_marshal("8082", &database_endpoint).await;
 
     // Create and get the handle to a new client
     let client = new_client(0, vec![TestTopic::Global as u8], "8082");
