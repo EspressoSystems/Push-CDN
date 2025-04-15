@@ -116,7 +116,12 @@ impl Protocol for Quic {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _>(sender, receiver, limiter);
+        let connection = Connection::from_streams::<_, _>(
+            sender,
+            receiver,
+            limiter,
+            connection.remote_address().ip(),
+        );
 
         Ok(connection)
     }
@@ -185,7 +190,8 @@ impl UnfinalizedConnection for UnfinalizedQuicConnection {
         );
 
         // Create a sender and receiver
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection =
+            Connection::from_streams(sender, receiver, limiter, connection.remote_address().ip());
 
         // Clone and return the connection
         Ok(connection)

@@ -124,7 +124,7 @@ impl Protocol for TcpTls {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, remote_endpoint.ip());
 
         Ok(connection)
     }
@@ -184,6 +184,14 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
+        // Get the IP of the remote peer before we finalize the connection
+        let remote_addr = bail!(
+            self.tcp_stream.peer_addr(),
+            Connection,
+            "failed to get remote address"
+        )
+        .ip();
+
         // Wrap the stream in the TLS connection
         let stream = bail!(
             bail!(
@@ -203,7 +211,7 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, remote_addr);
 
         Ok(connection)
     }

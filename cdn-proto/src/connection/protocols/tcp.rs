@@ -81,11 +81,19 @@ impl Protocol for Tcp {
             "failed to connect to tcp endpoint"
         );
 
+        // Get the IP of the remote peer before we finalize the connection
+        let remote_addr = bail!(
+            stream.peer_addr(),
+            Connection,
+            "failed to get remote address"
+        )
+        .ip();
+
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, remote_addr);
 
         Ok(connection)
     }
@@ -124,11 +132,19 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
+        // Get the IP of the remote peer before we finalize the connection
+        let remote_addr = bail!(
+            self.0.peer_addr(),
+            Connection,
+            "failed to get remote address"
+        )
+        .ip();
+
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, remote_addr);
 
         Ok(connection)
     }
