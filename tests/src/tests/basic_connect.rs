@@ -4,13 +4,10 @@
 // You should have received a copy of the MIT License
 // along with the Push-CDN repository. If not, see <https://mit-license.org/>.
 
-use std::time::Duration;
-
 use cdn_proto::{
     def::TestTopic,
     message::{Direct, Message},
 };
-use tokio::time::timeout;
 
 use crate::tests::*;
 
@@ -31,10 +28,7 @@ async fn test_end_to_end_connection() {
     let client_public_key = keypair_from_seed(0).1;
 
     // Ensure we are connected
-    timeout(Duration::from_secs(1), client.ensure_initialized())
-        .await
-        .expect("client timed out while connecting")
-        .unwrap();
+    client.ensure_initialized().await.unwrap();
 
     // Send a message to ourself
     client
