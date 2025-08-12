@@ -105,7 +105,7 @@ impl DiscoveryClient for Redis {
                     "EX".to_string(),
                     heartbeat_expiry.as_secs().to_string()
                 ])
-                .query_async(&mut self.underlying_connection)
+                .query_async::<()>(&mut self.underlying_connection)
                 .await,
             Connection,
             "failed to connect to Redis"
@@ -228,7 +228,7 @@ impl DiscoveryClient for Redis {
         bail!(
             cmd.arg(public_key)
                 .arg(&["EX", &expiry.as_secs().to_string()])
-                .query_async(&mut self.underlying_connection)
+                .query_async::<()>(&mut self.underlying_connection)
                 .await,
             Connection,
             "failed to connect to Redis"
@@ -286,7 +286,7 @@ impl DiscoveryClient for Redis {
         }
 
         bail!(
-            pipeline.query_async(&mut self.underlying_connection).await,
+            pipeline.query_async::<()>(&mut self.underlying_connection).await,
             Connection,
             "failed to query whitelist"
         );
