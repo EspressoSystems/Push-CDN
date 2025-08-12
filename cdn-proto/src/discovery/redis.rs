@@ -286,7 +286,9 @@ impl DiscoveryClient for Redis {
         }
 
         bail!(
-            pipeline.query_async::<()>(&mut self.underlying_connection).await,
+            pipeline
+                .query_async::<()>(&mut self.underlying_connection)
+                .await,
             Connection,
             "failed to query whitelist"
         );
