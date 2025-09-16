@@ -1,5 +1,5 @@
 # Use a temporary builder image
-FROM docker.io/rust:1.76-bookworm as BUILDER
+FROM docker.io/rust:1.89-bookworm as BUILDER
 
 # Set up the working directory
 WORKDIR /build
