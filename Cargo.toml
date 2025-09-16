@@ -12,7 +12,7 @@ tokio = { version = "1", default-features = false, features = [
     "parking_lot",
     "tracing"
 ] }
-jf-signature = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "jf-signature-v0.2.0", default-features = false, features = [
+jf-signature = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "jf-signature-v0.3.0", default-features = false, features = [
     "std", "bls"
 ] }
 rand = "0.8"

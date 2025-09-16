@@ -1,6 +1,6 @@
 [package]
 name = "cdn-proto"
-version = "0.4.0"
+version = "0.6.0"
 edition = "2021"
 description = "Contains the common protocol definition and common code for the broker, client, and marshal"
 
@@ -51,7 +51,7 @@ quinn = { version = "0.11", default-features = false, features = [
     "ring",
 ] }
 jf-signature.workspace = true
-ark-serialize = "0.4"
+ark-serialize = "0.5"
 rand.workspace = true
 url = "2"
 tracing.workspace = true

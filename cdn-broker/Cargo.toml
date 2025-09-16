@@ -1,6 +1,6 @@
 [package]
 name = "cdn-broker"
-version = "0.4.0"
+version = "0.6.0"
 edition = "2021"
 
 description = "Defines the broker server, which is responsible for routing messages from clients"
