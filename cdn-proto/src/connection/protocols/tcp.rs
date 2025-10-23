@@ -80,7 +80,11 @@ impl Protocol for Tcp {
             Connection,
             "failed to connect to tcp endpoint"
         );
-        stream.set_nodelay(true).expect("failed to set nodelay");
+        bail!(
+            stream.set_nodelay(true),
+            Connection,
+            "failed to set nodelay"
+        );
 
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
@@ -153,10 +157,11 @@ impl Listener<UnfinalizedTcpConnection> for TcpListener {
             Connection,
             "failed to accept connection"
         );
-        connection
-            .0
-            .set_nodelay(true)
-            .expect("failed to set nodelay");
+        bail!(
+            connection.0.set_nodelay(true),
+            Connection,
+            "failed to set nodelay"
+        );
 
         // Return the unfinalized connection
         Ok(UnfinalizedTcpConnection(connection.0))
