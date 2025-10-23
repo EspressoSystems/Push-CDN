@@ -231,7 +231,10 @@ impl Listener<UnfinalizedTcpTlsConnection> for TcpTlsListener {
             Connection,
             "failed to accept connection"
         );
-        connection.0.set_nodelay(true).expect("failed to set nodelay");
+        connection
+            .0
+            .set_nodelay(true)
+            .expect("failed to set nodelay");
 
         // Return the unfinalized connection
         Ok(UnfinalizedTcpTlsConnection {
