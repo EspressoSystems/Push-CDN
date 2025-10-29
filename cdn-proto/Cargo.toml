@@ -1,6 +1,6 @@
 [package]
 name = "cdn-proto"
-version = "0.6.2"
+version = "0.6.2-compat"
 edition = "2021"
 description = "Contains the common protocol definition and common code for the broker, client, and marshal"
 

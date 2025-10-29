@@ -32,7 +32,7 @@ use cdn_proto::{
     util::AbortOnDropHandle,
 };
 use tokio::spawn;
-use tracing::info;
+use tracing::{error, info};
 
 /// The `Marshal's` configuration (with a Builder), to help with usability.
 /// We need this to construct a `Marshal`
@@ -65,6 +65,9 @@ pub struct Config {
 pub struct Marshal<R: RunDef> {
     /// The underlying connection listener. Used to accept new connections.
     listener: Arc<Listener<R::User>>,
+
+    /// The second underlying connection listener. Used to accept new connections.
+    listener_2: Arc<Listener<R::User2>>,
 
     /// The client we use to issue permits and check for brokers that are up
     discovery_client: R::DiscoveryClientType,
@@ -102,7 +105,19 @@ impl<R: RunDef> Marshal<R> {
 
         // Create the `Listener` from the bind endpoint
         let listener = bail!(
-            Protocol::<R::User>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
+            Protocol::<R::User>::bind(
+                bind_endpoint.as_str(),
+                tls_cert.clone(),
+                tls_key.clone_key()
+            )
+            .await,
+            Connection,
+            format!("failed to bind to endpoint {}", bind_endpoint)
+        );
+
+        // Create the second `Listener` from the bind endpoint
+        let listener_2 = bail!(
+            Protocol::<R::User2>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
             Connection,
             format!("failed to bind to endpoint {}", bind_endpoint)
         );
@@ -137,6 +152,7 @@ impl<R: RunDef> Marshal<R> {
         // Create `Self` from the `Listener`
         Ok(Self {
             listener: Arc::from(listener),
+            listener_2: Arc::from(listener_2),
             metrics_bind_endpoint,
             discovery_client,
             limiter,
@@ -155,10 +171,37 @@ impl<R: RunDef> Marshal<R> {
             .map(|endpoint| AbortOnDropHandle(spawn(proto_metrics::serve_metrics(endpoint))));
 
         // Listen for connections forever
+        let discovery_client_ = self.discovery_client.clone();
+        let limiter_ = self.limiter.clone();
+        spawn(async move {
+            loop {
+                // Accept an unfinalized connection. If we fail, print the error and keep going.
+                let unfinalized_connection = self.listener.accept().await;
+
+                let Ok(unfinalized_connection) = unfinalized_connection else {
+                    error!("failed to accept connection");
+                    return;
+                };
+
+                // Create a task to handle the connection
+                let discovery_client = discovery_client_.clone();
+                let limiter = limiter_.clone();
+                spawn(async move {
+                    // Finalize the connection
+                    let Ok(connection) = unfinalized_connection.finalize(limiter).await else {
+                        return;
+                    };
+
+                    // Handle the connection
+                    Self::handle_connection(connection, discovery_client).await;
+                });
+            }
+        });
+
         loop {
             // Accept an unfinalized connection. If we fail, print the error and keep going.
             let unfinalized_connection = bail!(
-                self.listener.accept().await,
+                self.listener_2.accept().await,
                 Connection,
                 "failed to accept connection"
             );
