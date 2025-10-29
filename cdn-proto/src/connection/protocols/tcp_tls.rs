@@ -104,6 +104,11 @@ impl Protocol for TcpTls {
             Connection,
             "failed to connect to tcp endpoint"
         );
+        bail!(
+            stream.set_nodelay(true),
+            Connection,
+            "failed to set nodelay"
+        );
 
         // Wrap the stream in the TLS connection
         let stream = bail!(
@@ -229,6 +234,11 @@ impl Listener<UnfinalizedTcpTlsConnection> for TcpTlsListener {
             self.tcp_listener.accept().await,
             Connection,
             "failed to accept connection"
+        );
+        bail!(
+            connection.0.set_nodelay(true),
+            Connection,
+            "failed to set nodelay"
         );
 
         // Return the unfinalized connection
