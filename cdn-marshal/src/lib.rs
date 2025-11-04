@@ -40,6 +40,9 @@ pub struct Config {
     /// The bind endpoint that users will reach. Example: `0.0.0.0:1738`
     pub bind_endpoint: String,
 
+    /// The second bind endpoint that users will reach. Example: `0.0.0.0:1838`
+    pub bind_endpoint_2: String,
+
     /// The discovery client endpoint (either Redis or local depending on feature)
     pub discovery_endpoint: String,
 
@@ -90,6 +93,7 @@ impl<R: RunDef> Marshal<R> {
         // Extrapolate values from the underlying marshal configuration
         let Config {
             bind_endpoint,
+            bind_endpoint_2,
             discovery_endpoint,
             metrics_bind_endpoint,
             ca_cert_path,
@@ -117,12 +121,14 @@ impl<R: RunDef> Marshal<R> {
 
         // Create the second `Listener` from the bind endpoint
         let listener_2 = bail!(
-            Protocol::<R::User2>::bind(bind_endpoint.as_str(), tls_cert, tls_key).await,
+            Protocol::<R::User2>::bind(bind_endpoint_2.as_str(), tls_cert, tls_key).await,
             Connection,
             format!("failed to bind to endpoint {}", bind_endpoint)
         );
 
         info!(bind = bind_endpoint, "listening for users");
+
+        info!(bind = bind_endpoint_2, "listening for users2");
 
         // Create the discovery client
         let discovery_client = bail!(

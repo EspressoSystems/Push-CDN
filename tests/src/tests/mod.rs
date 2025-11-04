@@ -77,6 +77,8 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
         private_bind_endpoint: private_ep.to_string(),
         public_advertise_endpoint: public_ep.to_string(),
         public_bind_endpoint: public_ep.to_string(),
+        public2_advertise_endpoint: public_ep.to_string(),
+        public2_bind_endpoint: public_ep.to_string(),
         global_memory_pool_size: None,
         user_message_hook: NoMessageHook,
         broker_message_hook: NoMessageHook,
@@ -97,6 +99,7 @@ async fn new_marshal(ep: &str, discovery_ep: &str) {
     // Create the marshal's configuration
     let config = MarshalConfig {
         bind_endpoint: ep.to_string(),
+        bind_endpoint_2: ep.to_string(),
         discovery_endpoint: discovery_ep.to_string(),
         metrics_bind_endpoint: None,
         ca_cert_path: None,

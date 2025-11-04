@@ -77,6 +77,8 @@ async fn main() -> Result<()> {
 
             public_bind_endpoint: format!("0.0.0.0:{public_port}"),
             public_advertise_endpoint: format!("local_ip:{public_port}"),
+            public2_bind_endpoint: format!("0.0.0.0:{public_port}"),
+            public2_advertise_endpoint: format!("local_ip:{public_port}"),
             private_bind_endpoint: format!("0.0.0.0:{private_port}"),
             private_advertise_endpoint: format!("local_ip:{private_port}"),
             global_memory_pool_size: None,

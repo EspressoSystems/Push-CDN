@@ -47,6 +47,12 @@ pub struct Config<R: RunDef> {
     /// The user (public) bind endpoint in `IP:port` form: the public-facing endpoint we bind to.
     pub public_bind_endpoint: String,
 
+    /// The user (public2) advertise endpoint in `IP:port` form: what the marshals send to
+    /// users upon authentication. Users connect to us with this endpoint.
+    pub public2_advertise_endpoint: String,
+    /// The user (public2) bind endpoint in `IP:port` form: the public-facing endpoint we bind to.
+    pub public2_bind_endpoint: String,
+
     /// The broker (private) advertise endpoint in `IP:port` form: what other brokers use
     /// to connect to us.
     pub private_advertise_endpoint: String,
@@ -139,6 +145,9 @@ impl<R: RunDef> Broker<R> {
             public_advertise_endpoint,
             public_bind_endpoint,
 
+            public2_advertise_endpoint,
+            public2_bind_endpoint,
+
             metrics_bind_endpoint,
 
             private_advertise_endpoint,
@@ -167,6 +176,8 @@ impl<R: RunDef> Broker<R> {
         // Replace "local_ip" with the actual local IP address
         let public_bind_endpoint = public_bind_endpoint.replace("local_ip", &local_ip);
         let public_advertise_endpoint = public_advertise_endpoint.replace("local_ip", &local_ip);
+        let public2_bind_endpoint = public2_bind_endpoint.replace("local_ip", &local_ip);
+        let public2_advertise_endpoint = public2_advertise_endpoint.replace("local_ip", &local_ip);
         let private_bind_endpoint = private_bind_endpoint.replace("local_ip", &local_ip);
         let private_advertise_endpoint = private_advertise_endpoint.replace("local_ip", &local_ip);
 
@@ -207,15 +218,15 @@ impl<R: RunDef> Broker<R> {
         // Create the second user (public) listener
         let user_listener_2 = bail!(
             Protocol::<R::User2>::bind(
-                public_bind_endpoint.as_str(),
+                public2_bind_endpoint.as_str(),
                 tls_cert.clone(),
                 tls_key.clone_key()
             )
             .await,
             Connection,
             format!(
-                "failed to bind to public (user) bind endpoint {}",
-                public_bind_endpoint
+                "failed to bind to public2 (user) bind endpoint {}",
+                public2_bind_endpoint
             )
         );
 
@@ -233,6 +244,11 @@ impl<R: RunDef> Broker<R> {
             advertise = public_advertise_endpoint,
             bind = public_bind_endpoint,
             "listening for users"
+        );
+        info!(
+            advertise = public2_advertise_endpoint,
+            bind = public2_bind_endpoint,
+            "listening for users2"
         );
         info!(
             advertise = private_advertise_endpoint,

@@ -230,6 +230,8 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
         metrics_bind_endpoint: None,
         public_advertise_endpoint: String::new(),
         public_bind_endpoint: String::new(),
+        public2_advertise_endpoint: String::new(),
+        public2_bind_endpoint: String::new(),
         private_advertise_endpoint: String::new(),
         private_bind_endpoint: String::new(),
         discovery_endpoint,

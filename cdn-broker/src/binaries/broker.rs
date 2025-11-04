@@ -36,6 +36,14 @@ struct Args {
     #[arg(long, default_value = "local_ip:1738")]
     public_advertise_endpoint: String,
 
+    /// The user2-facing endpoint in `IP:port` form to advertise
+    #[arg(long, default_value = "local_ip:1838")]
+    public2_advertise_endpoint: String,
+
+    /// The user2-facing endpoint in `IP:port` form to bind to for connections from users2
+    #[arg(long, default_value = "0.0.0.0:1838")]
+    public2_bind_endpoint: String,
+
     /// The broker-facing endpoint in `IP:port` form to bind to for connections from  
     /// other brokers
     #[arg(long, default_value = "0.0.0.0:1739")]
@@ -112,6 +120,10 @@ async fn main() -> Result<()> {
 
         public_bind_endpoint: args.public_bind_endpoint,
         public_advertise_endpoint: args.public_advertise_endpoint,
+
+        public2_bind_endpoint: args.public2_bind_endpoint,
+        public2_advertise_endpoint: args.public2_advertise_endpoint,
+
         private_bind_endpoint: args.private_bind_endpoint,
         private_advertise_endpoint: args.private_advertise_endpoint,
         global_memory_pool_size: Some(args.global_memory_pool_size),
