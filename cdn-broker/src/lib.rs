@@ -18,11 +18,14 @@ mod tasks;
 mod tests;
 
 use std::{
-    net::{SocketAddr, ToSocketAddrs},
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
+    str::FromStr,
     sync::Arc,
+    time::Duration,
 };
 
 mod metrics;
+use anyhow::Context;
 use cdn_proto::{
     bail,
     connection::{limiter::Limiter, protocols::Protocol as _},
@@ -36,7 +39,7 @@ use cdn_proto::{crypto::signature::KeyPair, metrics as proto_metrics};
 use connections::Connections;
 use local_ip_address::local_ip;
 use parking_lot::RwLock;
-use tokio::{select, spawn};
+use tokio::{select, spawn, time::timeout};
 use tracing::info;
 
 /// The broker's configuration. We need this when we create a new one.
@@ -164,11 +167,26 @@ impl<R: RunDef> Broker<R> {
         )
         .to_string();
 
+        // Get the public IP
+        let public_ip = bail!(
+            get_public_ip().await,
+            Connection,
+            "failed to obtain public IP"
+        )
+        .to_string();
+
         // Replace "local_ip" with the actual local IP address
         let public_bind_endpoint = public_bind_endpoint.replace("local_ip", &local_ip);
         let public_advertise_endpoint = public_advertise_endpoint.replace("local_ip", &local_ip);
         let private_bind_endpoint = private_bind_endpoint.replace("local_ip", &local_ip);
         let private_advertise_endpoint = private_advertise_endpoint.replace("local_ip", &local_ip);
+
+        // Replace "public_ip" with the actual public IP address
+        let public_bind_endpoint = public_bind_endpoint.replace("public_ip", &public_ip);
+        let public_advertise_endpoint = public_advertise_endpoint.replace("public_ip", &public_ip);
+        let private_bind_endpoint = private_bind_endpoint.replace("public_ip", &public_ip);
+        let private_advertise_endpoint =
+            private_advertise_endpoint.replace("public_ip", &public_ip);
 
         // Create a unique broker identifier
         let identity = BrokerIdentifier {
@@ -350,4 +368,79 @@ impl<R: RunDef> Broker<R> {
             }
         }
     }
+}
+
+/// Use both resolvers to try to get the public IP
+async fn get_public_ip() -> anyhow::Result<IpAddr> {
+    // First try to get from AWS
+    let aws_ip = get_public_ip_from_aws()
+        .await
+        .with_context(|| "failed to get public IP from AWS");
+
+    // Return it we got it
+    if let Ok(ip) = aws_ip {
+        return Ok(ip);
+    }
+
+    // If not, fall back to IPify
+    get_public_ip_from_ipify()
+        .await
+        .with_context(|| "failed to get public IP from IPify")
+}
+
+/// Try to get the public IP from IPify
+async fn get_public_ip_from_ipify() -> anyhow::Result<IpAddr> {
+    // Make the request
+    let response = timeout(
+        Duration::from_secs(10),
+        reqwest::get("https://api.ipify.org/"),
+    )
+    .await
+    .with_context(|| "timed out getting response")?
+    .with_context(|| "failed to get response")?;
+
+    // Get the response text
+    let text = timeout(Duration::from_secs(10), response.text())
+        .await
+        .with_context(|| "timed out getting response text")?
+        .with_context(|| "failed to get response text")?;
+
+    // Make sure it's an IP address
+    let ip =
+        IpAddr::from_str(&text).with_context(|| format!("got invalid IP address: {}", text))?;
+
+    // Return the IP address
+    Ok(ip)
+}
+
+/// Try to get the public IP from AWS
+async fn get_public_ip_from_aws() -> anyhow::Result<IpAddr> {
+    // Make the request
+    let response = timeout(
+        Duration::from_secs(10),
+        reqwest::get("https://checkip.amazonaws.com"),
+    )
+    .await
+    .with_context(|| "timed out getting response")?
+    .with_context(|| "failed to get response")?;
+
+    // Get the response text
+    let text = timeout(Duration::from_secs(10), response.text())
+        .await
+        .with_context(|| "timed out getting response text")?
+        .with_context(|| "failed to get response text")?;
+
+    // Split it by commas
+    let parts = text.split(',').collect::<Vec<&str>>();
+
+    // Get the last one
+    let ip = parts
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("no IP found in response"))?;
+
+    // Make sure it's an IP address
+    let ip = IpAddr::from_str(ip).with_context(|| format!("got invalid IP address: {}", text))?;
+
+    // Return the IP address
+    Ok(ip)
 }
