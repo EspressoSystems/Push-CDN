@@ -28,9 +28,9 @@ use parking_lot::Mutex;
 use tokio::{
     spawn,
     sync::{RwLock, Semaphore, TryAcquireError},
-    time::sleep,
+    time::{sleep, timeout},
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub mod reexports;
 
@@ -215,16 +215,21 @@ impl<C: ConnectionDef> Client<C> {
                         // Forever,
                         loop {
                             // Try to reconnect
-                            match self_clone.connect().await {
-                                Ok(new_connection) => {
+                            match timeout(Duration::from_secs(10), self_clone.connect()).await {
+                                Ok(Ok(new_connection)) => {
                                     // We successfully reconnected
                                     *connection = Some(new_connection);
                                     break;
                                 }
-                                Err(err) => {
+                                Ok(Err(err)) => {
                                     // We failed to reconnect
                                     // Sleep for 2 seconds and then try again
-                                    error!("failed to connect: {err}");
+                                    error!("Failed to connect to the CDN: {err}");
+                                    sleep(Duration::from_secs(2)).await;
+                                }
+                                Err(_) => {
+                                    // We timed out trying to reconnect
+                                    warn!("Timed out while trying to connect to the CDN. Will retry in 2 seconds.");
                                     sleep(Duration::from_secs(2)).await;
                                 }
                             }
