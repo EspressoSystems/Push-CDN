@@ -43,7 +43,7 @@ lazy_static = { workspace = true }
 
 tokio = { workspace = true }
 
-capnp = "0.20"
+capnp = "0.25"
 thiserror = "1"
 quinn = { version = "0.11", default-features = false, features = [
     "rustls",
