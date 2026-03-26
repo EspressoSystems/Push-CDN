@@ -55,11 +55,18 @@ impl<Def: RunDef> Inner<Def> {
         let public_key_ = public_key.clone();
         let connection_ = connection.clone();
 
+        let connected_at = std::time::Instant::now();
+
         // Spawn the user receive loop
         let receive_handle = spawn(async move {
             // If we error, come back to the callback so we can remove the connection from the list.
             if let Err(err) = self_.user_receive_loop(&public_key_, connection_).await {
-                warn!(id = user_identifier, error = err.to_string(), "user error");
+                warn!(
+                    id = user_identifier,
+                    error = err.to_string(),
+                    duration_secs = connected_at.elapsed().as_secs(),
+                    "user error"
+                );
 
                 // Remove the user from the map
                 self_
@@ -101,9 +108,26 @@ impl<Def: RunDef> Inner<Def> {
         let mut local_message_hook = self.user_message_hook.clone();
         local_message_hook.set_identifier(hash(public_key));
 
+        let mut messages_received: u64 = 0;
+        let mut last_received = std::time::Instant::now();
         loop {
             // Receive a message from the user
-            let raw_message = connection.recv_message_raw().await?;
+            let raw_message = loop {
+                match timeout(Duration::from_secs(30), connection.recv_message_raw()).await {
+                    Ok(result) => break result?,
+                    Err(_) => {
+                        warn!(
+                            id = mnemonic(public_key),
+                            idle_secs = last_received.elapsed().as_secs(),
+                            messages_received,
+                            "user connection idle"
+                        );
+                    }
+                }
+            };
+
+            messages_received += 1;
+            last_received = std::time::Instant::now();
 
             // Attempt to deserialize the message
             let mut message = Message::deserialize(&raw_message)?;

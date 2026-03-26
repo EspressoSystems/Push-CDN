@@ -15,6 +15,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::PrivateKeyDer;
+use socket2::{SockRef, TcpKeepalive};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
@@ -85,6 +86,13 @@ impl Protocol for Tcp {
             Connection,
             "failed to set nodelay"
         );
+        let keepalive = TcpKeepalive::new()
+            .with_time(Duration::from_secs(60)) // start probing after 60s idle
+            .with_interval(Duration::from_secs(10)) // probe every 10s
+            .with_retries(5);
+        SockRef::from(&stream)
+            .set_tcp_keepalive(&keepalive)
+            .expect("failed to set TCP keepalive");
 
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
@@ -129,6 +137,14 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
+        let keepalive = TcpKeepalive::new()
+            .with_time(Duration::from_secs(60)) // start probing after 60s idle
+            .with_interval(Duration::from_secs(10)) // probe every 10s
+            .with_retries(5);
+        SockRef::from(&self.0)
+            .set_tcp_keepalive(&keepalive)
+            .expect("failed to set TCP keepalive");
+
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 

@@ -903,6 +903,7 @@ dependencies = [
  "rkyv",
  "rustls",
  "rustls-pki-types",
+ "socket2 0.6.2",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
