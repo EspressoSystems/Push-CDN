@@ -6,10 +6,15 @@
 
 //! This module defines connections, listeners, and their implementations.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_channel::{bounded, unbounded, Receiver, Sender};
 use async_trait::async_trait;
+use rand::{thread_rng, RngCore};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -82,7 +87,17 @@ pub trait UnfinalizedConnection {
 
 /// A connection to a remote endpoint.
 #[derive(Clone)]
-pub struct Connection(Arc<ConnectionRef>);
+pub struct Connection {
+    inner: Arc<ConnectionRef>,
+    remote_addr: IpAddr,
+}
+
+impl Connection {
+    /// Get the remote address of the connection
+    pub fn remote_addr(&self) -> &IpAddr {
+        &self.remote_addr
+    }
+}
 
 /// A message to send over the channel, either a raw message or a soft close.
 /// Soft close is used to indicate that the connection should be closed after
@@ -127,11 +142,14 @@ impl Connection {
     /// Create a new connection with a set of dummy streams.
     /// Used for testing purposes.
     pub fn new_test() -> Self {
-        Self(Arc::new(ConnectionRef {
-            sender: unbounded().0,
-            receiver: unbounded().1,
-            tasks: Arc::new(vec![]),
-        }))
+        Self {
+            inner: Arc::new(ConnectionRef {
+                sender: unbounded().0,
+                receiver: unbounded().1,
+                tasks: Arc::new(vec![]),
+            }),
+            remote_addr: IpAddr::V4(Ipv4Addr::from_bits(thread_rng().next_u32())),
+        }
     }
 
     /// Converts a set of writer and reader streams into a connection.
@@ -143,6 +161,7 @@ impl Connection {
         mut writer: W,
         mut reader: R,
         limiter: Limiter,
+        remote_addr: IpAddr,
     ) -> Self {
         // Create the channels that will be used to send and receive messages.
         // Conditionally create bounded channels if the user specifies a size
@@ -209,11 +228,14 @@ impl Connection {
         .abort_handle();
 
         // Return the connection
-        Self(Arc::new(ConnectionRef {
-            sender: send_to_task,
-            receiver: receive_from_task,
-            tasks: Arc::from(vec![sender_task, receiver_task]),
-        }))
+        Self {
+            inner: Arc::new(ConnectionRef {
+                sender: send_to_task,
+                receiver: receive_from_task,
+                tasks: Arc::from(vec![sender_task, receiver_task]),
+            }),
+            remote_addr,
+        }
     }
 
     /// Send an (unserialized) message over the stream.
@@ -239,7 +261,7 @@ impl Connection {
     pub async fn send_message_raw(&self, raw_message: Bytes) -> Result<()> {
         // Send the message
         bail!(
-            self.0
+            self.inner
                 .sender
                 .send(BytesOrSoftClose::Bytes(raw_message))
                 .await,
@@ -274,7 +296,7 @@ impl Connection {
     pub async fn recv_message_raw(&self) -> Result<Bytes> {
         // Receive and return the message
         Ok(bail!(
-            self.0.receiver.recv().await,
+            self.inner.receiver.recv().await,
             Connection,
             "failed to receive message"
         ))
@@ -290,7 +312,7 @@ impl Connection {
 
         // Send the soft close message
         bail!(
-            self.0
+            self.inner
                 .sender
                 .send(BytesOrSoftClose::SoftClose(soft_close_sender))
                 .await,

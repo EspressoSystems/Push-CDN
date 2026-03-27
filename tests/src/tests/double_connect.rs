@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use cdn_proto::{def::TestTopic, discovery::BrokerIdentifier};
+use cdn_proto::{database::BrokerIdentifier, def::TestTopic};
 use tokio::time::{sleep, timeout};
 
 use super::*;
@@ -15,14 +15,14 @@ use super::*;
 /// Should kick off the first connection.
 #[tokio::test]
 async fn test_double_connect_same_broker() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start a new broker
-    new_broker(0, "8086", "8087", &discovery_endpoint).await;
+    new_broker(0, "8086", "8087", &database_endpoint).await;
 
     // Create and start a new marshal
-    new_marshal("8088", &discovery_endpoint).await;
+    new_marshal("8088", &database_endpoint).await;
 
     // Create 2 clients with the same keypair
     let client1 = new_client(1, vec![TestTopic::Global as u8], "8088");
@@ -61,19 +61,19 @@ async fn test_double_connect_same_broker() {
 /// Should kick off the first connection.
 #[tokio::test]
 async fn test_double_connect_different_broker() {
-    // Get a temporary path for the discovery endpoint
-    let discovery_endpoint = get_temp_db_path();
+    // Get a temporary path for the database endpoint
+    let database_endpoint = get_temp_db_path();
 
     // Create and start two brokers
-    new_broker(0, "8092", "8093", &discovery_endpoint).await;
+    new_broker(0, "8092", "8093", &database_endpoint).await;
     sleep(Duration::from_millis(50)).await;
-    new_broker(0, "8090", "8091", &discovery_endpoint).await;
+    new_broker(0, "8090", "8091", &database_endpoint).await;
 
     // Wait a little for them to connect
     sleep(Duration::from_millis(100)).await;
 
     // Create and start a new marshal
-    new_marshal("8094", &discovery_endpoint).await;
+    new_marshal("8094", &database_endpoint).await;
 
     // Create 2 clients with the same keypair
     let client1 = new_client(1, vec![TestTopic::Global as u8], "8094");
@@ -83,7 +83,7 @@ async fn test_double_connect_different_broker() {
     sleep(Duration::from_millis(50)).await;
 
     // Get the brokers
-    let brokers: Vec<BrokerIdentifier> = new_db_client(&discovery_endpoint, None)
+    let brokers: Vec<BrokerIdentifier> = new_db_client(&database_endpoint, None)
         .await
         .get_other_brokers()
         .await
@@ -92,8 +92,8 @@ async fn test_double_connect_different_broker() {
         .collect();
 
     // Create database clients as each broker
-    let mut broker0_db_client = new_db_client(&discovery_endpoint, Some(brokers[0].clone())).await;
-    let mut broker1_db_client = new_db_client(&discovery_endpoint, Some(brokers[1].clone())).await;
+    let mut broker0_db_client = new_db_client(&database_endpoint, Some(brokers[0].clone())).await;
+    let mut broker1_db_client = new_db_client(&database_endpoint, Some(brokers[1].clone())).await;
 
     // Make sure the first client connects to the first broker by setting the second
     // broker as having a higher number of connections

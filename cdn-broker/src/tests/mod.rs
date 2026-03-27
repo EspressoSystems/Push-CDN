@@ -21,8 +21,8 @@ use cdn_proto::{
         signature::KeyPair,
         tls::{generate_cert_from_ca, LOCAL_CA_CERT, LOCAL_CA_KEY},
     },
-    def::{NoMessageHook, TestingRunDef},
-    discovery::BrokerIdentifier,
+    database::BrokerIdentifier,
+    def::TestingRunDef,
     message::{Message, Topic},
 };
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
@@ -218,9 +218,9 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
     // Create a key for our broker [under test]
     let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
-    // Create a temporary SQLite file for the broker's discovery endpoint
+    // Create a temporary SQLite file for the broker's database endpoint
     let temp_dir = std::env::temp_dir();
-    let discovery_endpoint = temp_dir
+    let database_endpoint = temp_dir
         .join(format!("test-{}.sqlite", StdRng::from_entropy().next_u64()))
         .to_string_lossy()
         .into();
@@ -232,7 +232,7 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
         public_bind_endpoint: String::new(),
         private_advertise_endpoint: String::new(),
         private_bind_endpoint: String::new(),
-        discovery_endpoint,
+        database_endpoint,
         keypair: KeyPair {
             public_key,
             private_key,
@@ -240,8 +240,6 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
         global_memory_pool_size: None,
         ca_cert_path: None,
         ca_key_path: None,
-        user_message_hook: NoMessageHook,
-        broker_message_hook: NoMessageHook,
     };
 
     // Create and return the broker

@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sqlx::{query, query_as, sqlite::SqliteConnectOptions, QueryBuilder, Row, SqlitePool};
 
-use super::{BrokerIdentifier, DiscoveryClient};
+use super::{BrokerIdentifier, DatabaseClient};
 use crate::{
     bail,
     connection::UserPublicKey,
@@ -36,7 +36,7 @@ struct BrokerRow {
 }
 
 #[async_trait]
-impl DiscoveryClient for Embedded {
+impl DatabaseClient for Embedded {
     /// Create a new `Client` from the `SQLite` path and optional identifier. This is clonable, and
     /// we don't have to worry about reconnections anywhere.
     ///
@@ -45,13 +45,10 @@ impl DiscoveryClient for Embedded {
     async fn new(path: String, identity: Option<BrokerIdentifier>) -> Result<Self> {
         // Use the supplied identifier or a blank one, if we don't need/want one.
         // We only "need" the identifier if we want to register
-        let identifier = identity.map_or_else(
-            || BrokerIdentifier {
-                public_advertise_endpoint: String::new(),
-                private_advertise_endpoint: String::new(),
-            },
-            |identifier| identifier,
-        );
+        let identifier = identity.unwrap_or_else(|| BrokerIdentifier {
+            public_advertise_endpoint: String::new(),
+            private_advertise_endpoint: String::new(),
+        });
 
         // Create the SQLite connection options (create DB if it doesn't exist)
         let options = SqliteConnectOptions::new()

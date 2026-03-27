@@ -15,15 +15,12 @@ pub mod connection {
     }
 }
 
-pub mod discovery {
-    pub use cdn_proto::discovery::{embedded::Embedded, redis::Redis, DiscoveryClient};
+pub mod database {
+    pub use cdn_proto::database::{embedded::Embedded, redis::Redis, DatabaseClient};
 }
 
 pub mod def {
     pub use cdn_proto::def::{ConnectionDef, RunDef, Topic};
-    pub mod hook {
-        pub use cdn_proto::def::{HookResult, MessageHook, MessageHookDef, NoMessageHook};
-    }
 }
 
 pub mod crypto {

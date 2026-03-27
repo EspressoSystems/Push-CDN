@@ -10,11 +10,7 @@
 use std::time::Duration;
 
 use cdn_broker::{Broker, Config};
-use cdn_proto::{
-    crypto::signature::KeyPair,
-    def::{NoMessageHook, ProductionRunDef},
-    error::Result,
-};
+use cdn_proto::{crypto::signature::KeyPair, def::ProductionRunDef, error::Result};
 use clap::Parser;
 use jf_signature::{bls_over_bn254::BLSOverBN254CurveSignatureScheme as BLS, SignatureScheme};
 use rand::{rngs::StdRng, SeedableRng};
@@ -26,11 +22,11 @@ use tracing_subscriber::EnvFilter;
 #[command(author, version, about, long_about = None)]
 /// The main component of the push CDN.
 struct Args {
-    /// The discovery client endpoint (including scheme) to connect to.
-    /// With the local discovery feature, this is a file path.
-    /// With the remote (redis) discovery feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
+    /// The database endpoint (including scheme) to connect to.
+    /// With the local database feature, this is a file path.
+    /// With the remote (redis) database feature, this is a redis URL (e.g. `redis://127.0.0.1:6789`).
     #[arg(short, long)]
-    discovery_endpoint: String,
+    database_endpoint: String,
 }
 
 #[tokio::main]
@@ -68,7 +64,7 @@ async fn main() -> Result<()> {
             ca_cert_path: None,
             ca_key_path: None,
 
-            discovery_endpoint: args.discovery_endpoint.clone(),
+            database_endpoint: args.database_endpoint.clone(),
             metrics_bind_endpoint: None,
             keypair: KeyPair {
                 public_key,
@@ -80,9 +76,6 @@ async fn main() -> Result<()> {
             private_bind_endpoint: format!("0.0.0.0:{private_port}"),
             private_advertise_endpoint: format!("local_ip:{private_port}"),
             global_memory_pool_size: None,
-
-            user_message_hook: NoMessageHook,
-            broker_message_hook: NoMessageHook,
         };
 
         // Create new `Broker`
