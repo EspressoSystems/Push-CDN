@@ -45,13 +45,10 @@ impl DatabaseClient for Embedded {
     async fn new(path: String, identity: Option<BrokerIdentifier>) -> Result<Self> {
         // Use the supplied identifier or a blank one, if we don't need/want one.
         // We only "need" the identifier if we want to register
-        let identifier = identity.map_or_else(
-            || BrokerIdentifier {
-                public_advertise_endpoint: String::new(),
-                private_advertise_endpoint: String::new(),
-            },
-            |identifier| identifier,
-        );
+        let identifier = identity.unwrap_or_else(|| BrokerIdentifier {
+            public_advertise_endpoint: String::new(),
+            private_advertise_endpoint: String::new(),
+        });
 
         // Create the SQLite connection options (create DB if it doesn't exist)
         let options = SqliteConnectOptions::new()
