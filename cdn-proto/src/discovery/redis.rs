@@ -51,13 +51,10 @@ impl DiscoveryClient for Redis {
 
         // Use the supplied identifier or a blank one, if we don't need/want one.
         // We only "need" the identifier if we want to register with Redis
-        let identifier = identity.map_or_else(
-            || BrokerIdentifier {
-                public_advertise_endpoint: String::new(),
-                private_advertise_endpoint: String::new(),
-            },
-            |identifier| identifier,
-        );
+        let identifier = identity.unwrap_or_else(|| BrokerIdentifier {
+            public_advertise_endpoint: String::new(),
+            private_advertise_endpoint: String::new(),
+        });
 
         // Return the thinly wrapped `Self`.
         Ok(Self {

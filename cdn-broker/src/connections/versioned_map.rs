@@ -15,7 +15,6 @@ use std::{
     hash::Hash,
 };
 
-use derivative::Derivative;
 use rkyv::{Archive, Deserialize, Serialize};
 
 /// A tombstone is just a removed value.
@@ -30,9 +29,8 @@ pub struct VersionedValue<T> {
     value: Tombstone<T>,
 }
 
-#[derive(Clone, Archive, Serialize, Deserialize, Derivative, Debug)]
+#[derive(Clone, Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
-#[derivative(PartialEq)]
 /// A data structure responsible for remaining eventually consistent. It does this by
 /// tracking version vectors for each value, and provides functions to help merge,
 /// resolve conflicts, and generate deltas to send over the wire.
@@ -42,13 +40,17 @@ pub struct VersionedMap<K: Eq + Hash + Debug, V: Debug, C> {
 
     /// The locally modified keys that we use when calculating the delta. We can skip
     /// `PartialEq` for testing purposes.
-    #[derivative(PartialEq = "ignore")]
     locally_modified_keys: HashSet<K>,
 
     /// The conflict identity for resolving conflicts. If there is a conflict, the higher value wins.
     /// There are no guarantees on what happens when two actors of the same identity try to make changes.
-    #[derivative(PartialEq = "ignore")]
     conflict_identity: C,
+}
+
+impl<K: Eq + Hash + Debug, V: Debug + PartialEq, C> PartialEq for VersionedMap<K, V, C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.underlying_map == other.underlying_map
+    }
 }
 
 impl<

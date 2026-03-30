@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    # time channel attack of "rsa", transitive via sqlx dependencies
+    "RUSTSEC-2023-0071",
+    # unmaintained "paste" crate from arkworks dependencies, no fix available
+    "RUSTSEC-2024-0436",
+    # transitive via Jellyfish and arkworks dependencies, "tracing-subscriber" is not used in this repo
+    "RUSTSEC-2025-0055",
+]

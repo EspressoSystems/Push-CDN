@@ -18,8 +18,6 @@ jobs:
       # run clippy for each feature flag configuration
       # TODO: make this better
       - run: cargo clippy --features metrics
-      - run: cargo clippy --no-default-features --features runtime-async-std
-      
+
       - run: cargo test
-      - run: cargo test --no-default-features --features runtime-async-std
       

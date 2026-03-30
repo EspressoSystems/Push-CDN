@@ -12,7 +12,7 @@ tokio = { version = "1", default-features = false, features = [
     "parking_lot",
     "tracing"
 ] }
-jf-signature = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "jf-signature-v0.4.0", default-features = false, features = [
+jf-signature = { git = "https://github.com/EspressoSystems/jellyfish.git", tag = "jf-signature-v0.4.1", default-features = false, features = [
     "std", "bls"
 ] }
 rand = "0.8"
@@ -27,16 +27,11 @@ clap = { version = "4", features = ["derive"] }
 parking_lot = "0.12"
 prometheus = { version = "0.13", default-features = false }
 lazy_static = "1"
-async-std = { version = "1", default-features = false, features = [
-    "tokio1",
-    "attributes",
-] }
 rkyv = { version = "0.7", features = ["validation"] }
-derivative = "2"
-rcgen = { version = "0.13", features = ["x509-parser", "crypto"] }
+rcgen = { version = "0.14", features = ["x509-parser", "crypto"] }
 derive_more = { version = "1", features = ["deref"] }
 
 # Dev dependencies (can't be defined explicitly in the workspace)
 # TODO: figure out if this actually builds on non-test targets
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+pprof = { version = "0.15", features = ["flamegraph", "criterion"] }
