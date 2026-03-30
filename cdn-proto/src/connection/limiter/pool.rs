@@ -16,7 +16,6 @@
 use std::{ops::Deref, sync::Arc, time::Instant};
 
 use anyhow::Result;
-use derivative::Derivative;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[cfg(feature = "metrics")]
@@ -76,8 +75,6 @@ impl<T> Deref for Allocation<T> {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(PartialEq, Eq)]
 #[derive(Clone)]
 /// A struct representing a combination of a value taking up `n` bytes,
 /// along with its (optional) permit to acquire those bytes. When the object
@@ -87,9 +84,16 @@ pub struct Allocation<T> {
     ptr: Arc<T>,
 
     /// The optional permit for those `n` bytes
-    #[derivative(PartialEq = "ignore")]
     _permit: Option<Arc<AllocationPermit>>,
 }
+
+impl<T: PartialEq> PartialEq for Allocation<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr == other.ptr
+    }
+}
+
+impl<T: Eq> Eq for Allocation<T> {}
 
 impl<T> Allocation<T> {
     /// Create an allocation from a permit and the underlying value

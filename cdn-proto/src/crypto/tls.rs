@@ -7,7 +7,7 @@
 //! In this module we define TLS-related items, such as an optional
 //! way to skip server verification.
 
-use rcgen::{CertificateParams, Ia5String, IsCa, KeyPair, SanType};
+use rcgen::{string::Ia5String, CertificateParams, IsCa, Issuer, KeyPair, SanType};
 use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     RootCertStore,
@@ -53,9 +53,21 @@ pub fn generate_cert_from_ca(
     ca_cert: &str,
     ca_key: &str,
 ) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>)> {
-    // Parse the provided CA certificate
-    let mut certificate_params = bail!(
-        CertificateParams::from_ca_cert_pem(ca_cert),
+    // Parse the provided CA key
+    let key_pair = bail!(
+        KeyPair::from_pem(ca_key),
+        Crypto,
+        "failed to parse provided CA key"
+    );
+
+    // Parse the provided CA certificate and key into an Issuer
+    let issuer_key_pair = bail!(
+        KeyPair::from_pem(ca_key),
+        Crypto,
+        "failed to parse provided CA key"
+    );
+    let issuer = bail!(
+        Issuer::from_ca_cert_pem(ca_cert, issuer_key_pair),
         Crypto,
         "failed to parse provided CA cert"
     );
@@ -67,24 +79,16 @@ pub fn generate_cert_from_ca(
         "failed to parse \"espresso\" as `Ia5String`"
     ));
 
-    // Set the SAN
+    // Set up certificate parameters
+    let mut certificate_params = CertificateParams::default();
     certificate_params.subject_alt_names = vec![espresso_san];
-
-    // Explicitly set the certificate as not being a CA
     certificate_params.is_ca = IsCa::ExplicitNoCa;
 
-    // Parse the provided CA key
-    let key_pair = bail!(
-        KeyPair::from_pem(ca_key),
-        Crypto,
-        "failed to parse provided CA key"
-    );
-
-    // Generate a self-signed certificate
+    // Sign the certificate with the CA
     let certificate = bail!(
-        certificate_params.self_signed(&key_pair),
+        certificate_params.signed_by(&key_pair, &issuer),
         Crypto,
-        "failed to generate self-signed certificate"
+        "failed to sign certificate with CA"
     );
 
     // Convert the certificate and key to DER format and return
