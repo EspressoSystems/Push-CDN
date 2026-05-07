@@ -29,6 +29,17 @@ use crate::{
     parse_endpoint,
 };
 
+/// The default TCP keepalive configuration applied to every accepted and
+/// outgoing connection. With these values the kernel detects a dead peer in
+/// roughly 60s + 5*10s ≈ 110s of unacknowledged data, well above transient
+/// network blips and well below the previous hardcoded 5s app-level timeout.
+pub(super) fn keepalive_config() -> TcpKeepalive {
+    TcpKeepalive::new()
+        .with_time(Duration::from_secs(60))
+        .with_interval(Duration::from_secs(10))
+        .with_retries(5)
+}
+
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
 #[derive(Clone, PartialEq, Eq)]
@@ -86,13 +97,11 @@ impl Protocol for Tcp {
             Connection,
             "failed to set nodelay"
         );
-        let keepalive = TcpKeepalive::new()
-            .with_time(Duration::from_secs(60)) // start probing after 60s idle
-            .with_interval(Duration::from_secs(10)) // probe every 10s
-            .with_retries(5);
-        SockRef::from(&stream)
-            .set_tcp_keepalive(&keepalive)
-            .expect("failed to set TCP keepalive");
+        bail!(
+            SockRef::from(&stream).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
 
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
@@ -137,13 +146,11 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
-        let keepalive = TcpKeepalive::new()
-            .with_time(Duration::from_secs(60)) // start probing after 60s idle
-            .with_interval(Duration::from_secs(10)) // probe every 10s
-            .with_retries(5);
-        SockRef::from(&self.0)
-            .set_tcp_keepalive(&keepalive)
-            .expect("failed to set TCP keepalive");
+        bail!(
+            SockRef::from(&self.0).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
 
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
