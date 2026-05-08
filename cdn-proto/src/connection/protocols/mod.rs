@@ -6,7 +6,7 @@
 
 //! This module defines connections, listeners, and their implementations.
 
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use async_channel::{bounded, unbounded, Receiver, Sender};
 use async_trait::async_trait;
@@ -100,6 +100,11 @@ pub struct ConnectionRef {
     receiver: Receiver<Bytes>,
 
     tasks: Arc<Vec<AbortHandle>>,
+
+    /// The remote address of the peer, when the underlying protocol
+    /// exposes one. `None` for in-memory transports and for any peer
+    /// whose address could not be resolved at finalize time.
+    peer_addr: Option<SocketAddr>,
 }
 
 impl Drop for ConnectionRef {
@@ -131,7 +136,16 @@ impl Connection {
             sender: unbounded().0,
             receiver: unbounded().1,
             tasks: Arc::new(vec![]),
+            peer_addr: None,
         }))
+    }
+
+    /// Returns the remote address of the peer, when known. `None` for in-memory
+    /// transports and for any peer whose address could not be resolved at
+    /// finalize time.
+    #[must_use]
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.0.peer_addr
     }
 
     /// Converts a set of writer and reader streams into a connection.
@@ -143,6 +157,7 @@ impl Connection {
         mut writer: W,
         mut reader: R,
         limiter: Limiter,
+        peer_addr: Option<SocketAddr>,
     ) -> Self {
         // Create the channels that will be used to send and receive messages.
         // Conditionally create bounded channels if the user specifies a size
@@ -213,6 +228,7 @@ impl Connection {
             sender: send_to_task,
             receiver: receive_from_task,
             tasks: Arc::from(vec![sender_task, receiver_task]),
+            peer_addr,
         }))
     }
 

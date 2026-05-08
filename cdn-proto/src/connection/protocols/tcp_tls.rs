@@ -136,7 +136,7 @@ impl Protocol for TcpTls {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, Some(remote_endpoint));
 
         Ok(connection)
     }
@@ -202,6 +202,8 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
             "failed to set TCP keepalive"
         );
 
+        let peer_addr = self.tcp_stream.peer_addr().ok();
+
         // Wrap the stream in the TLS connection
         let stream = bail!(
             bail!(
@@ -221,7 +223,7 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, peer_addr);
 
         Ok(connection)
     }

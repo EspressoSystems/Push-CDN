@@ -107,7 +107,7 @@ impl Protocol for Tcp {
         let (receiver, sender) = stream.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, Some(remote_endpoint));
 
         Ok(connection)
     }
@@ -152,11 +152,13 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
             "failed to set TCP keepalive"
         );
 
+        let peer_addr = self.0.peer_addr().ok();
+
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, peer_addr);
 
         Ok(connection)
     }
