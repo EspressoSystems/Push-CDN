@@ -224,12 +224,12 @@ impl<C: ConnectionDef> Client<C> {
                                 Ok(Err(err)) => {
                                     // We failed to reconnect
                                     // Sleep for 2 seconds and then try again
-                                    error!("Failed to connect to the CDN: {err}");
+                                    warn!("Failed to connect to the CDN: {err}. Will retry in 2 seconds");
                                     sleep(Duration::from_secs(2)).await;
                                 }
                                 Err(_) => {
                                     // We timed out trying to reconnect
-                                    warn!("Timed out while trying to connect to the CDN. Will retry in 2 seconds.");
+                                    warn!("Timed out while connecting to the CDN. Will retry in 2 seconds");
                                     sleep(Duration::from_secs(2)).await;
                                 }
                             }
