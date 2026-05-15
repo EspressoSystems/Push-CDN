@@ -30,7 +30,7 @@ use tokio::{
     sync::{RwLock, Semaphore, TryAcquireError},
     time::{sleep, timeout},
 };
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub mod reexports;
 
