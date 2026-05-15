@@ -8,7 +8,7 @@ use cdn_broker::{Broker, Config as BrokerConfig};
 use cdn_client::{Client, Config as ClientConfig};
 use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{
-    connection::protocols::memory::Memory,
+    connection::protocols::{memory::Memory, no_protocol::NoProtocol, tcp::Tcp},
     crypto::signature::{KeyPair, Serializable, SignatureScheme},
     def::{NoMessageHook, TestingConnection, TestingRunDef},
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
@@ -64,7 +64,7 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
     let (private_key, public_key) = keypair_from_seed(key);
 
     // Create config
-    let config: BrokerConfig<TestingRunDef<Memory, Memory>> = BrokerConfig {
+    let config: BrokerConfig<TestingRunDef<Memory, Memory, NoProtocol>> = BrokerConfig {
         ca_cert_path: None,
         ca_key_path: None,
         discovery_endpoint: discovery_ep.to_string(),
@@ -83,7 +83,7 @@ async fn new_broker(key: u64, public_ep: &str, private_ep: &str, discovery_ep: &
     };
 
     // Create broker
-    let broker = Broker::<TestingRunDef<Memory, Memory>>::new(config)
+    let broker = Broker::<TestingRunDef<Memory, Memory, NoProtocol>>::new(config)
         .await
         .expect("failed to create broker");
 
@@ -105,7 +105,7 @@ async fn new_marshal(ep: &str, discovery_ep: &str) {
     };
 
     // Create a new marshal
-    let marshal = Marshal::<TestingRunDef<Memory, Memory>>::new(config)
+    let marshal = Marshal::<TestingRunDef<Memory, Memory, NoProtocol>>::new(config)
         .await
         .expect("failed to create marshal");
 

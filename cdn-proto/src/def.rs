@@ -148,13 +148,13 @@ impl ConnectionDef for ProductionClientConnection {
 
 /// The testing run configuration.
 /// Uses generic protocols and an embedded discovery client.
-pub struct TestingRunDef<B: ProtocolType, U: ProtocolType> {
-    pd: PhantomData<(B, U)>,
+pub struct TestingRunDef<B: ProtocolType, U: ProtocolType, U2: ProtocolType> {
+    pd: PhantomData<(B, U, U2)>,
 }
-impl<B: ProtocolType, U: ProtocolType> RunDef for TestingRunDef<B, U> {
+impl<B: ProtocolType, U: ProtocolType, U2: ProtocolType> RunDef for TestingRunDef<B, U, U2> {
     type Broker = TestingConnection<B>;
     type User = TestingConnection<U>;
-    type User2 = TestingConnection<U>;
+    type User2 = TestingConnection<U2>;
     type DiscoveryClientType = Embedded;
     type Topic = TestTopic;
 }
