@@ -214,7 +214,7 @@ async fn gen_connection_pairs<P: Protocol>(num: usize) -> Vec<(Connection, Conne
     connection_pairs
 }
 /// Create a new broker under test. All test users and brokers will be connected to this broker.
-async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunDef<B, U>> {
+async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunDef<B, U, U>> {
     // Create a key for our broker [under test]
     let (private_key, public_key) = BLS::key_gen(&(), &mut DeterministicRng(0)).unwrap();
 
@@ -256,7 +256,7 @@ async fn new_broker_under_test<B: Protocol, U: Protocol>() -> Broker<TestingRunD
 ///
 /// After that, it sends subscription messages to the broker for the topics described in `TestDefinition`
 async fn inject_users<B: Protocol, U: Protocol>(
-    broker_under_test: &Broker<TestingRunDef<B, U>>,
+    broker_under_test: &Broker<TestingRunDef<B, U, U>>,
     users: Vec<TestUser>,
 ) -> Vec<Connection> {
     // Generate a set of connected pairs, one for each user
@@ -306,7 +306,7 @@ async fn inject_users<B: Protocol, U: Protocol>(
 /// After that, it sends subscription messages to the broker for the topics described in `TestDefinition`,
 /// and syncs the users up so the broker knows where to send messages.
 async fn inject_brokers<B: Protocol, U: Protocol>(
-    broker_under_test: &Broker<TestingRunDef<B, U>>,
+    broker_under_test: &Broker<TestingRunDef<B, U, U>>,
     brokers: Vec<TestBroker>,
 ) -> Vec<Connection> {
     // Generate a set of connected pairs, one for each broker

@@ -1,6 +1,6 @@
 [package]
 name = "cdn-marshal"
-version = "0.6.2"
+version = "0.6.2-compat"
 edition = "2021"
 
 description = "Contains the server implementation for the marshal, which issues permits and manages connections to brokers"

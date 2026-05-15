@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-broker"
-version = "0.6.2"
+version = "0.6.2-compat"
 dependencies = [
  "async-std",
  "cdn-proto",
@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-marshal"
-version = "0.6.2"
+version = "0.6.2-compat"
 dependencies = [
  "async-std",
  "cdn-proto",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "cdn-proto"
-version = "0.6.2"
+version = "0.6.2-compat"
 dependencies = [
  "anyhow",
  "ark-serialize",

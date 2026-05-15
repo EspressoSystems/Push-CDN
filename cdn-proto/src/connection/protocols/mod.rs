@@ -31,6 +31,7 @@ use crate::{
 use crate::connection::metrics;
 
 pub mod memory;
+pub mod no_protocol;
 pub mod quic;
 pub mod tcp;
 pub mod tcp_tls;
