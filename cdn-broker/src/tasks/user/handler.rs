@@ -17,7 +17,7 @@ use cdn_proto::util::{hash, mnemonic};
 use cdn_proto::{connection::auth::broker::BrokerAuth, message::Message};
 use tokio::spawn;
 use tokio::time::timeout;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::Inner;
 
@@ -116,7 +116,7 @@ impl<Def: RunDef> Inner<Def> {
                 match timeout(Duration::from_secs(30), connection.recv_message_raw()).await {
                     Ok(result) => break result?,
                     Err(_) => {
-                        warn!(
+                        debug!(
                             id = mnemonic(public_key),
                             idle_secs = last_received.elapsed().as_secs(),
                             messages_received,

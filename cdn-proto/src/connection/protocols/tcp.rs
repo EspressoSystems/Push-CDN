@@ -31,8 +31,7 @@ use crate::{
 
 /// The default TCP keepalive configuration applied to every accepted and
 /// outgoing connection. With these values the kernel detects a dead peer in
-/// roughly 60s + 5*10s ≈ 110s of unacknowledged data, well above transient
-/// network blips and well below the previous hardcoded 5s app-level timeout.
+/// roughly 60s + 5*10s ≈ 110s of unacknowledged data.
 pub(super) fn keepalive_config() -> TcpKeepalive {
     TcpKeepalive::new()
         .with_time(Duration::from_secs(60))
