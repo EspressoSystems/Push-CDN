@@ -144,7 +144,6 @@ impl Connection {
     /// Returns the remote address of the peer, when known. `None` for in-memory
     /// transports and for any peer whose address could not be resolved at
     /// finalize time.
-    #[must_use]
     pub fn peer_addr(&self) -> Option<SocketAddr> {
         self.0.peer_addr
     }
