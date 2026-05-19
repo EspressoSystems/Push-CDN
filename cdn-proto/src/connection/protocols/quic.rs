@@ -116,7 +116,8 @@ impl Protocol for Quic {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams::<_, _>(sender, receiver, limiter);
+        let connection =
+            Connection::from_streams::<_, _>(sender, receiver, limiter, Some(remote_endpoint));
 
         Ok(connection)
     }
@@ -173,6 +174,8 @@ impl UnfinalizedConnection for UnfinalizedQuicConnection {
         // Await on the `Connecting` to obtain `Connection`
         let connection = bail!(self.0.await, Connection, "failed to finalize connection");
 
+        let peer_addr = Some(connection.remote_address());
+
         // Accept an incoming bidirectional stream
         let (sender, receiver) = bail!(
             bail!(
@@ -185,7 +188,7 @@ impl UnfinalizedConnection for UnfinalizedQuicConnection {
         );
 
         // Create a sender and receiver
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, peer_addr);
 
         // Clone and return the connection
         Ok(connection)

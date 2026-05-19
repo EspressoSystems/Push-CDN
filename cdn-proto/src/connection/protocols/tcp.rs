@@ -15,6 +15,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::PrivateKeyDer;
+use socket2::{SockRef, TcpKeepalive};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
@@ -27,6 +28,16 @@ use crate::{
     error::{Error, Result},
     parse_endpoint,
 };
+
+/// The default TCP keepalive configuration applied to every accepted and
+/// outgoing connection. With these values the kernel detects a dead peer in
+/// roughly 60s + 5*10s ≈ 110s of unacknowledged data.
+pub(super) fn keepalive_config() -> TcpKeepalive {
+    TcpKeepalive::new()
+        .with_time(Duration::from_secs(60))
+        .with_interval(Duration::from_secs(10))
+        .with_retries(5)
+}
 
 /// The `Tcp` protocol. We use this to define commonalities between TCP
 /// listeners, connections, etc.
@@ -85,12 +96,17 @@ impl Protocol for Tcp {
             Connection,
             "failed to set nodelay"
         );
+        bail!(
+            SockRef::from(&stream).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
 
         // Split the connection and create our wrapper
         let (receiver, sender) = stream.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, Some(remote_endpoint));
 
         Ok(connection)
     }
@@ -129,11 +145,19 @@ impl UnfinalizedConnection for UnfinalizedTcpConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
+        bail!(
+            SockRef::from(&self.0).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
+
+        let peer_addr = self.0.peer_addr().ok();
+
         // Split the connection and create our wrapper
         let (receiver, sender) = self.0.into_split();
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, peer_addr);
 
         Ok(connection)
     }

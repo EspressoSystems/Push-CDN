@@ -284,7 +284,14 @@ impl Connections {
     ) {
         // Increment the metric for the number of brokers connected
         metrics::NUM_USERS_CONNECTED.inc();
-        info!(id = mnemonic(user_public_key), "user connected");
+        info!(
+            id = mnemonic(user_public_key),
+            peer_addr = connection
+                .peer_addr()
+                .map(|a| a.to_string())
+                .unwrap_or_default(),
+            "user connected"
+        );
 
         // Remove the old user if it exists
         self.remove_user(user_public_key.clone(), "already existed");
@@ -329,12 +336,16 @@ impl Connections {
     /// to send us messages for a disconnected user.
     pub fn remove_user(&mut self, user_public_key: UserPublicKey, reason: &str) {
         // Remove from user list, returning the previous handle if it exists
-        if let Some((_, task)) = self.users.remove(&user_public_key) {
+        if let Some((connection, task)) = self.users.remove(&user_public_key) {
             // Decrement the metric for the number of users connected
             metrics::NUM_USERS_CONNECTED.dec();
             warn!(
                 id = mnemonic(&user_public_key),
                 reason = reason,
+                peer_addr = connection
+                    .peer_addr()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default(),
                 "user disconnected"
             );
 

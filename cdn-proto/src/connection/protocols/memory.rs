@@ -78,7 +78,7 @@ impl Protocol for Memory {
         );
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(send_to_them, receive_from_them, limiter);
+        let connection = Connection::from_streams(send_to_them, receive_from_them, limiter, None);
 
         // Return our connection
         Ok(connection)
@@ -123,7 +123,8 @@ impl UnfinalizedConnection for UnfinalizedMemoryConnection {
     /// Prepares the `MemoryConnection` for usage by `Arc()ing` things.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(self.send_stream, self.receive_stream, limiter);
+        let connection =
+            Connection::from_streams(self.send_stream, self.receive_stream, limiter, None);
 
         // Return our connection
         Ok(connection)
@@ -195,7 +196,7 @@ impl Memory {
         let (sender, receiver) = duplex(8192);
 
         // Convert the streams into a `Connection`
-        Connection::from_streams(sender, receiver, Limiter::none())
+        Connection::from_streams(sender, receiver, Limiter::none(), None)
     }
 }
 

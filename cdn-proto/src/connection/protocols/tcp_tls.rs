@@ -18,6 +18,7 @@ use rustls::pki_types::PrivateKeyDer;
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
 use rustls::ServerConfig;
+use socket2::SockRef;
 use tokio::io::WriteHalf;
 use tokio::net::TcpListener;
 use tokio::net::{TcpSocket, TcpStream};
@@ -25,6 +26,7 @@ use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::TlsConnector;
 
+use super::tcp::keepalive_config;
 use super::SoftClose;
 use super::{Connection, Listener, Protocol, UnfinalizedConnection};
 use crate::connection::limiter::Limiter;
@@ -109,6 +111,11 @@ impl Protocol for TcpTls {
             Connection,
             "failed to set nodelay"
         );
+        bail!(
+            SockRef::from(&stream).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
 
         // Wrap the stream in the TLS connection
         let stream = bail!(
@@ -129,7 +136,7 @@ impl Protocol for TcpTls {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, Some(remote_endpoint));
 
         Ok(connection)
     }
@@ -189,6 +196,14 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
     /// # Errors
     /// Does not actually error, but satisfies trait bounds.
     async fn finalize(self, limiter: Limiter) -> Result<Connection> {
+        bail!(
+            SockRef::from(&self.tcp_stream).set_tcp_keepalive(&keepalive_config()),
+            Connection,
+            "failed to set TCP keepalive"
+        );
+
+        let peer_addr = self.tcp_stream.peer_addr().ok();
+
         // Wrap the stream in the TLS connection
         let stream = bail!(
             bail!(
@@ -208,7 +223,7 @@ impl UnfinalizedConnection for UnfinalizedTcpTlsConnection {
         let (receiver, sender) = tokio::io::split(stream);
 
         // Convert the streams into a `Connection`
-        let connection = Connection::from_streams(sender, receiver, limiter);
+        let connection = Connection::from_streams(sender, receiver, limiter, peer_addr);
 
         Ok(connection)
     }

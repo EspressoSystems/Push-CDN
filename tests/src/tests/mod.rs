@@ -8,7 +8,7 @@ use cdn_broker::{Broker, Config as BrokerConfig};
 use cdn_client::{Client, Config as ClientConfig};
 use cdn_marshal::{Config as MarshalConfig, Marshal};
 use cdn_proto::{
-    connection::protocols::{memory::Memory, no_protocol::NoProtocol, tcp::Tcp},
+    connection::protocols::{memory::Memory, no_protocol::NoProtocol},
     crypto::signature::{KeyPair, Serializable, SignatureScheme},
     def::{NoMessageHook, TestingConnection, TestingRunDef},
     discovery::{embedded::Embedded, BrokerIdentifier, DiscoveryClient},
